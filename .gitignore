@@ -8,3 +8,8 @@
 .ai-playbook/notifications.jsonl
 .ai-playbook/heartbeat-t18a.txt
 .claude/injected-context.md
+
+# RFC-0001 skills distribution: per-LLM mirrors are gitignored copies of skills/
+.claude/skills/
+.gemini/skills/
+.skills-sources/

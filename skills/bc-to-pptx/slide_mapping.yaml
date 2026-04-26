@@ -1,0 +1,436 @@
+# Slide Mapping Configuration for BC-to-PPTX Pipeline
+# Maps LEAN_BUSINESS_CASE.md sections to template slide XML elements
+# NOTE: This file was generated for the old 38-slide template. The current template is 67 slides.
+# slide_mapping.yaml is superseded by semantic_mapping.yaml (v4.0) as the authoritative tag reference.
+# This file is retained for historical reference but is NOT used by bc-to-pptx generation.
+#
+# Each slide entry:
+#   deck_position: position in the output deck
+#   bc_section: which BC section provides the data
+#   bc_section: which BC section provides the data
+#   type: slide|smartart|table|static
+#   fields: list of {json_key, target_description}
+#
+# Field injection rules:
+#   - For type=slide: replace <a:t> elements in slide{N}.xml
+#   - For type=smartart: replace <a:t>/<dgm:t> in data{N}.xml
+#   - For type=table: replace cell values in slide{N}.xml table elements
+#   - For type=static: skip (no injection)
+
+slides:
+
+  # ===== COVER & NAVIGATION =====
+  - deck_position: 1
+    potx_slide: 1
+    bc_section: "meta"
+    type: slide
+    layout: title_dark
+    fields:
+      - key: offering_name
+        target: "line 2 of title block (after 'GTM Lean Business Case')"
+      - key: iteration
+        target: "line 3 of title block"
+      - key: subtitle
+        target: "bottom text line (Cloud and IT...)"
+
+  - deck_position: 2
+    potx_slide: 2
+    bc_section: "meta"
+    type: slide
+    layout: toc_split
+    fields: []  # TOC is static structure, no injection needed
+
+  - deck_position: 3
+    potx_slide: 3
+    bc_section: null
+    type: static
+    layout: digital_first
+    fields: []  # User copies manually
+
+  - deck_position: 4
+    potx_slide: 4
+    bc_section: null
+    type: static
+    layout: gtm_blueprint
+    fields: []  # User copies manually
+
+  # ===== EXECUTIVE SUMMARY =====
+  - deck_position: 5
+    potx_slide: 5
+    bc_section: "exec_canvas"
+    type: smartart
+    layout: canvas_dark
+    diagram_data: "data1.xml"
+    fields:
+      - key: key_activities
+      - key: problem
+      - key: uvp
+      - key: client_relationships
+      - key: excluded
+      - key: key_resources
+      - key: key_metrics
+      - key: channels
+      - key: background
+      - key: unfair_advantage
+      - key: key_partners
+      - key: cost_structure
+      - key: revenue_streams
+
+  - deck_position: 6
+    potx_slide: 6
+    bc_section: "exec_summary"
+    type: slide
+    layout: dashboard
+    fields:
+      - key: scope
+      - key: goals_adoption
+      - key: goals_operational
+      - key: goals_guardrails
+      - key: financial_revenue_y1
+      - key: financial_revenue_y2
+      - key: financial_revenue_y3
+      - key: financial_revenue_3y
+      - key: financial_arr_exit
+      - key: financial_margin
+      - key: financial_arpu
+      - key: assumptions_sales
+      - key: assumptions_technical
+      - key: assumptions_tco
+      - key: assumptions_gonogo
+      - key: risks_commercial
+      - key: risks_operational
+      - key: risks_technical
+      - key: risks_partner
+      - key: milestones
+
+  # ===== S1 BUSINESS MODEL =====
+  - deck_position: 7
+    potx_slide: 10
+    bc_section: "s1_background"
+    type: smartart
+    layout: cards_5col
+    fields:
+      - key: trigger
+      - key: prior_work
+      - key: evidence
+      - key: opportunity
+      - key: decision_required
+
+  - deck_position: 8
+    potx_slide: 13
+    bc_section: "s1_problem"
+    type: slide
+    layout: content_1col
+    fields:
+      - key: problem_statement
+      - key: pain_points
+      - key: cost_of_inaction
+      - key: validated_capabilities
+
+  # ===== S2 STRATEGIC CONTEXT =====
+  - deck_position: 9
+    potx_slide: 11
+    bc_section: "s2_strategy"
+    type: slide
+    layout: content_2col
+    fields:
+      - key: left_strategy_alignment
+      - key: right_outcome_intents
+
+  - deck_position: 10
+    potx_slide: 12
+    bc_section: "s2_kill_criteria"
+    type: slide
+    layout: content_2col
+    fields:
+      - key: left_portfolio_fit
+      - key: right_kill_criteria
+      - key: gate_decision
+
+  # ===== S3 MARKET CONTEXT =====
+  - deck_position: 11
+    potx_slide: 18
+    bc_section: "s5_commercial_value"
+    type: slide
+    layout: content_2col
+    fields:
+      - key: left_revenue_transformation
+      - key: right_revenue_quality_mix
+
+  - deck_position: 12
+    potx_slide: 27
+    bc_section: "s9_wave_gates"
+    type: table
+    layout: table
+    fields:
+      - key: wave1_gate
+      - key: wave2_gate
+      - key: wave3_gate
+
+  - deck_position: 13
+    potx_slide: 9
+    bc_section: "s3_competitive"
+    type: slide
+    layout: content_1col
+    fields:
+      - key: competitors
+      - key: competitive_moat
+
+  # ===== S4 FINANCIAL + S5 COMMERCIAL =====
+  - deck_position: 14
+    potx_slide: 20
+    bc_section: "s5_commercial_detail"
+    type: smartart
+    layout: cards_4col
+    fields:
+      - key: sales_expansion_motion
+      - key: deal_profile
+      - key: economic_value
+      - key: governance
+
+  - deck_position: 15
+    potx_slide: 15
+    bc_section: "s5_commercial_model"
+    type: slide
+    layout: content_2col
+    fields:
+      - key: revenue_quality
+      - key: chosen_model
+
+  - deck_position: 16
+    potx_slide: 14
+    bc_section: "s1_offering_overview"
+    type: smartart
+    layout: cards_4col
+    fields:
+      - key: problem_solution_fit
+      - key: whats_included
+      - key: whats_excluded
+      - key: target_customers
+
+  - deck_position: 17
+    potx_slide: 21
+    bc_section: "s4_adoption"
+    type: smartart
+    layout: cards_3col
+    fields:
+      - key: rgu_base
+      - key: deployment_schedule
+      - key: adoption_drivers
+
+  - deck_position: 18
+    potx_slide: 22
+    bc_section: "s4_revenue_build"
+    type: smartart
+    layout: cards_4col
+    fields:
+      - key: recurring_revenue
+      - key: non_recurring_revenue
+      - key: revenue_by_year
+      - key: revenue_composition
+
+  - deck_position: 19
+    potx_slide: 15
+    bc_section: "s4_sku_pricing"
+    type: slide
+    layout: table_diagram
+    fields:
+      - key: products_services_table
+      - key: resources_table
+
+  - deck_position: 20
+    potx_slide: 23
+    bc_section: "s4_cost_structure"
+    type: smartart
+    layout: cards_2col
+    fields:
+      - key: per_vm_cost
+      - key: per_site_setup
+
+  - deck_position: 21
+    potx_slide: 30
+    bc_section: "s4_rgu_allocation"
+    type: table
+    layout: table
+    fields:
+      - key: segment_rows
+      - key: wave_totals
+      - key: grand_total
+
+  - deck_position: 22
+    potx_slide: 38
+    bc_section: "s4_consolidated_forecast"
+    type: table
+    layout: table
+    fields:
+      - key: segment_rows
+      - key: wave_subtotals
+      - key: total_row
+
+  - deck_position: 23
+    potx_slide: 24
+    bc_section: "s4_margin"
+    type: table
+    layout: table
+    fields:
+      - key: margin_rows
+      - key: margin_durability
+
+  - deck_position: 24
+    potx_slide: 25
+    bc_section: "s4_investment_return"
+    type: smartart
+    layout: cards_4col
+    fields:
+      - key: cit_investment
+      - key: operating_cost
+      - key: return_logic
+      - key: break_even
+
+  - deck_position: 25
+    potx_slide: 28
+    bc_section: "s4_sensitivity"
+    type: slide
+    layout: content_1col
+    fields:
+      - key: sensitivity_table
+      - key: scenario_analysis
+      - key: downside
+
+  - deck_position: 26
+    potx_slide: 19
+    bc_section: "s3_market_sizing"
+    type: slide
+    layout: market_dark
+    fields:
+      - key: tam
+      - key: sam
+      - key: som
+      - key: segments
+
+  # ===== S6 ASSUMPTIONS =====
+  - deck_position: 27
+    potx_slide: 39
+    bc_section: "s6_assumptions"
+    type: slide
+    layout: dashboard
+    fields:
+      - key: cost_assumptions
+      - key: pricing_margin
+      - key: service_delivery
+      - key: deployment_adoption
+      - key: crew_model
+      - key: fleet_size
+
+  # ===== S7 CAPABILITY MATRIX =====
+  - deck_position: 28
+    potx_slide: 9
+    bc_section: "s7_capability_matrix"
+    type: slide
+    layout: matrix_dark
+    fields:
+      - key: capability_rows
+      - key: platform_columns
+      - key: recommendation
+
+  # ===== S8 SALES & DELIVERY READINESS =====
+  - deck_position: 29
+    potx_slide: 40
+    bc_section: "s8_sales_readiness"
+    type: slide
+    layout: content_diagram
+    fields:
+      - key: tier_positioning
+      - key: entry_motion
+      - key: expansion_motion
+
+  - deck_position: 30
+    potx_slide: 46
+    bc_section: "s8_delivery_readiness"
+    type: smartart
+    layout: cards_3col
+    fields:
+      - key: delivery_ownership
+      - key: itsm_platform
+      - key: standardized_vs_bespoke
+
+  - deck_position: 31
+    potx_slide: 50
+    bc_section: "s8_capability_check"
+    type: table
+    layout: table
+    fields:
+      - key: people
+      - key: process
+      - key: platform
+      - key: partner
+
+  - deck_position: 32
+    potx_slide: 49
+    bc_section: "s8_fte"
+    type: table
+    layout: table
+    fields:
+      - key: fte_rows
+      - key: total_row
+
+  # ===== S9 RISKS =====
+  - deck_position: 33
+    potx_slide: 56
+    bc_section: "s9_risk_1"
+    type: slide
+    layout: risk_card
+    fields:
+      - key: risk_name
+      - key: impact
+      - key: likelihood
+      - key: overall
+      - key: why_high
+      - key: leading_indicators
+      - key: kill_pause
+      - key: decision_owner
+
+  - deck_position: 34
+    potx_slide: 61
+    bc_section: "s9_risk_heat_map"
+    type: table
+    layout: table
+    fields:
+      - key: risk_rows
+      - key: summary
+
+  - deck_position: 35
+    potx_slide: 64
+    bc_section: "s10_kpis"
+    type: table
+    layout: table
+    fields:
+      - key: kpi_rows
+
+  - deck_position: 36
+    potx_slide: 65
+    bc_section: "s10_governance"
+    type: table
+    layout: table
+    fields:
+      - key: governance_rows
+      - key: decision_framework
+
+  # ===== S11 ROADMAP =====
+  - deck_position: 37
+    potx_slide: 62
+    bc_section: "s12_investment_phasing"
+    type: smartart
+    layout: cards_3col
+    fields:
+      - key: phase_explore
+      - key: phase_pilot
+      - key: phase_scale
+
+  # ===== CLOSING =====
+  - deck_position: 38
+    potx_slide: 74
+    bc_section: null
+    type: static
+    layout: closing_dark
+    fields: []  # Thank You slide, no injection

@@ -1,3 +1,9 @@
 [submodule ".ai-playbook"]
 	path = .ai-playbook
 	url = https://github.com/Wizarck/ai-playbook.git
+[submodule ".skills-sources/ai-playbook"]
+	path = .skills-sources/ai-playbook
+	url = https://github.com/Wizarck/ai-playbook.git
+[submodule ".skills-sources/eligia-skills"]
+	path = .skills-sources/eligia-skills
+	url = https://github.com/Wizarck/eligia-skills.git
