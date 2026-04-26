@@ -1,0 +1,3 @@
+[submodule ".ai-playbook"]
+	path = .ai-playbook
+	url = https://github.com/Wizarck/ai-playbook.git

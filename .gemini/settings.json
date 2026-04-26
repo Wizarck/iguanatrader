@@ -1,0 +1,78 @@
+{
+  "mcpServers": {
+    "atlassian": {
+      "env": {
+        "ATLASSIAN_API_TOKEN": "${ATLASSIAN_API_TOKEN}",
+        "ATLASSIAN_URL": "${ATLASSIAN_URL}"
+      }
+    },
+    "atlassian-geeplo": {},
+    "camoufox": {
+      "command": "npx -y camoufox-mcp-server"
+    },
+    "context7": {},
+    "crm": {
+      "env": {
+        "TWENTY_API_KEY": "${TWENTY_API_KEY}",
+        "TWENTY_API_URL": "${TWENTY_API_URL}"
+      }
+    },
+    "google-workspace": {
+      "env": {
+        "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GOOGLE_OAUTH_TOKEN": "${GOOGLE_OAUTH_TOKEN}"
+      }
+    },
+    "google-workspace-arturo": {},
+    "google-workspace-palafito": {},
+    "guardrails-mcp": {
+      "env": {
+        "GUARDRAILS_API_KEY": "${GUARDRAILS_API_KEY}",
+        "GUARDRAILS_URL": "${GUARDRAILS_URL}"
+      }
+    },
+    "hindsight": {
+      "env": {
+        "CF_ACCESS_CLIENT_ID": "${CF_ACCESS_CLIENT_ID}",
+        "CF_ACCESS_CLIENT_SECRET": "${CF_ACCESS_CLIENT_SECRET}",
+        "HINDSIGHT_BANK_ID": "${HINDSIGHT_BANK_ID}",
+        "HINDSIGHT_URL": "${HINDSIGHT_URL}"
+      },
+      "httpUrl": "https://eligia-hindsight.palafitofood.com"
+    },
+    "litellm": {
+      "env": {
+        "LITELLM_MASTER_KEY": "${LITELLM_MASTER_KEY}",
+        "LITELLM_URL": "${LITELLM_URL}"
+      }
+    },
+    "miro": {},
+    "ms365-onedrive": {
+      "command": "npx -y @softeria/ms-365-mcp-server"
+    },
+    "notebooklm": {},
+    "paperclip": {},
+    "rag": {
+      "env": {
+        "RAG_VAULT_PATH": "${RAG_VAULT_PATH}"
+      }
+    },
+    "skills-manager": {},
+    "skills-registry": {
+      "env": {
+        "SKILLS_REGISTRY_URL": "${SKILLS_REGISTRY_URL}"
+      }
+    },
+    "trello": {
+      "command": "npx -y trello-mcp",
+      "env": {
+        "TRELLO_API_KEY": "${TRELLO_API_KEY}",
+        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
+      }
+    },
+    "tspoonlab": {},
+    "twenty-crm": {},
+    "whatsapp": {},
+    "woocommerce": {}
+  }
+}

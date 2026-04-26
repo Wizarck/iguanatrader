@@ -1,0 +1,153 @@
+{
+  "mcpServers": {
+    "atlassian": {
+      "auth": "cf-access",
+      "env_optional": [
+        "ATLASSIAN_USERNAME",
+        "ATLASSIAN_DEFAULT_PROJECT"
+      ],
+      "env_required": [
+        "ATLASSIAN_URL",
+        "ATLASSIAN_API_TOKEN"
+      ],
+      "transport": "http"
+    },
+    "atlassian-geeplo": {
+      "transport": "http"
+    },
+    "camoufox": {
+      "command": "npx -y camoufox-mcp-server",
+      "transport": "stdio"
+    },
+    "context7": {
+      "transport": "http"
+    },
+    "crm": {
+      "auth": "bearer",
+      "env_optional": [
+        "TWENTY_DEFAULT_WORKSPACE"
+      ],
+      "env_required": [
+        "TWENTY_API_URL",
+        "TWENTY_API_KEY"
+      ],
+      "transport": "http"
+    },
+    "google-workspace": {
+      "auth": "oauth",
+      "env_optional": [
+        "GOOGLE_CLIENT_SECRET",
+        "GOOGLE_REFRESH_TOKEN"
+      ],
+      "env_required": [
+        "GOOGLE_OAUTH_TOKEN",
+        "GOOGLE_CLIENT_ID"
+      ],
+      "transport": "http"
+    },
+    "google-workspace-arturo": {
+      "transport": "http"
+    },
+    "google-workspace-palafito": {
+      "transport": "http"
+    },
+    "guardrails-mcp": {
+      "auth": "bearer",
+      "env_optional": [
+        "GUARDRAILS_POLICY_PROFILE"
+      ],
+      "env_required": [
+        "GUARDRAILS_URL",
+        "GUARDRAILS_API_KEY"
+      ],
+      "transport": "http"
+    },
+    "hindsight": {
+      "auth": "cf-access",
+      "env_optional": [
+        "HINDSIGHT_TIMEOUT_MS"
+      ],
+      "env_required": [
+        "HINDSIGHT_URL",
+        "HINDSIGHT_BANK_ID",
+        "CF_ACCESS_CLIENT_ID",
+        "CF_ACCESS_CLIENT_SECRET"
+      ],
+      "transport": "http",
+      "url": "https://eligia-hindsight.palafitofood.com"
+    },
+    "litellm": {
+      "auth": "bearer",
+      "env_optional": [
+        "LITELLM_PROJECT",
+        "LITELLM_DEFAULT_MODEL"
+      ],
+      "env_required": [
+        "LITELLM_URL",
+        "LITELLM_MASTER_KEY"
+      ],
+      "transport": "http"
+    },
+    "miro": {
+      "transport": "http"
+    },
+    "ms365-onedrive": {
+      "command": "npx -y @softeria/ms-365-mcp-server",
+      "transport": "stdio"
+    },
+    "notebooklm": {
+      "transport": "http"
+    },
+    "paperclip": {
+      "transport": "http"
+    },
+    "rag": {
+      "auth": "none",
+      "env_optional": [
+        "RAG_INDEX_PATH",
+        "RAG_TOP_K"
+      ],
+      "env_required": [
+        "RAG_VAULT_PATH"
+      ],
+      "transport": "sse"
+    },
+    "skills-manager": {
+      "transport": "http"
+    },
+    "skills-registry": {
+      "auth": "none",
+      "env_optional": [
+        "SKILLS_REGISTRY_API_KEY"
+      ],
+      "env_required": [
+        "SKILLS_REGISTRY_URL"
+      ],
+      "transport": "http"
+    },
+    "trello": {
+      "auth": "bearer",
+      "command": "npx -y trello-mcp",
+      "env_optional": [
+        "TRELLO_DEFAULT_BOARD_ID"
+      ],
+      "env_required": [
+        "TRELLO_API_KEY",
+        "TRELLO_TOKEN"
+      ],
+      "transport": "stdio"
+    },
+    "tspoonlab": {
+      "transport": "http"
+    },
+    "twenty-crm": {
+      "transport": "http"
+    },
+    "whatsapp": {
+      "transport": "streamable-http"
+    },
+    "woocommerce": {
+      "transport": "http"
+    }
+  }
+}

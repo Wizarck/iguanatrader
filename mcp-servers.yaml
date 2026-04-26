@@ -1,0 +1,10 @@
+# mcp-servers.yaml — PROJECT layer for iguanatrader.
+# Merged with ai-playbook/mcp-servers-base.yaml (universal) and personal layer
+# via `python .ai-playbook/scripts/mcp/render.py --project iguanatrader`.
+
+schema: mcp-servers/v1
+version: 0.1.0
+layer: project
+project: iguanatrader
+
+servers: {}
