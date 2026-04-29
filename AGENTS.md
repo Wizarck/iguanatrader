@@ -78,7 +78,17 @@ Rendered to [`.mcp.json`](.mcp.json) + [`.gemini/settings.json`](.gemini/setting
 
 ## 7 Overrides inherited from playbook
 
-none — el proyecto sigue al 100% las normas universales del playbook. Cualquier override futuro se documentará aquí con razón explícita.
+### Override 1 (2026-04-28) — §4 hard rule "paper-trading antes que live" relaxed to recommendation
+
+**What is overridden**: AGENTS.md §4 hard rule "Sandbox / paper-trading antes que live. Toda nueva estrategia se valida primero contra paper trading del exchange ... o backtesting histórico. Ningún despliegue a producción sin un período mínimo de paper-trading documentado en la OpenSpec change."
+
+**New behavior**: paper trading remains the **strongly recommended** path before live trading. It is **no longer mandatory**. The user retains final authority on whether to skip paper and go directly to live. CLI surface MUST require explicit `--confirm-live --i-understand-the-risks` flag for live deployment without prior paper history; absence of paper-trading record in `audit_log` → CLI emits **WARNING with risk acknowledgment text**, not block.
+
+**Rationale**: Arturo (sole MVP user) is a discretionary trader with full risk authority and accepts the consequences of skipping paper. v3 SaaS retains the same authority via per-user setting. Bus factor 1 + 3-4 month MVP budget makes mandatory paper period a misaligned friction. Backtest gate was also evaluated and explicitly skipped from MVP scope (decision 2026-04-28); paper trading remains the only validation discipline available, recommended but not enforced.
+
+**Recommendation invariant**: The system ALWAYS recommends paper trading. The user can override per-strategy. `audit_log` records the override decision with timestamp, strategy reference, and the literal risk acknowledgment text typed by the user.
+
+**Reverts to default**: If/when v3 SaaS exposes the system to non-Arturo users with potentially less risk literacy, this override may need to be narrowed to `admin`-role users only, with §4 behavior restored as mandatory for `user`-role accounts. The decision is logged in `docs/hitl-gates-log.md` Gate A amendment 2026-04-28.
 
 ## 8 Gotchas
 
