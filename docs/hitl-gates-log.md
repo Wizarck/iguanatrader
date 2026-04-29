@@ -100,7 +100,7 @@ Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runboo
 - **Date**: 2026-04-28
 - **Approved by**: Arturo Ramírez (arturo6ramirez@gmail.com)
 - **Artefact(s) approved**:
-  - [`docs/openspec-slice-plan.md`](openspec-slice-plan.md) — 20 slices, 4 parallel waves, max 7 simultaneous agents per wave
+  - [`docs/openspec-slice.md`](openspec-slice.md) — 20 changes, 4 parallel waves, max 7 simultaneous agents per wave (canonical schema per `.ai-playbook/specs/bmad-openspec-bridge.md` §3.1; renamed from `openspec-slice-plan.md` 2026-04-29 for runbook compliance)
   - Optimization target confirmed: **maximum-parallelism-with-disjoint-write-paths** (over cohesion + reviewability per single-dev assumption)
   - Anti-collision patterns confirmed for slice 5 (`api-foundation-rfc7807`):
     - API routes auto-discovery via `pkgutil.iter_modules` in `routes/__init__.py`

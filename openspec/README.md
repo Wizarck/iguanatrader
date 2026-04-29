@@ -11,7 +11,7 @@ OpenSpec implementation phase artefacts. Initialized 2026-04-28 post Gate C appr
 
 ## Layout
 
-- `changes/<slice-id>/` — active OpenSpec changes (one per slice from [docs/openspec-slice-plan.md](../docs/openspec-slice-plan.md)). Each contains `proposal.md` + `specs/<capability>/spec.md` + `design.md` + `tasks.md` per `.ai-playbook/specs/runbook-bmad-openspec.md` §3.1.
+- `changes/<slice-id>/` — active OpenSpec changes (one per slice from [docs/openspec-slice.md](../docs/openspec-slice.md)). Each contains `proposal.md` + `specs/<capability>/spec.md` + `design.md` + `tasks.md` per `.ai-playbook/specs/runbook-bmad-openspec.md` §3.1.
 - `specs/` — archived spec capabilities (promoted via `/opsx:archive` after change is implemented + merged + retro completed). Hand-edits blocked by `.ai-playbook/scripts/block_manual_spec_edit.py`.
 - `retros/<slice-id>.md` — post-archive retrospectives per slice + weekly + monthly per `.ai-playbook/specs/retrospective-cadence.md`.
 
@@ -21,7 +21,7 @@ OpenSpec implementation phase artefacts. Initialized 2026-04-28 post Gate C appr
 
 ## Slice plan reference
 
-See [docs/openspec-slice-plan.md](../docs/openspec-slice-plan.md) for the full 20-slice catalogue with dependency graph + waves.
+See [docs/openspec-slice.md](../docs/openspec-slice.md) for the full 20-change catalogue with dependency graph + waves (canonical schema per `.ai-playbook/specs/bmad-openspec-bridge.md` §3.1).
 
 ## Workflow
 

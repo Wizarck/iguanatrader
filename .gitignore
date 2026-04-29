@@ -13,3 +13,6 @@
 .claude/skills/
 .gemini/skills/
 .skills-sources/
+
+# Node — minimal stub before slice 1 (bootstrap-monorepo) expands this
+node_modules/
