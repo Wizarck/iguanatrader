@@ -1,10 +1,6 @@
 ---
 name: service
-description: >
-  Develops Solution Design (SoD), Service Design (SD), Operational Playbook (OP),
-  and Offer Description (OD) documents step-by-step. SoD covers architectural design
-  (HLD/LLD); SD covers TMF decomposition (CFS/RFS/Resources). Two-phase: Draft in
-  Formulation, Final in Execution.
+description: Use when the user wants to draft or finalise an offering's Solution Design (SoD), Service Design (SD), Operational Playbook (OP), or Offer Description (OD).
 argument-hint: "[offering-id]"
 disable-model-invocation: true
 model: opus

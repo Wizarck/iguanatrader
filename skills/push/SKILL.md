@@ -1,6 +1,6 @@
 ---
 name: push
-description: "Stage all changes, generate commit message, commit, and push to remote."
+description: "Use when the user wants all local changes staged, committed with an auto-generated message, and pushed to remote in one step."
 argument-hint: "[optional commit message]"
 model: sonnet
 context: fork

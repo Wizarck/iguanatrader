@@ -1,9 +1,6 @@
 ---
 name: ideation-deck
-description: >
-  Creates the Ideation Deck — a draft Sales Enablement Deck used to pitch the
-  offering idea to an internal board before PoT/PoC validation. Produced at
-  Step 10 (end of Exploration, before RFE milestone). Complementary to BS .pptx.
+description: Use when the user wants to draft an Ideation Deck for an offering's internal board pitch — the Step 10 deliverable that gates entry into Formulation.
 argument-hint: "[offering-id]"
 model: claude-sonnet-4-6
 allowed-tools: Read, Glob, Grep, Write, Edit

@@ -1,10 +1,6 @@
 ---
 name: qa-pptx
-description: >
-  Validates PPTX slide content and visual quality. Renders slides to images,
-  checks for overlapping elements, empty areas, data mismatches, style issues.
-  Called by /bc-to-pptx during generation. Can also be invoked standalone for
-  any PPTX visual inspection. Inspects 3 slides per invocation.
+description: Use after generating or editing a PPTX (or invoked by /bc-to-pptx) to visually inspect slides for overlaps, empty areas, data mismatches, and style issues.
 model: sonnet
 context: fork
 allowed-tools: "Read, Bash, Glob, Grep, mcp__hindsight__recall"

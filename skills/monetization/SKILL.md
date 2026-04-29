@@ -1,10 +1,6 @@
 ---
 name: monetization
-description: >
-  Develops the Monetization Model for offerings: pricing architecture, rate cards,
-  CPQ configuration, billing operations, channel & partner economics, sales
-  incentives, and contract framework. Source of truth for commercial operations —
-  BC §5.7-5.8 are summaries referencing this document.
+description: Use when the user wants to design or update an offering's MONETIZATION_MODEL.md (pricing, rate cards, CPQ, billing, channel/partner economics, contracts).
 argument-hint: "[offering-id]"
 model: claude-opus-4-6
 allowed-tools: Read, Glob, Grep, Write, Edit

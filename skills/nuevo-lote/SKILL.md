@@ -1,10 +1,6 @@
 ---
 name: nuevo-lote
-description: >
-  Registra un nuevo lote de producción de pastelitos maracuchos. Asigna número
-  de lote automáticamente, recoge datos reales de ingredientes, masa, rendimiento
-  y QA, calcula costes y genera un fichero de registro en
-  01_produccion/data/lotes/.
+description: Úsalo cuando el usuario quiere registrar un nuevo lote de producción de pastelitos y obtener su ficha de costes y QA.
 argument-hint: "[sabor]  (opcional: pollo|carne|queso|vegano)"
 ---
 

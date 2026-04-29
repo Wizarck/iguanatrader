@@ -1,8 +1,6 @@
 ---
 name: qa-enablement
-description: >
-  Validates enablement plans (SALES, PRE_SALE, OPS): BU data alignment, delivery center consistency,
-  TCO completeness, capacity model soundness, capability mapping coverage.
+description: Use after creating or updating an offering's SALES_ENABLEMENT.md, PRE_SALE_ENABLEMENT.md, or OPS_ENABLEMENT.md to validate BU alignment, TCO completeness, and capability mapping.
 model: claude-sonnet-4-6
 context: fork
 allowed-tools: Read, Glob, Grep, mcp__hindsight__recall

@@ -1,9 +1,6 @@
 ---
 name: check-updates
-description: >
-  Checks all ELIGIA stack components for available updates (Docker images, Python packages,
-  git repos, skills-manager.exe, Hermes, npm). Applies safe Docker updates with healthcheck
-  and automatic rollback. Sends formatted report via WhatsApp.
+description: Use when the user wants to check the ELIGIA stack for outdated components (Docker, Python, git repos, npm) and apply safe updates with healthcheck rollback.
 model: sonnet
 allowed-tools: Bash
 ---

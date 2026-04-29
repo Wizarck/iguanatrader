@@ -1,6 +1,6 @@
 ---
 name: start-palafito
-description: "Arranca Docker Desktop si no está corriendo y despliega el stack de Paperclip palafito-prod."
+description: "Úsalo cuando el usuario quiere arrancar el stack palafito-prod (Paperclip) y, si hace falta, levantar Docker Desktop antes."
 model: sonnet
 context: fork
 allowed-tools: Bash

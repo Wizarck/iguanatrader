@@ -1,11 +1,6 @@
 ---
 name: enablement
-description: >
-  Develops Pre-Sale, Sales, and Ops Enablement Plans for offerings (replaces old CE+TE).
-  Reads BU intelligence, delivery center model, and offering context
-  to produce PRE_SALE_ENABLEMENT.md, SALES_ENABLEMENT_PLAYBOOK.md, and OPS_ENABLEMENT.md.
-  Also produces BATTLECARD.md and ONE_PAGER.md as independent JIRA-trackable deliverables.
-  Includes capability-to-enablement mapping for certifications and profiles.
+description: Use when the user wants to draft or refresh an offering's enablement plans (Pre-Sale, Sales, Ops) plus the Battlecard and One-Pager.
 argument-hint: "[offering-id]"
 model: claude-opus-4-6
 allowed-tools: Read, Glob, Grep, Write, Edit, Skill, Bash

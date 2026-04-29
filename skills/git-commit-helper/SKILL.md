@@ -1,6 +1,6 @@
 ---
 name: git-commit-helper
-description: Creates clear, conventional commit messages following best practices with semantic versioning awareness and detailed change descriptions
+description: Use when the user wants a Conventional Commits message drafted (or rewritten) for staged changes, including type/scope/breaking-change footers.
 model: haiku
 ---
 

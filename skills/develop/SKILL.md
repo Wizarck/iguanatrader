@@ -1,9 +1,6 @@
 ---
 name: develop
-description: >
-  Orchestrates step-by-step offering development following the modular analysis
-  framework. Coordinates other agents for complete offering development from
-  research through business case.
+description: Use when the user wants to start, resume, or advance a GTM offering through the 38-step development pipeline (Exploration → Formulation → Execution).
 argument-hint: "[offering-id]"
 disable-model-invocation: true
 model: claude-opus-4-6
