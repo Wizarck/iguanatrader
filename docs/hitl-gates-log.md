@@ -125,9 +125,30 @@ Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runboo
 
 ---
 
+### Gate E — Pre-apply (slice 1: bootstrap-monorepo)
+
+- **Date**: 2026-04-29
+- **Approved by**: Arturo Ramírez (arturo6ramirez@gmail.com)
+- **Artefact(s) approved**:
+  - [`openspec/changes/bootstrap-monorepo/proposal.md`](../openspec/changes/bootstrap-monorepo/proposal.md) — 3 New Capabilities (`monorepo-tooling`, `secrets-baseline`, `compliance-baseline`); foundation NFRs (NFR-S1, NFR-S2, NFR-M9)
+  - [`openspec/changes/bootstrap-monorepo/design.md`](../openspec/changes/bootstrap-monorepo/design.md) — 8 decisions (Poetry workspaces, pnpm 9, four standalone compose files, SOPS+age, hook ordering gitleaks-first, Makefile + per-package includes, ADR placeholders strategy, LICENSE byte-verified)
+  - [`openspec/changes/bootstrap-monorepo/specs/monorepo-tooling/spec.md`](../openspec/changes/bootstrap-monorepo/specs/monorepo-tooling/spec.md) — 6 requirements / 13 scenarios
+  - [`openspec/changes/bootstrap-monorepo/specs/secrets-baseline/spec.md`](../openspec/changes/bootstrap-monorepo/specs/secrets-baseline/spec.md) — 3 requirements / 5 scenarios
+  - [`openspec/changes/bootstrap-monorepo/specs/compliance-baseline/spec.md`](../openspec/changes/bootstrap-monorepo/specs/compliance-baseline/spec.md) — 6 requirements / 8 scenarios
+  - [`openspec/changes/bootstrap-monorepo/tasks.md`](../openspec/changes/bootstrap-monorepo/tasks.md) — 11 task groups, 50 tracked tasks
+- **Session**: claude-code session continuation post-compact 2026-04-29; `npx openspec validate bootstrap-monorepo` → valid
+- **Decision**: ✅ approved
+- **Conditions / notes**:
+  - Release management model confirmed: **1 rama = 1 slice = 1 PR**, NOT one branch per task. Tasks live as a checklist inside the slice's PR; reviewer approves once at the end (Gate F).
+  - GH Project #2 "iguanatrader" tracks the **20 slices** as items (one per slice), not the 50+ tasks per slice. Status field will be expanded with "Review" and "Blocked" options before items are created.
+  - CI verde es prerequisito para que el PR pase de "In Progress" → "Review" en el Project board.
+  - Order of merge governed by the dependency graph in `docs/openspec-slice.md`: Wave 0 sequential (1→2→3) → Wave 1 parallel (4║5) → Wave 2 parallel (×6) → Wave 3 parallel (×7) → Wave 4 parallel (×2).
+- **Retroactive?**: no
+
+---
+
 ## Pending gates
 
-- **Gates D/E/F** — per-OpenSpec-change: opened when each `/opsx:propose <slice-id>` runs:
-  - **Gate D** (per artefact): QA subagent verdict ✅/⚠️/❓ on `proposal.md` → `specs/*.md` || `design.md` → `tasks.md`
-  - **Gate E** (pre-apply): human approves `tasks.md` + readiness check before `/opsx:apply`
+- **Gates D/F** — per-OpenSpec-change (continuing per slice):
+  - **Gate D** (per artefact): QA subagent verdict ✅/⚠️/❓ on `proposal.md` → `specs/*.md` || `design.md` → `tasks.md` (deferred for slice 1 since artefacts were authored interactively + validated; will run for slices 2+)
   - **Gate F** (pre-archive): human approves implementation diff + tests + retro draft before `/opsx:archive`
