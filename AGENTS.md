@@ -5,7 +5,7 @@ inherits_from:
   - github.com/Wizarck/ai-playbook@v0.5.0
 skills_sources:
   - Wizarck/ai-playbook@v0.5.0
-  - Wizarck/eligia-skills@v0.2.0
+  - Wizarck/eligia-skills@v0.3.0
 updated: 2026-04-26
 project: iguanatrader
 owner: arturo6ramirez@gmail.com
