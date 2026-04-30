@@ -127,9 +127,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install Poetry + pre-commit
+      - name: Install Poetry + pre-commit + playbook hook deps
+        # `jsonschema` + `pyyaml` are imported by .ai-playbook/scripts/
+        # schema_validate.py (system-language pre-commit hook); without them
+        # schema-validate-agents exits with WHY=missing-dep.
         run: |
-          pip install poetry pre-commit
+          pip install poetry pre-commit jsonschema pyyaml
           poetry install --no-interaction --only=dev
       - name: Run pre-commit
+        # Skip mcp-validate in CI: the hook re-renders mcp-servers from the
+        # 3-layer SSOT (base + project + personal) and compares against the
+        # committed .mcp.json. CI has no personal layer (~/.config/mcp-
+        # servers.yaml) so the render diverges by design. The hook still
+        # runs locally on every commit by individual developers.
+        env:
+          SKIP: mcp-validate
         run: pre-commit run --all-files --show-diff-on-failure
