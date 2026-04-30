@@ -29,25 +29,25 @@ The iguanatrader MVP — algorithmic trading bot, paper-first → live IBKR — 
 | #  | Change ID                          | Bounded context | FRs                              | Journeys (if UI)        | Components (if UI)                                          | Depends on |
 |----|------------------------------------|------------------|----------------------------------|-------------------------|-------------------------------------------------------------|------------|
 | 1  | `bootstrap-monorepo`               | shared kernel   | (foundation: NFR-S1, NFR-S2, NFR-M9) | —                   | —                                                           | —          |
-| 2  | `shared-primitives`                | shared kernel   | (foundation: NFR-P8, NFR-R7, NFR-I2, NFR-I5, NFR-O2) | —    | —                                                           | 1          |
-| 3  | `persistence-tenant-enforcement`   | shared kernel   | FR46-FR49 (+NFR-SC1, NFR-SC2)    | (infra)                 | —                                                           | 2          |
-| 4  | `auth-jwt-cookie`                  | shared kernel   | FR31, FR38 (+NFR-S3-S5)          | J1 (login surface)      | —                                                           | 3          |
-| 5  | `api-foundation-rfc7807`           | shared kernel   | (foundation: NFR-P7, NFR-O8)     | (infra)                 | —                                                           | 3          |
-| R1 | `research-bitemporal-schema`       | research        | FR68-FR70, FR73 (+NFR-O8)        | (infra)                 | —                                                           | 5          |
-| T1 | `trading-models-interfaces`        | trading         | FR1-FR5, FR11, FR14, FR46        | (infra)                 | —                                                           | 5          |
-| K1 | `risk-engine-protections`          | risk            | FR19-FR30 (+NFR-R5, NFR-R6)      | (infra)                 | —                                                           | 5          |
-| P1 | `approval-channels-multichannel`   | approval        | FR12, FR13, FR31-FR38 (+NFR-I5, NFR-I6) | J2 (approval flow) | —                                                           | 5          |
-| O1 | `observability-cost-meter`         | observability   | FR39-FR42 (+NFR-O1, NFR-O3, NFR-O4, NFR-O7, NFR-I3, NFR-I4) | (infra) | —                                                       | 5          |
-| W1 | `dashboard-svelte-skeleton`        | shared kernel (UI) | FR54, FR55 (+NFR-P7)          | J1 (skeleton), J2 (skeleton) | Sidebar (dynamic), base layout, +error.svelte         | 4, 5       |
-| R2 | `research-edgar-fred-adapters`     | research        | FR59, FR60                       | (infra)                 | —                                                           | R1         |
-| R3 | `research-news-catalysts-adapters` | research        | FR61-FR67, FR77-FR79             | (infra)                 | —                                                           | R1         |
-| R4 | `openbb-sidecar-container`         | research        | FR76 (ADR-015)                   | (infra)                 | —                                                           | 1          |
-| R5 | `research-brief-synthesis`         | research        | FR58, FR71-FR75 (+NFR-P9, NFR-O8) | J3 (briefings)         | BriefHeader, FactTimeline, CitationLink, AuditTrailViewer, MethodologyBadge | R1 (mocks R2-R4) |
-| T2 | `ibkr-adapter-resilient`           | trading         | FR14-FR16 (+NFR-R2, NFR-R7, NFR-I1, NFR-I2, NFR-P8) | (infra) | —                                                       | T1         |
-| T3 | `donchian-strategy-mvp`            | trading         | FR1-FR5, FR11                    | (infra)                 | —                                                           | T1         |
-| O2 | `orchestration-scheduler-routines` | orchestration   | FR33-FR35, FR43, FR44 (+NFR-P3, NFR-P4) | (infra)         | —                                                           | O1         |
-| R6 | `hindsight-integration`            | research        | FR51, FR80, FR81 (+NFR-I8)       | Settings (UI toggle)    | Settings page (feature_flags toggle)                        | R5         |
-| T4 | `trading-routes-and-daemon`        | trading         | FR12-FR18, FR50, FR52-FR56       | J1 (portfolio/trades), J2 (proposals) | trades/portfolio/strategies routes (no new named components) | T1, T2, T3 |
+| 2  | `shared-primitives`                | shared kernel   | (foundation: NFR-P8, NFR-R7, NFR-I2, NFR-I5, NFR-O2) | —    | —                                                           | `bootstrap-monorepo` |
+| 3  | `persistence-tenant-enforcement`   | shared kernel   | FR46-FR49 (+NFR-SC1, NFR-SC2)    | (infra)                 | —                                                           | `shared-primitives` |
+| 4  | `auth-jwt-cookie`                  | shared kernel   | FR31, FR38 (+NFR-S3-S5)          | J1 (login surface)      | —                                                           | `persistence-tenant-enforcement` |
+| 5  | `api-foundation-rfc7807`           | shared kernel   | (foundation: NFR-P7, NFR-O8)     | (infra)                 | —                                                           | `persistence-tenant-enforcement` |
+| R1 | `research-bitemporal-schema`       | research        | FR68-FR70, FR73 (+NFR-O8)        | (infra)                 | —                                                           | `api-foundation-rfc7807` |
+| T1 | `trading-models-interfaces`        | trading         | FR1-FR5, FR11, FR14, FR46        | (infra)                 | —                                                           | `api-foundation-rfc7807` |
+| K1 | `risk-engine-protections`          | risk            | FR19-FR30 (+NFR-R5, NFR-R6)      | (infra)                 | —                                                           | `api-foundation-rfc7807` |
+| P1 | `approval-channels-multichannel`   | approval        | FR12, FR13, FR31-FR38 (+NFR-I5, NFR-I6) | J2 (approval flow) | —                                                           | `api-foundation-rfc7807` |
+| O1 | `observability-cost-meter`         | observability   | FR39-FR42 (+NFR-O1, NFR-O3, NFR-O4, NFR-O7, NFR-I3, NFR-I4) | (infra) | —                                                       | `api-foundation-rfc7807` |
+| W1 | `dashboard-svelte-skeleton`        | shared kernel (UI) | FR54, FR55 (+NFR-P7)          | J1 (skeleton), J2 (skeleton) | Sidebar (dynamic), base layout, +error.svelte         | `auth-jwt-cookie`, `api-foundation-rfc7807` |
+| R2 | `research-edgar-fred-adapters`     | research        | FR59, FR60                       | (infra)                 | —                                                           | `research-bitemporal-schema` |
+| R3 | `research-news-catalysts-adapters` | research        | FR61-FR67, FR77-FR79             | (infra)                 | —                                                           | `research-bitemporal-schema` |
+| R4 | `openbb-sidecar-container`         | research        | FR76 (ADR-015)                   | (infra)                 | —                                                           | `bootstrap-monorepo` |
+| R5 | `research-brief-synthesis`         | research        | FR58, FR71-FR75 (+NFR-P9, NFR-O8) | J3 (briefings)         | BriefHeader, FactTimeline, CitationLink, AuditTrailViewer, MethodologyBadge | `research-bitemporal-schema` (mocks R2-R4) |
+| T2 | `ibkr-adapter-resilient`           | trading         | FR14-FR16 (+NFR-R2, NFR-R7, NFR-I1, NFR-I2, NFR-P8) | (infra) | —                                                       | `trading-models-interfaces` |
+| T3 | `donchian-strategy-mvp`            | trading         | FR1-FR5, FR11                    | (infra)                 | —                                                           | `trading-models-interfaces` |
+| O2 | `orchestration-scheduler-routines` | orchestration   | FR33-FR35, FR43, FR44 (+NFR-P3, NFR-P4) | (infra)         | —                                                           | `observability-cost-meter` |
+| R6 | `hindsight-integration`            | research        | FR51, FR80, FR81 (+NFR-I8)       | Settings (UI toggle)    | Settings page (feature_flags toggle)                        | `research-brief-synthesis` |
+| T4 | `trading-routes-and-daemon`        | trading         | FR12-FR18, FR50, FR52-FR56       | J1 (portfolio/trades), J2 (proposals) | trades/portfolio/strategies routes (no new named components) | `trading-models-interfaces`, `ibkr-adapter-resilient`, `donchian-strategy-mvp` |
 
 ## Scope notes
 
