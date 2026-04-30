@@ -1,0 +1,51 @@
+# iguanatrader — LIVE profile (real money) — DO NOT RUN WITHOUT --confirm-live
+#
+# AGENTS.md §4 hard rules apply: capital cap in config, kill-switch active,
+# immutable logs, paper-trading recommended before live (§7 Override 1
+# allows opt-out via --confirm-live --i-understand-the-risks but emits a
+# WARNING with risk acknowledgment text).
+#
+# This file is intentionally separate from paper to make the lexical
+# distinction clear at audit time. Pointing the live API at IBKR's live
+# port (7496 by default vs 7497 for paper) is the ONLY runtime difference;
+# the discipline (separate file, separate image tag, separate env-enc)
+# enforces "you have to mean it" before live runs.
+
+x-litestream: &litestream-defaults
+  image: litestream/litestream:latest
+  restart: unless-stopped
+  volumes:
+    - ./data:/data
+    - ./.litestream/litestream.yml:/etc/litestream.yml:ro
+
+services:
+
+  api:
+    image: iguanatrader/api:live
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: live
+    environment:
+      - IGUANATRADER_PROFILE=live
+      - IBKR_HOST=${IBKR_HOST:-127.0.0.1}
+      - IBKR_PORT=${IBKR_PORT_LIVE:-7496}
+      - SOPS_AGE_KEY_FILE=/run/secrets/age_key
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./.secrets/live.env.enc:/run/secrets/live.env.enc:ro
+    secrets:
+      - age_key
+    ports:
+      - "8000:8000"
+    depends_on:
+      - litestream
+
+  litestream:
+    <<: *litestream-defaults
+    command: ["replicate"]
+
+secrets:
+  age_key:
+    file: ${SOPS_AGE_KEY_FILE_HOST:-~/.config/sops/age/keys.txt}

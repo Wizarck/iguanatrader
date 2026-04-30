@@ -23,11 +23,11 @@
 
 ## 4. Docker compose four-profile setup
 
-- [ ] 4.1 Author `docker-compose.yml` (dev profile) with placeholder app service + litestream sidecar (using YAML anchor for litestream block).
-- [ ] 4.2 Author `docker-compose.paper.yml` mirroring dev but pointing at paper-trading endpoints + litestream sidecar.
-- [ ] 4.3 Author `docker-compose.live.yml` mirroring paper but pointing at live endpoints + litestream sidecar; include explicit `# AGENTS.md §4 — live profile, requires --confirm-live` header comment.
-- [ ] 4.4 Author `docker-compose.test.yml` with ephemeral SQLite (no litestream).
-- [ ] 4.5 Run `docker compose -f <each>.yml config` for all four files and confirm exit 0.
+- [x] 4.1 Author `docker-compose.yml` (dev profile) with placeholder app service + litestream sidecar (using YAML anchor for litestream block).
+- [x] 4.2 Author `docker-compose.paper.yml` mirroring dev but pointing at paper-trading endpoints + litestream sidecar.
+- [x] 4.3 Author `docker-compose.live.yml` mirroring paper but pointing at live endpoints + litestream sidecar; include explicit `# AGENTS.md §4 — live profile, requires --confirm-live` header comment.
+- [x] 4.4 Author `docker-compose.test.yml` with ephemeral SQLite (no litestream).
+- [x] 4.5 Run `docker compose -f <each>.yml config` for all four files and confirm exit 0.
 
 ## 5. GitHub Actions workflows
 
