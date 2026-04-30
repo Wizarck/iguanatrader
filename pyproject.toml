@@ -34,6 +34,11 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+# `force-exclude` makes ruff honor `extend-exclude` even when pre-commit passes
+# files explicitly (otherwise ruff only consults exclude lists when scanning a
+# directory). Without this, vendored content under skills/ and .ai-playbook/
+# gets reformatted on every commit.
+force-exclude = true
 extend-exclude = [
     ".venv",
     "node_modules",
@@ -68,6 +73,21 @@ ignore = [
 [tool.black]
 target-version = ["py311"]
 line-length = 100
+# `force-exclude` makes black honor the exclude regex even when pre-commit
+# passes files explicitly. Same rationale as [tool.ruff].force-exclude above.
+force-exclude = '''
+/(
+    \.venv
+  | node_modules
+  | dist
+  | build
+  | \.skills-sources
+  | \.ai-playbook
+  | skills
+  | \.claude
+  | \.gemini
+)/
+'''
 extend-exclude = '''
 /(
     \.venv

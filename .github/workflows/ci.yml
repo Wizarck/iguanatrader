@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -25,7 +26,10 @@ jobs:
       - name: Install Poetry
         run: pip install poetry
       - name: Install deps
-        run: poetry install --no-interaction --only main,dev
+        # `package-mode = false` + only a `dev` group declared, so the implicit
+        # "main" group does not exist. Until slice 2 lands runtime deps, install
+        # only the dev group explicitly.
+        run: poetry install --no-interaction --only=dev
       - name: ruff check
         run: poetry run ruff check .
       - name: black --check
@@ -42,9 +46,26 @@ jobs:
       - name: Install Poetry
         run: pip install poetry
       - name: Install deps
-        run: poetry install --no-interaction --only main,dev
+        run: poetry install --no-interaction --only=dev
+      - name: Detect Python sources
+        id: detect
+        # Slice 1 has no application source under apps/ or packages/. Slice 2
+        # (shared-primitives) lands the first .py files. Until then mypy has
+        # nothing to type-check; running it would fail with "no files".
+        run: |
+          if find apps packages -name '*.py' 2>/dev/null | grep -q .; then
+            echo "has_py=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_py=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: mypy --strict
+        if: steps.detect.outputs.has_py == 'true'
         run: poetry run mypy .
+      - name: Skip notice (no Python sources yet)
+        if: steps.detect.outputs.has_py == 'false'
+        run: |
+          echo "Slice 1 - no Python sources under apps/ or packages/."
+          echo "Skipping mypy until slice 2 lands runtime source."
 
   test:
     name: Test (pytest)
@@ -57,9 +78,23 @@ jobs:
       - name: Install Poetry
         run: pip install poetry
       - name: Install deps
-        run: poetry install --no-interaction --only main,dev
+        run: poetry install --no-interaction --only=dev
+      - name: Detect Python sources
+        id: detect
+        run: |
+          if find apps packages -name '*.py' 2>/dev/null | grep -q .; then
+            echo "has_py=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_py=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: pytest
+        if: steps.detect.outputs.has_py == 'true'
         run: poetry run pytest --collect-only
+      - name: Skip notice (no Python sources yet)
+        if: steps.detect.outputs.has_py == 'false'
+        run: |
+          echo "Slice 1 - no Python sources under apps/ or packages/."
+          echo "Skipping pytest until slice 2 lands runtime source."
 
   secrets-scan:
     name: Secrets scan (gitleaks)
@@ -86,6 +121,6 @@ jobs:
       - name: Install Poetry + pre-commit
         run: |
           pip install poetry pre-commit
-          poetry install --no-interaction --only main,dev
+          poetry install --no-interaction --only=dev
       - name: Run pre-commit
         run: pre-commit run --all-files --show-diff-on-failure

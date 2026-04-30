@@ -133,7 +133,7 @@ class AwesomeStrategy(IStrategy):
     timeframe = "5m"
     can_short = True
     startup_candle_count = 400
-    
+
     minimal_roi = {"40": 0.0, "30": 0.01, "20": 0.02, "0": 0.04}
     stoploss = -0.10
 
