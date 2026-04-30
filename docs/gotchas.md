@@ -3,7 +3,7 @@ type: gotchas
 project: iguanatrader
 schema_version: 1
 created: 2026-04-30
-updated: 2026-04-30
+updated: 2026-05-01
 purpose: Append-only log of non-obvious dev-loop quirks discovered during implementation. NFR-M7.
 ---
 
@@ -100,6 +100,82 @@ This file is **append-only** — never delete entries. If a gotcha is fixed upst
 **Workaround**: pass `--repo <owner/name>` to `bootstrap_gh_project.py` (added in `v0.8.0-rc3`). One-shot CLI: `gh project link 2 --owner Wizarck --repo Wizarck/iguanatrader`.
 
 **Status**: resolved upstream. iguanatrader's Project #2 is linked to `Wizarck/iguanatrader` as of 2026-04-30.
+
+## 7. CI: `actions/checkout@v4` doesn't init submodules + private submodules need a PAT
+
+**Surfaced**: 2026-05-01 (slice 1 PR #22 CI run).
+
+**Symptom**: pre-commit hook step in CI fails with `FileNotFoundError: '.ai-playbook/scripts/schema_validate.py'`. After enabling `submodules: true`, fails again with `fatal: repository 'https://github.com/Wizarck/ai-playbook.git/' not found`.
+
+**Root cause** (two layers):
+
+1. `actions/checkout@v4` defaults to `submodules: false`. `.ai-playbook` and `.skills-sources/*` are declared as submodules in `.gitmodules`, so they don't get cloned without explicit opt-in.
+2. Even with `submodules: true`, the default `GITHUB_TOKEN` is scoped only to the running repo. The submodule URLs point at private sibling repos (`Wizarck/ai-playbook`, `Wizarck/eligia-skills`), which the default token cannot access — clone fails with HTTP 404 (GitHub's deliberate obfuscation of "private" as "not found").
+
+**Workaround**: pass a Personal Access Token with `Contents: read` for the playbook + skills repos via `actions/checkout@v4` `token:` input, AND set `submodules: true`. Token stored as repo secret `ELIGIA_GOD_MODE`.
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    submodules: true
+    token: ${{ secrets.ELIGIA_GOD_MODE }}
+```
+
+**Status**: resolved for iguanatrader. **TODO**: codify the secret name + checkout pattern in playbook `release-management.md` so future projects don't rediscover this. Also: investigate using a GitHub App token (org-wide install) instead of per-repo PAT once the playbook moves to an org.
+
+## 8. CI: pre-commit `language: system` hooks need their Python deps installed separately
+
+**Surfaced**: 2026-05-01 (slice 1 PR #22 CI run).
+
+**Symptom**: `schema-validate-agents` hook fails in CI with `❌ jsonschema is required. Install with: pip install jsonschema`. Locally it works.
+
+**Root cause**: pre-commit hooks declared as `language: system` invoke the host Python directly (no managed venv). They depend on imports like `yaml` and `jsonschema` that exist on developer machines (system pip / poetry / conda) but aren't part of the iguanatrader poetry dev group. Adding them to dev group wouldn't help either, because the hook runs `python <script>` outside poetry's venv.
+
+**Workaround**: install the playbook hooks' deps explicitly in the CI step before running pre-commit:
+
+```yaml
+- run: pip install jsonschema pyyaml
+```
+
+**Status**: resolved for iguanatrader. **TODO**: ai-playbook should ship a `requirements-hooks.txt` that consumer CI can install from, so the dep list is centralized + versioned.
+
+## 9. CI: playbook scripts assume editable install (`pip install -e .ai-playbook`)
+
+**Surfaced**: 2026-05-01 (slice 1 PR #22 CI run).
+
+**Symptom**: After installing `jsonschema`/`pyyaml`, `schema-validate-agents` still fails in CI: `ModuleNotFoundError: No module named 'scripts'`. Locally the same script runs fine.
+
+**Root cause**: `schema_validate.py` imports `from scripts._break_glass import ...`, which assumes the playbook ROOT (containing the `scripts/` package) is on `sys.path`. On developer machines, ai-playbook is `pip install -e`'d at the system Python level (`__editable__.ai_playbook-0.2.1.pth`), so `scripts.` is importable from anywhere. CI doesn't editable-install the submodule, so the import resolves only when the script's own directory is `sys.path[0]` — and that points to `<playbook>/scripts/`, NOT the playbook root, so `from scripts.X` fails.
+
+**Workaround**: prepend the playbook root to `PYTHONPATH` in the CI step:
+
+```yaml
+env:
+  PYTHONPATH: ${{ github.workspace }}/.ai-playbook
+```
+
+**Status**: resolved for iguanatrader. **TODO**: ai-playbook scripts should add `sys.path.insert(0, str(Path(__file__).resolve().parent.parent))` at top so they're self-contained and don't rely on editable install. Open a playbook issue.
+
+## 10. CI: `mcp-validate` cannot run cleanly because it needs the personal layer
+
+**Surfaced**: 2026-05-01 (slice 1 PR #22 CI run).
+
+**Symptom**: `mcp-validate` hook reports `❌ mcp-servers.yaml rendered output diverges from committed .mcp.json`. Diff shows ~10 server entries (`atlassian-geeplo`, `camoufox`, `google-workspace-arturo`, `paperclip`, etc.) that exist in the committed `.mcp.json` but not in the CI re-render.
+
+**Root cause**: the hook re-renders `mcp-servers.yaml` from the 3-layer SSOT (base + project + personal) and compares the result to the committed `.mcp.json`. The personal layer lives at `~/.config/mcp-servers.yaml` (or a fallback) on developer machines. CI has no personal layer, so its re-render only contains base + project entries → diverges by design.
+
+**Workaround**: skip the hook in CI via `SKIP=mcp-validate`. The hook still runs locally on every commit by the developer.
+
+```yaml
+env:
+  SKIP: mcp-validate
+```
+
+**Status**: workaround in place. **Architectural question for follow-up**: should `.mcp.json` even be committed? It's a per-developer rendered artifact — different devs would commit different `.mcp.json`s, causing constant churn. Two cleaner options:
+1. Gitignore `.mcp.json` + `.gemini/settings.json` (each dev regenerates locally; no CI gate needed).
+2. Commit a "skeleton" `.mcp.json` (base + project only, no personal); `mcp-validate` in CI compares against that skeleton.
+
+Tracked as a question for the playbook maintainer.
 
 ---
 
