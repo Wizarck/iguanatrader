@@ -114,9 +114,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Playbook integration hooks (schema-validate-agents, mcp-validate)
-          # invoke python scripts under .ai-playbook/, which is a submodule.
-          # Without this the hooks fail with FileNotFoundError.
+          # invoke python scripts under .ai-playbook/, which is a submodule
+          # pointing at the private repo Wizarck/ai-playbook (+ eligia-skills
+          # under .skills-sources/). The default GITHUB_TOKEN is scoped to
+          # this repo only, so cross-repo clone needs a PAT with Contents:R
+          # on the playbook + skills repos. Stored as repo secret.
           submodules: true
+          token: ${{ secrets.ELIGIA_GOD_MODE }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
