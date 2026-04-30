@@ -1,24 +1,101 @@
-# Pre-commit config for iguanatrader. Inherits hooks from the ai-playbook submodule.
-# Bootstrap: `pre-commit install` after cloning.
+# Pre-commit config for iguanatrader.
+#
+# Per specs/release-management.md + specs/secrets-baseline (slice 1):
+# gitleaks runs FIRST so a leaked secret is caught before any other hook
+# touches the file (formatters can rewrite tokens into different shapes).
+#
+# Hooks marked "(stub)" no-op or pass through during slice 1 because the
+# source code they would scan does not yet exist. Subsequent slices that
+# land code (slice 2 = apps/api/src/, slice W1 = apps/web/src/, slice 5 =
+# packages/shared-types/) flesh them out.
+#
+# Bootstrap: `pre-commit install` after cloning (or `make bootstrap`).
+
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+fail_fast: false
 
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-json
-      - id: check-added-large-files
-        args: [--maxkb=500]
 
+  # 1. Secrets scan — MUST run first.
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.18.4
+    rev: v8.21.2
     hooks:
       - id: gitleaks
 
+  # 2. TOML/YAML/JSON sanity + housekeeping.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-toml
+      - id: check-yaml
+        exclude: ^(\.skills-sources|\.ai-playbook|skills|\.claude|\.gemini)/
+      - id: check-json
+        exclude: ^(\.skills-sources|\.ai-playbook|skills|\.claude|\.gemini)/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: end-of-file-fixer
+        exclude: ^(\.skills-sources|\.ai-playbook|skills|\.claude|\.gemini|poetry\.lock|pnpm-lock\.yaml)
+      - id: trailing-whitespace
+        exclude: ^(\.skills-sources|\.ai-playbook|skills|\.claude|\.gemini|poetry\.lock|pnpm-lock\.yaml)
+
+  # 3. Python: ruff -> black -> mypy.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  - repo: https://github.com/psf/black
+    rev: 26.3.1
+    hooks:
+      - id: black
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.20.2
+    hooks:
+      - id: mypy
+        # Strict mode comes from pyproject.toml [tool.mypy].
+        # No source code yet under apps/api/src/, so this is effectively
+        # a no-op until slice 2.
+        additional_dependencies: []
+        pass_filenames: false
+
+  # 4. JS/TS — stubs until slice 5 / W1 land source code.
+  # 5. License boundary check — stub until slice R4 lands the AGPL sidecar.
+  # 6. Playbook integration hooks (schema-validate AGENTS.md, mcp-validate, block-manual-spec-edit).
   - repo: local
     hooks:
+      - id: eslint-stub
+        name: eslint (stub)
+        entry: "bash -c 'echo eslint-stub-noop; exit 0'"
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: prettier-stub
+        name: prettier (stub)
+        entry: "bash -c 'echo prettier-stub-noop; exit 0'"
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: openapi-types-regen-stub
+        name: openapi-types regen (stub)
+        entry: "bash -c 'echo openapi-types-regen-stub-noop; exit 0'"
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: license-boundary-check-stub
+        name: license-boundary check (stub)
+        entry: "bash -c 'test -d apps/openbb-sidecar && echo license-boundary-slice-r4-pending || echo license-boundary-stub-noop; exit 0'"
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Playbook integration (preserved from bootstrap).
       - id: schema-validate-agents
         name: Validate AGENTS.md against playbook schema
         entry: python .ai-playbook/scripts/schema_validate.py AGENTS.md
@@ -38,3 +115,7 @@ repos:
         entry: python .ai-playbook/scripts/block_manual_spec_edit.py
         language: system
         files: ^openspec/specs/.*\.md$
+
+ci:
+  autofix_prs: false
+  skip: [mypy] # mypy in CI is run via the dedicated typecheck job for richer output

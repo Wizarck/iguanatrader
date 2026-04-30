@@ -1,0 +1,13 @@
+# gitleaks allowlist — explicit safe-list of false positives.
+#
+# Format: <fingerprint>:<file>:<rule-id>:<line>
+# (matches gitleaks --report-format=json `Fingerprint` field)
+#
+# Process for adding entries:
+#   1. Run `gitleaks detect --source . --report-format=json`
+#   2. Triage each finding: real secret? rotate + remove from history.
+#      False positive? add the fingerprint here with a comment explaining
+#      why it's safe (e.g. "test fixture, not a real key").
+#   3. Re-run gitleaks; verify the fingerprint is now ignored.
+#
+# Initially empty — slice 1 has no false positives.

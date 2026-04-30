@@ -39,17 +39,17 @@
 
 ## 6. Pre-commit configuration
 
-- [ ] 6.1 Author `.pre-commit-config.yaml` with hook order: gitleaks → check-toml → ruff → black → mypy → eslint (stub) → prettier (stub) → openapi-typescript regen (no-op) → license-boundary-check (no-op).
-- [ ] 6.2 Run `pre-commit install` to activate hooks locally.
-- [ ] 6.3 Run `pre-commit run --all-files` and confirm exit 0 (all hooks no-op or pass).
-- [ ] 6.4 Test the gitleaks-first ordering: stage a file containing a fake AWS access key, run pre-commit, confirm the commit is blocked before any other hook runs.
+- [x] 6.1 Author `.pre-commit-config.yaml` with hook order: gitleaks → check-toml → ruff → black → mypy → eslint (stub) → prettier (stub) → openapi-typescript regen (no-op) → license-boundary-check (no-op).
+- [x] 6.2 Run `pre-commit install` to activate hooks locally.
+- [x] 6.3 Run `pre-commit run --all-files` and confirm exit 0 (all hooks no-op or pass).
+- [x] 6.4 Test the gitleaks-first ordering: stage a file containing a fake AWS access key, run pre-commit, confirm the commit is blocked before any other hook runs.
 
 ## 7. Gitignore + supporting dotfiles
 
-- [ ] 7.1 Expand `.gitignore` with Python (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `dist/`, `build/`, `*.egg-info/`), Node (`node_modules/` already present, `dist/`, `.svelte-kit/`), secrets (`.secrets/*.env` without `.enc`, `*.key`, `*.pem`), IDE (`.vscode/`, `.idea/`), runtime (`data/`, `logs/`, `*.db`, `*.sqlite`, `*.sqlite-journal`).
-- [ ] 7.2 Author `.gitleaksignore` with explicit safe-list (initially empty body, schema header only).
-- [ ] 7.3 Author `.editorconfig` with reasonable defaults (UTF-8, LF line endings, 4-space Python, 2-space JS/YAML, 100-col max, trim trailing whitespace, insert final newline).
-- [ ] 7.4 Author `.dockerignore` with universal patterns (`.git/`, `node_modules/`, `__pycache__/`, `.venv/`, `.secrets/*.env` without `.enc`, `*.md` except essentials, `tests/`).
+- [x] 7.1 Expand `.gitignore` with Python (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `dist/`, `build/`, `*.egg-info/`), Node (`node_modules/` already present, `dist/`, `.svelte-kit/`), secrets (`.secrets/*.env` without `.enc`, `*.key`, `*.pem`), IDE (`.vscode/`, `.idea/`), runtime (`data/`, `logs/`, `*.db`, `*.sqlite`, `*.sqlite-journal`).
+- [x] 7.2 Author `.gitleaksignore` with explicit safe-list (initially empty body, schema header only).
+- [x] 7.3 Author `.editorconfig` with reasonable defaults (UTF-8, LF line endings, 4-space Python, 2-space JS/YAML, 100-col max, trim trailing whitespace, insert final newline).
+- [x] 7.4 Author `.dockerignore` with universal patterns (`.git/`, `node_modules/`, `__pycache__/`, `.venv/`, `.secrets/*.env` without `.enc`, `*.md` except essentials, `tests/`).
 
 ## 8. SOPS + age secrets layout
 
