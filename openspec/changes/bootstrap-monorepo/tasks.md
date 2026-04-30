@@ -61,14 +61,14 @@
 
 ## 9. License + compliance baseline
 
-- [ ] 9.1 Download canonical Apache-2.0 text from `https://www.apache.org/licenses/LICENSE-2.0.txt`; record sha256 in `.github/workflows/license-boundary-check.yml` as `LICENSE_APACHE2_SHA256`.
-- [ ] 9.2 Download canonical Commons Clause v1.0 text from `https://commonsclause.com/`; record sha256 as `LICENSE_COMMONS_CLAUSE_SHA256`.
-- [ ] 9.3 Author root `LICENSE` concatenating Apache-2.0 + delimiter + Commons Clause v1.0; verify checksums match recorded constants.
-- [ ] 9.4 Author root `SECURITY.md` with vulnerability disclosure policy: supported versions, reporting channel (GitHub security advisories), expected response time (best-effort within 7 days at MVP), non-public-disclosure clause.
-- [ ] 9.5 Author root `CONTRIBUTING.md` (placeholder for v1: "Contribution guidelines pending; for now, contact arturo6ramirez@gmail.com").
-- [ ] 9.6 Author root `CHANGELOG.md` with `## [0.0.0] — 2026-04-29 — bootstrap` entry summarising this slice's contents.
-- [ ] 9.7 Author root `README.md`: tagline + links to PRD, ADRs, getting-started, LICENSE, CONTRIBUTING.
-- [ ] 9.8 Author root `THIRD_PARTY_NOTICES.md` (heading + "No third-party code copied yet" sentence).
+- [x] 9.1 Download canonical Apache-2.0 text from `https://www.apache.org/licenses/LICENSE-2.0.txt`; record sha256 in `.github/workflows/license-boundary-check.yml` as `LICENSE_APACHE2_SHA256`.
+- [x] 9.2 Download canonical Commons Clause v1.0 text from `https://commonsclause.com/`; record sha256 as `LICENSE_COMMONS_CLAUSE_SHA256`.
+- [x] 9.3 Author root `LICENSE` concatenating Apache-2.0 + delimiter + Commons Clause v1.0; verify checksums match recorded constants.
+- [x] 9.4 Author root `SECURITY.md` with vulnerability disclosure policy: supported versions, reporting channel (GitHub security advisories), expected response time (best-effort within 7 days at MVP), non-public-disclosure clause.
+- [x] 9.5 Author root `CONTRIBUTING.md` (placeholder for v1: "Contribution guidelines pending; for now, contact arturo6ramirez@gmail.com").
+- [x] 9.6 Author root `CHANGELOG.md` with `## [0.0.0] — 2026-04-29 — bootstrap` entry summarising this slice's contents.
+- [x] 9.7 Author root `README.md`: tagline + links to PRD, ADRs, getting-started, LICENSE, CONTRIBUTING.
+- [x] 9.8 Author root `THIRD_PARTY_NOTICES.md` (heading + "No third-party code copied yet" sentence).
 
 ## 10. Documentation: getting-started + ADR drafts
 
