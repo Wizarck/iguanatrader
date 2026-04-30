@@ -140,6 +140,13 @@ jobs:
         # committed .mcp.json. CI has no personal layer (~/.config/mcp-
         # servers.yaml) so the render diverges by design. The hook still
         # runs locally on every commit by individual developers.
+        #
+        # PYTHONPATH=.ai-playbook is needed because schema_validate.py does
+        # `from scripts._break_glass import ...` which assumes the playbook
+        # root is on sys.path. On developer machines that's true thanks to
+        # `pip install -e .ai-playbook`; CI doesn't have that, so prepend
+        # the path explicitly. (Documented in docs/gotchas.md.)
         env:
           SKIP: mcp-validate
+          PYTHONPATH: ${{ github.workspace }}/.ai-playbook
         run: pre-commit run --all-files --show-diff-on-failure
