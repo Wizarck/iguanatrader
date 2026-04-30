@@ -53,11 +53,11 @@
 
 ## 8. SOPS + age secrets layout
 
-- [ ] 8.1 Author `.secrets/.sops.yaml` declaring creation rule for `.secrets/.*\.env$` with Arturo's age public key as recipient.
-- [ ] 8.2 Author plaintext template `.secrets/dev.env.template` with placeholder envs (e.g. `IBKR_HOST=<placeholder>`, `BROKER_API_KEY=<placeholder>`, `OPENAI_API_KEY=<placeholder>`, `TELEGRAM_BOT_TOKEN=<placeholder>`); encrypt to `.secrets/dev.env.enc`; remove the plaintext.
-- [ ] 8.3 Repeat 8.2 for `.secrets/paper.env.enc` and `.secrets/live.env.enc` with profile-specific placeholders.
-- [ ] 8.4 Verify all three encrypted files decrypt cleanly with `sops -d` using the matching age private key.
-- [ ] 8.5 Run `gitleaks detect --source . --no-banner` and confirm zero findings on the bootstrap tree.
+- [x] 8.1 Author `.secrets/.sops.yaml` declaring creation rule for `.secrets/.*\.env$` with Arturo's age public key as recipient.
+- [x] 8.2 Author plaintext template `.secrets/dev.env.template` with placeholder envs (e.g. `IBKR_HOST=<placeholder>`, `BROKER_API_KEY=<placeholder>`, `OPENAI_API_KEY=<placeholder>`, `TELEGRAM_BOT_TOKEN=<placeholder>`); encrypt to `.secrets/dev.env.enc`; remove the plaintext.
+- [x] 8.3 Repeat 8.2 for `.secrets/paper.env.enc` and `.secrets/live.env.enc` with profile-specific placeholders.
+- [x] 8.4 Verify all three encrypted files decrypt cleanly with `sops -d` using the matching age private key.
+- [x] 8.5 Run `gitleaks detect --source . --no-banner` and confirm zero findings on the bootstrap tree.
 
 ## 9. License + compliance baseline
 

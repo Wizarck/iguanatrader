@@ -21,6 +21,30 @@ package-lock.json
 yarn.lock
 .pnpm-store/
 
+# Secrets — .env (plaintext) FORBIDDEN in repo; only .env.enc (sops-encrypted)
+# may be committed. AGENTS.md §4 hard rule.
+.secrets/*.env
+!.secrets/*.env.enc
+!.secrets/.sops.yaml
+*.key
+*.pem
+*.p12
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime data + logs
+data/
+logs/
+*.db
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
 # Python — virtualenv + caches + build artefacts
 .venv/
 __pycache__/
