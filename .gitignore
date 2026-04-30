@@ -14,8 +14,12 @@
 .gemini/skills/
 .skills-sources/
 
-# Node — minimal stub before slice 1 (bootstrap-monorepo) expands this
+# Node — pnpm is the canonical workspace manager (per slice 1). npm/yarn
+# competing lockfiles must NOT enter the repo.
 node_modules/
+package-lock.json
+yarn.lock
+.pnpm-store/
 
 # Python — virtualenv + caches + build artefacts
 .venv/

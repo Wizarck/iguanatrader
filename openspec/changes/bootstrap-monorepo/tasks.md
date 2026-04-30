@@ -9,10 +9,10 @@
 
 ## 2. Node workspace + tooling baseline
 
-- [ ] 2.1 Add `pnpm-workspace.yaml` declaring `apps/web` + `packages/shared-types` as members.
-- [ ] 2.2 Augment root `package.json` with `workspaces` array referencing the same members; retain existing `@fission-ai/openspec` devDep.
-- [ ] 2.3 Add `eslint` + `prettier` + `openapi-typescript` as devDeps; provide stub configs (`.eslintrc.cjs`, `.prettierrc`) — full config lands in slices 5 / W1.
-- [ ] 2.4 Run `pnpm install` and verify lockfile is generated; commit `pnpm-lock.yaml`.
+- [x] 2.1 Add `pnpm-workspace.yaml` declaring `apps/web` + `packages/shared-types` as members.
+- [x] 2.2 Augment root `package.json` with `workspaces` array referencing the same members; retain existing `@fission-ai/openspec` devDep.
+- [x] 2.3 Add `eslint` + `prettier` + `openapi-typescript` as devDeps; provide stub configs (`.eslintrc.cjs`, `.prettierrc`) — full config lands in slices 5 / W1.
+- [x] 2.4 Run `pnpm install` and verify lockfile is generated; commit `pnpm-lock.yaml`.
 
 ## 3. Makefile + per-package includes pattern
 
