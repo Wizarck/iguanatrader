@@ -81,13 +81,13 @@
 
 ## 11. Final verification before PR
 
-- [ ] 11.1 Run `make bootstrap` on a clean clone (fresh worktree); confirm exit 0 and `git status` shows zero diff after.
-- [ ] 11.2 Run `pre-commit run --all-files` and confirm exit 0.
-- [ ] 11.3 Run `docker compose -f docker-compose.yml config` + `... -f docker-compose.paper.yml config` + `... -f docker-compose.live.yml config` + `... -f docker-compose.test.yml config` and confirm all four exit 0.
-- [ ] 11.4 Run `actionlint .github/workflows/` and confirm exit 0.
-- [ ] 11.5 Run `gitleaks detect --source . --no-banner` and confirm zero findings.
-- [ ] 11.6 Run `npx openspec validate --change bootstrap-monorepo` and confirm exit 0.
-- [ ] 11.7 Verify scope-check: `ls apps/api/src/iguanatrader/ apps/web/src/ apps/openbb-sidecar/` returns "no such file or directory" for all three (no source code introduced beyond what slice 1 owns).
-- [ ] 11.8 Open PR to main with title "feat(bootstrap): monorepo skeleton + tooling baseline (slice 1/20)"; reference `docs/openspec-slice.md` row 1 and `docs/hitl-gates-log.md` Gate C in the PR description.
-- [ ] 11.9 Record Gate F approval in `docs/hitl-gates-log.md` after PR review + merge.
-- [ ] 11.10 Run `/opsx:archive bootstrap-monorepo` to promote `specs/monorepo-tooling/spec.md` + `specs/secrets-baseline/spec.md` + `specs/compliance-baseline/spec.md` to `openspec/specs/`, draft `retros/bootstrap-monorepo.md`.
+- [x] 11.1 Run `make bootstrap` on a clean clone (fresh worktree); confirm exit 0 and `git status` shows zero diff after.
+- [x] 11.2 Run `pre-commit run --all-files` and confirm exit 0.
+- [x] 11.3 Run `docker compose -f docker-compose.yml config` + `... -f docker-compose.paper.yml config` + `... -f docker-compose.live.yml config` + `... -f docker-compose.test.yml config` and confirm all four exit 0.
+- [x] 11.4 Run `actionlint .github/workflows/` and confirm exit 0.
+- [x] 11.5 Run `gitleaks detect --source . --no-banner` and confirm zero findings.
+- [x] 11.6 Run `npx openspec validate --change bootstrap-monorepo` and confirm exit 0.
+- [x] 11.7 Verify scope-check: `ls apps/api/src/iguanatrader/ apps/web/src/ apps/openbb-sidecar/` returns "no such file or directory" for all three (no source code introduced beyond what slice 1 owns).
+- [x] 11.8 Open PR to main with title "feat(bootstrap): monorepo skeleton + tooling baseline (slice 1/20)"; reference `docs/openspec-slice.md` row 1 and `docs/hitl-gates-log.md` Gate C in the PR description.
+- [x] 11.9 Record Gate F approval in `docs/hitl-gates-log.md` after PR review + merge.
+- [x] 11.10 Run `/opsx:archive bootstrap-monorepo` to promote `specs/monorepo-tooling/spec.md` + `specs/secrets-baseline/spec.md` + `specs/compliance-baseline/spec.md` to `openspec/specs/`, draft `retros/bootstrap-monorepo.md`.

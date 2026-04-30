@@ -57,10 +57,18 @@ repos:
     hooks:
       - id: mypy
         # Strict mode comes from pyproject.toml [tool.mypy].
-        # No source code yet under apps/api/src/, so this is effectively
-        # a no-op until slice 2.
+        # During slice 1 there is NO Python source yet (slice 2 lands
+        # apps/api/src/iguanatrader/) so mypy errors with "no files
+        # specified". Marked `manual` so it skips by default; activates
+        # automatically once slice 2 lands real Python files (its own
+        # commit will switch this back to default stages). Run on demand
+        # via `pre-commit run mypy --hook-stage manual --all-files`.
+        # CI's typecheck job runs mypy directly via Poetry — independent
+        # of this hook.
         additional_dependencies: []
         pass_filenames: false
+        args: ["."]
+        stages: [manual]
 
   # 4. JS/TS — stubs until slice 5 / W1 land source code.
   # 5. License boundary check — stub until slice R4 lands the AGPL sidecar.
