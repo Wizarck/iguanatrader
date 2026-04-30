@@ -112,6 +112,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Playbook integration hooks (schema-validate-agents, mcp-validate)
+          # invoke python scripts under .ai-playbook/, which is a submodule.
+          # Without this the hooks fail with FileNotFoundError.
+          submodules: true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
