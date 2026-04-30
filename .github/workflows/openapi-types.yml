@@ -1,0 +1,33 @@
+name: OpenAPI types regen
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'packages/shared-types/**'
+
+permissions:
+  contents: read
+
+jobs:
+  regen:
+    name: Regenerate packages/shared-types from /openapi.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Slice 5 (api-foundation-rfc7807) wires up the real generation
+      # pipeline. Until then the workflow is a no-op that reports n/a so
+      # CI dashboards stay green during slices 1-4.
+      - name: Skip until slice 5
+        if: ${{ hashFiles('apps/api/src/iguanatrader/api/app.py') == '' }}
+        run: |
+          echo "::notice::n/a — openapi schema not yet present (slice 5 lands the FastAPI app + generation pipeline)"
+      - name: Regenerate types
+        if: ${{ hashFiles('apps/api/src/iguanatrader/api/app.py') != '' }}
+        run: |
+          # Slice 5 fills in: extract /openapi.json from FastAPI, run
+          # `npx openapi-typescript`, diff-check that
+          # packages/shared-types/src/index.ts is up to date, fail if drift.
+          echo "Slice 5 implementation pending — placeholder no-op."

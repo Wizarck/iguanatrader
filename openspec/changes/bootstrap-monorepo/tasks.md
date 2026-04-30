@@ -31,11 +31,11 @@
 
 ## 5. GitHub Actions workflows
 
-- [ ] 5.1 Author `.github/workflows/ci.yml`: jobs for ruff lint, black --check, mypy --strict, pytest, gitleaks scan, pre-commit run --all-files; trigger on push to main + pull_request.
-- [ ] 5.2 Author `.github/workflows/build-images.yml`: triggers on tag, builds Docker images for the dev/paper/live targets (no push at this stage; just `docker build` validation).
-- [ ] 5.3 Author `.github/workflows/openapi-types.yml`: stub job that prints "n/a — openapi schema not yet present" and exits 0 (slice 5 wires up real generation).
-- [ ] 5.4 Author `.github/workflows/license-boundary-check.yml`: checksum-validate `LICENSE` against recorded `LICENSE_APACHE2_SHA256` + `LICENSE_COMMONS_CLAUSE_SHA256` constants; if `apps/openbb-sidecar/` does not exist, log "n/a — sidecar not yet present" and exit 0.
-- [ ] 5.5 Run `actionlint` against `.github/workflows/` and confirm exit 0 with no findings.
+- [x] 5.1 Author `.github/workflows/ci.yml`: jobs for ruff lint, black --check, mypy --strict, pytest, gitleaks scan, pre-commit run --all-files; trigger on push to main + pull_request.
+- [x] 5.2 Author `.github/workflows/build-images.yml`: triggers on tag, builds Docker images for the dev/paper/live targets (no push at this stage; just `docker build` validation).
+- [x] 5.3 Author `.github/workflows/openapi-types.yml`: stub job that prints "n/a — openapi schema not yet present" and exits 0 (slice 5 wires up real generation).
+- [x] 5.4 Author `.github/workflows/license-boundary-check.yml`: checksum-validate `LICENSE` against recorded `LICENSE_APACHE2_SHA256` + `LICENSE_COMMONS_CLAUSE_SHA256` constants; if `apps/openbb-sidecar/` does not exist, log "n/a — sidecar not yet present" and exit 0.
+- [x] 5.5 Run `actionlint` against `.github/workflows/` and confirm exit 0 with no findings.
 
 ## 6. Pre-commit configuration
 

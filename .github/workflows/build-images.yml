@@ -1,0 +1,38 @@
+name: Build Docker images
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: docker build (validation only at slice 1)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [dev, paper, live, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: docker compose config (sanity)
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.paper.yml config --quiet
+          docker compose -f docker-compose.live.yml config --quiet
+          docker compose -f docker-compose.test.yml config --quiet
+      # Slice 2 lands apps/api/Dockerfile; until then `docker build` would fail.
+      # Skip-with-notice keeps the workflow a green CI check during slice 1.
+      - name: Skip docker build until slice 2
+        if: ${{ hashFiles('apps/api/Dockerfile') == '' }}
+        run: |
+          echo "::notice::n/a — apps/api/Dockerfile not present yet (slice 2 lands it)"
+      - name: docker build ${{ matrix.target }}
+        if: ${{ hashFiles('apps/api/Dockerfile') != '' }}
+        run: |
+          docker build -f apps/api/Dockerfile --target ${{ matrix.target }} -t iguanatrader/api:${{ matrix.target }} .
