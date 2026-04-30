@@ -16,3 +16,18 @@
 
 # Node — minimal stub before slice 1 (bootstrap-monorepo) expands this
 node_modules/
+
+# Python — virtualenv + caches + build artefacts
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Poetry: only the per-developer local override (.local) is gitignored; the
+# committed `poetry.toml` carries the portable repo settings (e.g.
+# virtualenvs.in-project = true) that ALL devs benefit from.

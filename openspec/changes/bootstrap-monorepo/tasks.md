@@ -1,11 +1,11 @@
 ## 1. Python workspace + tooling baseline
 
-- [ ] 1.1 Author root `pyproject.toml` declaring Poetry workspace + dev-dep group (ruff, black, mypy, pytest, pytest-asyncio, hypothesis); pin Python ≥3.11.
-- [ ] 1.2 Add `[tool.ruff]` config in `pyproject.toml` (selected rule sets, line length, target-version py311); confirm `ruff check .` exits 0 on empty repo.
-- [ ] 1.3 Add `[tool.black]` config (line length 100, target-version py311); confirm `black --check .` exits 0.
-- [ ] 1.4 Add `[tool.mypy]` config with `strict = true`, `warn_unused_ignores = true`, `disallow_any_unimported = true`; confirm `mypy .` exits 0 on empty repo.
-- [ ] 1.5 Add `[tool.pytest.ini_options]` with `asyncio_mode = "auto"` and `addopts = "-q"`; confirm `pytest --collect-only` exits 0 with "no tests collected".
-- [ ] 1.6 Run `poetry install --sync` and verify lockfile is generated; commit `poetry.lock`.
+- [x] 1.1 Author root `pyproject.toml` declaring Poetry workspace + dev-dep group (ruff, black, mypy, pytest, pytest-asyncio, hypothesis); pin Python ≥3.11.
+- [x] 1.2 Add `[tool.ruff]` config in `pyproject.toml` (selected rule sets, line length, target-version py311); confirm `ruff check .` exits 0 on empty repo.
+- [x] 1.3 Add `[tool.black]` config (line length 100, target-version py311); confirm `black --check .` exits 0.
+- [x] 1.4 Add `[tool.mypy]` config with `strict = true`, `warn_unused_ignores = true`, `disallow_any_unimported = true`; confirm `mypy .` exits 0 on empty repo.
+- [x] 1.5 Add `[tool.pytest.ini_options]` with `asyncio_mode = "auto"` and `addopts = "-q"`; confirm `pytest --collect-only` exits 0 with "no tests collected".
+- [x] 1.6 Run `poetry install --sync` and verify lockfile is generated; commit `poetry.lock`.
 
 ## 2. Node workspace + tooling baseline
 

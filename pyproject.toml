@@ -1,0 +1,117 @@
+[project]
+name = "iguanatrader"
+version = "0.0.0"
+description = "Algorithmic trading bot — paper-first → live IBKR. Workspace root."
+license = "Apache-2.0 AND LicenseRef-Commons-Clause"
+requires-python = ">=3.11"
+authors = [
+    { name = "Arturo Ramírez", email = "arturo6ramirez@gmail.com" },
+]
+
+[tool.poetry]
+# Root pyproject is workspace-level only; no installable package at the root.
+# Slice 2 (shared-primitives) lands `apps/api/src/iguanatrader/` and slice 3
+# adds Alembic migrations. Until then the root just holds dev tooling shared
+# across the monorepo.
+package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+ruff = ">=0.7"
+black = ">=24.10"
+mypy = ">=1.13"
+pytest = ">=8.3"
+pytest-asyncio = ">=0.24"
+hypothesis = ">=6.115"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+# ---------------------------------------------------------------------------
+# Tooling configuration (consumed by ruff / black / mypy / pytest)
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    ".venv",
+    "node_modules",
+    "dist",
+    "build",
+    ".skills-sources",
+    ".ai-playbook",
+    "skills",
+    ".claude",
+    ".gemini",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501", # line length handled by black
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B011"] # asserts allowed in tests
+
+[tool.black]
+target-version = ["py311"]
+line-length = 100
+extend-exclude = '''
+/(
+    \.venv
+  | node_modules
+  | dist
+  | build
+  | \.skills-sources
+  | \.ai-playbook
+  | skills
+  | \.claude
+  | \.gemini
+)/
+'''
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+disallow_any_unimported = true
+disallow_untyped_decorators = true
+no_implicit_reexport = true
+show_error_codes = true
+exclude = [
+    "^\\.venv/",
+    "^node_modules/",
+    "^dist/",
+    "^build/",
+    "^\\.skills-sources/",
+    "^\\.ai-playbook/",
+    "^skills/",
+    "^\\.claude/",
+    "^\\.gemini/",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+testpaths = ["apps/api/tests", "tests"]
+markers = [
+    "integration: integration tests (may hit DB / network)",
+    "property: hypothesis property-based tests",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:poetry.*",
+]
