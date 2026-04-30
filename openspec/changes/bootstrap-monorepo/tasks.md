@@ -16,10 +16,10 @@
 
 ## 3. Makefile + per-package includes pattern
 
-- [ ] 3.1 Author root `Makefile` with `.PHONY: bootstrap lint format type test up down clean` targets.
-- [ ] 3.2 Implement `bootstrap` target: version-check Python 3.11+, Node 20+, pnpm 9+, Poetry 1.8+, Docker, age, sops; run `poetry install --sync`; run `pnpm install --frozen-lockfile`; run `pre-commit install`.
-- [ ] 3.3 Use `-include apps/api/Makefile.includes` and `-include apps/web/Makefile.includes` (lowercase `-include` so missing files are silently ignored).
-- [ ] 3.4 Verify idempotency: run `make bootstrap` twice on a clean tree and confirm `git status` shows zero diff between runs.
+- [x] 3.1 Author root `Makefile` with `.PHONY: bootstrap lint format type test up down clean` targets.
+- [x] 3.2 Implement `bootstrap` target: version-check Python 3.11+, Node 20+, pnpm 9+, Poetry 1.8+, Docker, age, sops; run `poetry install --sync`; run `pnpm install --frozen-lockfile`; run `pre-commit install`.
+- [x] 3.3 Use `-include apps/api/Makefile.includes` and `-include apps/web/Makefile.includes` (lowercase `-include` so missing files are silently ignored).
+- [x] 3.4 Verify idempotency: run `make bootstrap` twice on a clean tree and confirm `git status` shows zero diff between runs.
 
 ## 4. Docker compose four-profile setup
 
