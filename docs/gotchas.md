@@ -192,7 +192,41 @@ Tracked as a question for the playbook maintainer.
 
 **Workaround**: change the CI invocation from `--all-files` to `--from-ref <BASE> --to-ref HEAD` so only files changed by THIS PR are checked. PR events use `origin/$GITHUB_BASE_REF` as base; push events use `HEAD~1`.
 
-**Status**: workaround in iguanatrader's `ci.yml`. **Upstream fix queued** for ai-playbook: `block_manual_spec_edit.py` should resolve "file modified vs file exists" via `git diff --name-only HEAD~1 HEAD --` filter instead of relying on the caller to pass only modified files. Phase 1 of multi-AI-dev release-management migration tracks this.
+**Status**: workaround in iguanatrader's `ci.yml`. **Upstream fix shipped** in ai-playbook v0.8.0-rc7 (`block_manual_spec_edit.py` now intersects input candidates with the actual diff before applying the archive-marker check).
+
+## 12. `bootstrap_gh_project.py --profile auto` overwrites project-specific required checks
+
+**Surfaced**: 2026-05-01 (first idempotent re-run on iguanatrader after v0.8.0-rc7 bump).
+
+**Symptom**: Re-running `bootstrap_gh_project.py --owner X --project-number N --repo Y --profile auto` reduces the project's required status checks from project-specific (e.g. 7 for iguanatrader: 5 universal + AGPL boundary + LICENSE checksums) to the script's default (5 universal). Branch protection PUT replaces the entire `required_status_checks.contexts` array.
+
+**Root cause**: `apply_branch_protection()` in v0.8.0-rc7 sends the full payload via `gh api PUT`. GitHub's `PUT /repos/{owner}/{repo}/branches/{branch}/protection` is REPLACE semantics, not MERGE. The `--required-checks` flag accepts a comma-separated list and the default ships only the 5 universal checks. Project-specific checks (AGPL boundary, LICENSE checksums, lighthouse-perf, contract tests, etc.) get silently dropped.
+
+**Workaround**: pass `--required-checks` explicitly with the FULL list every time:
+
+```bash
+python -m scripts.bootstrap_gh_project \
+    --owner Wizarck --project-number 2 \
+    --repo Wizarck/iguanatrader \
+    --profile auto \
+    --required-checks "Lint (ruff + black --check),Type check (mypy --strict),Test (pytest),Secrets scan (gitleaks),Pre-commit hooks,AGPL boundary check (apps/api/ vs apps/openbb-sidecar/),Verify LICENSE checksums"
+```
+
+Per-consumer the right invocation lives somewhere durable (Makefile target, runbook, etc.) — NOT in operator memory.
+
+**Status**: workaround documented per-consumer. **Upstream fix queued**: `apply_branch_protection` should READ existing protection first and UNION the user-provided checks with what's already there; OR accept `--required-checks-add` (additive) as an alternative to `--required-checks` (replace). Track for v0.8.1.
+
+## 13. `bootstrap_gh_project.py apply_branch_protection` hardcodes `main` as default branch
+
+**Surfaced**: 2026-05-01 (v0.8.0 rollout to openTrattOS, which uses `master`).
+
+**Symptom**: `bootstrap_gh_project.py --profile auto` against openTrattOS errors with `branch protection PUT failed: gh: Branch not found (HTTP 404)`. Repo settings + project schema steps complete fine; only the branch protection step fails.
+
+**Root cause**: `apply_branch_protection()` in v0.8.0 hardcodes the URL path `repos/{repo}/branches/main/protection`. openTrattOS's default branch is `master` (legacy from before GitHub's 2020 rename guidance). The PUT against `/branches/main/` 404s because no such branch exists.
+
+**Workaround**: skip Profile A branch protection on `master`-default repos for now. Repo settings + auto-merge + project schema still apply correctly. Apply branch protection manually via UI or via `gh api PUT repos/<r>/branches/master/protection --input <json>` when needed.
+
+**Status**: **Upstream fix queued** for ai-playbook v0.8.1: `apply_branch_protection` should query `gh repo view --json defaultBranchRef` (or the equivalent GraphQL field) and use the actual default branch name. Until then, consumer projects on non-`main` defaults need manual protection setup.
 
 ---
 
