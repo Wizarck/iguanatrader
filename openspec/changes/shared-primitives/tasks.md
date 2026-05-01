@@ -48,9 +48,9 @@
 
 ## 8. Verification + acceptance gate
 
-- [ ] 8.1 `mypy --strict apps/api/src/iguanatrader/shared/` exits 0.
-- [ ] 8.2 `pytest apps/api/tests/unit/shared/ apps/api/tests/property/` exits 0 with all tests passing.
-- [ ] 8.3 Coverage ≥80% on `apps/api/src/iguanatrader/shared/*` (per NFR-M1) — record the coverage number in PR description.
-- [ ] 8.4 `pre-commit run --from-ref origin/main --to-ref HEAD` passes (gitleaks + ruff + black + mypy strict + check-toml + new boundary check).
-- [ ] 8.5 Append any non-obvious lessons to `docs/gotchas.md` (per per-slice acceptance template).
-- [ ] 8.6 PR description includes: scope summary, coverage number, AI-reviewer signoff section per `.ai-playbook/specs/release-management.md` §4.5 (left empty until CodeRabbit comments are addressed).
+- [x] 8.1 `mypy --strict apps/api/src/iguanatrader/shared/` exits 0.
+- [x] 8.2 `pytest apps/api/tests/unit/shared/ apps/api/tests/property/` exits 0 with all tests passing.
+- [x] 8.3 Coverage ≥80% on `apps/api/src/iguanatrader/shared/*` (per NFR-M1) — record the coverage number in PR description. *(observed 96%; details in PR body.)*
+- [x] 8.4 `pre-commit run --from-ref origin/main --to-ref HEAD` passes (gitleaks + ruff + black + mypy strict + check-toml + new boundary check).
+- [x] 8.5 Append any non-obvious lessons to `docs/gotchas.md` (per per-slice acceptance template). *(5 entries: #14 submodule untracked, #15 mypy enum narrowing, #16 ruff UP × no_implicit_reexport, #17 Hypothesis+asyncio.run on Windows, #18 Money frozen dataclass init=False.)*
+- [x] 8.6 PR description includes: scope summary, coverage number, AI-reviewer signoff section per `.ai-playbook/specs/release-management.md` §4.5 (left empty until CodeRabbit comments are addressed).
