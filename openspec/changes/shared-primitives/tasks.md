@@ -22,11 +22,11 @@
 
 ## 4. Backoff + HeartbeatMixin
 
-- [ ] 4.1 Implement `apps/api/src/iguanatrader/shared/backoff.py` — `backoff_seconds(attempt: int, with_jitter: bool = False) -> float` per design D7 (sequence `[3, 6, 12, 24, 48]` capped, `ValueError` on negative, ±20% jitter when enabled).
-- [ ] 4.2 Implement `apps/api/src/iguanatrader/shared/heartbeat.py` — `HeartbeatMixin` with state enum `{CONNECTED, RECONNECTING, DISCONNECTED}`, idempotent `mark_connected/mark_disconnected/mark_reconnecting`, abstract async `_send_heartbeat()` and `_on_disconnect()`, reconnection loop using `backoff_seconds`.
-- [ ] 4.3 Unit tests `apps/api/tests/unit/shared/test_backoff.py` and `test_heartbeat.py` — cover idempotency + state transitions + canonical sequence.
-- [ ] 4.4 Property test `apps/api/tests/property/test_backoff_monotonicity.py` (Hypothesis) — for `attempt` drawn from `[0, 1000]`, `backoff_seconds(attempt + 1) >= backoff_seconds(attempt)`.
-- [ ] 4.5 Property test `apps/api/tests/property/test_heartbeat_idempotency.py` (Hypothesis) — for any sequence of `mark_connected/mark_disconnected/mark_reconnecting` calls drawn from a state-machine grammar, the final state matches the last call's intent and side-effect callbacks fire at most once per real transition.
+- [x] 4.1 Implement `apps/api/src/iguanatrader/shared/backoff.py` — `backoff_seconds(attempt: int, with_jitter: bool = False) -> float` per design D7 (sequence `[3, 6, 12, 24, 48]` capped, `ValueError` on negative, ±20% jitter when enabled).
+- [x] 4.2 Implement `apps/api/src/iguanatrader/shared/heartbeat.py` — `HeartbeatMixin` with state enum `{CONNECTED, RECONNECTING, DISCONNECTED}`, idempotent `mark_connected/mark_disconnected/mark_reconnecting`, abstract async `_send_heartbeat()` and `_on_disconnect()`, reconnection loop using `backoff_seconds`.
+- [x] 4.3 Unit tests `apps/api/tests/unit/shared/test_backoff.py` and `test_heartbeat.py` — cover idempotency + state transitions + canonical sequence.
+- [x] 4.4 Property test `apps/api/tests/property/test_backoff_monotonicity.py` (Hypothesis) — for `attempt` drawn from `[0, 1000]`, `backoff_seconds(attempt + 1) >= backoff_seconds(attempt)`.
+- [x] 4.5 Property test `apps/api/tests/property/test_heartbeat_idempotency.py` (Hypothesis) — for any sequence of `mark_connected/mark_disconnected/mark_reconnecting` calls drawn from a state-machine grammar, the final state matches the last call's intent and side-effect callbacks fire at most once per real transition.
 
 ## 5. MessageBus
 
