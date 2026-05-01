@@ -147,6 +147,25 @@ Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runboo
 
 ---
 
+### Gate F — Pre-archive (slice 1: bootstrap-monorepo)
+
+- **Date**: 2026-05-01
+- **Approved by**: Arturo Ramírez (arturo6ramirez@gmail.com)
+- **Artefact(s) approved**:
+  - PR [#22](https://github.com/Wizarck/iguanatrader/pull/22) — `feat(bootstrap): monorepo skeleton + tooling baseline (slice 1/20)` (squash-merged at 2026-05-01T00:16:28Z)
+  - 50/50 tasks completed (verbatim checklist in PR body)
+  - All 7 CI checks green: Lint (ruff+black), Type check (mypy --strict, skipped no-py-yet), Test (pytest, skipped no-py-yet), Secrets scan (gitleaks), Pre-commit hooks, AGPL boundary check, LICENSE checksums verify
+  - [`retros/bootstrap-monorepo.md`](../retros/bootstrap-monorepo.md) — retro draft (what shipped / what worked / what didn't / patterns to retain / follow-ups)
+- **Session**: claude-code session continuation 2026-05-01; CI greened across 5 fix commits (gotchas #7-10 documented from the cascade)
+- **Decision**: ✅ approved
+- **Conditions / notes**:
+  - 10 noise PRs (#12-#21) closed at slice close-out; all were redundant or broken auto-bump-bot output. Root-cause fix queued upstream in ai-playbook (`propagate-{playbook,skills}-bump.yml` supersede logic).
+  - Specs promoted to `openspec/specs/{monorepo-tooling,secrets-baseline,compliance-baseline}/spec.md` via `npx openspec archive`.
+  - Project Status `Review` → `Done` for `bootstrap-monorepo`; slice 2 (`shared-primitives`) manually transitioned `Blocked` → `Todo` (auto-transition workflow §6.3 deferred to Phase 2 follow-up).
+- **Retroactive?**: no
+
+---
+
 ## Pending gates
 
 - **Gates D/F** — per-OpenSpec-change (continuing per slice):
