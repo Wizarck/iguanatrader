@@ -7,11 +7,11 @@
 
 ## 2. Time + ContextVars + Errors (foundations consumed by everything else)
 
-- [ ] 2.1 Implement `apps/api/src/iguanatrader/shared/time.py` — `now()` returning UTC-aware `datetime`, `parse_iso8601(s)` rejecting naive input, `format_iso8601(dt)` emitting `Z` suffix per design D5.
-- [ ] 2.2 Implement `apps/api/src/iguanatrader/shared/contextvars.py` — `tenant_id_var: ContextVar[UUID | None]` and `session_var: ContextVar[AsyncSession | None]` (forward-ref `AsyncSession` via `TYPE_CHECKING` to avoid SQLAlchemy import here); plus `with_tenant_context(tenant_id)` async context manager.
-- [ ] 2.3 Implement `apps/api/src/iguanatrader/shared/errors.py` — `IguanaError` root + 8 subclasses (`ValidationError` 400, `AuthError` 401, `ForbiddenError` 403, `NotFoundError` 404, `ConflictError` 409, `RateLimitError` 429, `IntegrationError` 502, `InternalError` 500) per design D4 + `to_problem_dict()` method on the root.
-- [ ] 2.4 Add a `CurrencyMismatchError` subclass (or include under `ValidationError` per design D3 cross-currency scenario; pick one and document in the module docstring).
-- [ ] 2.5 Unit tests `apps/api/tests/unit/shared/test_time.py`, `test_contextvars.py`, `test_errors.py` — cover scenarios from `specs/shared-kernel/spec.md` for these requirements.
+- [x] 2.1 Implement `apps/api/src/iguanatrader/shared/time.py` — `now()` returning UTC-aware `datetime`, `parse_iso8601(s)` rejecting naive input, `format_iso8601(dt)` emitting `Z` suffix per design D5.
+- [x] 2.2 Implement `apps/api/src/iguanatrader/shared/contextvars.py` — `tenant_id_var: ContextVar[UUID | None]` and `session_var: ContextVar[AsyncSession | None]` (forward-ref `AsyncSession` via `TYPE_CHECKING` to avoid SQLAlchemy import here); plus `with_tenant_context(tenant_id)` async context manager.
+- [x] 2.3 Implement `apps/api/src/iguanatrader/shared/errors.py` — `IguanaError` root + 8 subclasses (`ValidationError` 400, `AuthError` 401, `ForbiddenError` 403, `NotFoundError` 404, `ConflictError` 409, `RateLimitError` 429, `IntegrationError` 502, `InternalError` 500) per design D4 + `to_problem_dict()` method on the root.
+- [x] 2.4 Add a `CurrencyMismatchError` subclass (or include under `ValidationError` per design D3 cross-currency scenario; pick one and document in the module docstring).
+- [x] 2.5 Unit tests `apps/api/tests/unit/shared/test_time.py`, `test_contextvars.py`, `test_errors.py` — cover scenarios from `specs/shared-kernel/spec.md` for these requirements.
 
 ## 3. Decimal + Money
 
