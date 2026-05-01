@@ -36,9 +36,9 @@
 
 ## 6. Kernel (BaseRepository) + Ports
 
-- [ ] 6.1 Implement `apps/api/src/iguanatrader/shared/kernel.py` — `BaseRepository` reading `session_var`, raising `LookupError` (or wrapping `IguanaError`) when unset; helper `propagate_tenant_to(coro)` for `asyncio.create_task` callers per design risk-mitigation.
-- [ ] 6.2 Implement `apps/api/src/iguanatrader/shared/ports.py` — abstract `Port = Protocol` (PEP 544) with no methods (concrete subtypes added in T1/R1); export marker for downstream slices.
-- [ ] 6.3 Unit test `apps/api/tests/unit/shared/test_kernel.py` — covers ContextVar resolution, LookupError when unset, ContextVar isolation across async tasks.
+- [x] 6.1 Implement `apps/api/src/iguanatrader/shared/kernel.py` — `BaseRepository` reading `session_var`, raising `LookupError` (or wrapping `IguanaError`) when unset; helper `propagate_tenant_to(coro)` for `asyncio.create_task` callers per design risk-mitigation. *(propagate_tenant_to lives in shared/contextvars.py, paired with the var it propagates.)*
+- [x] 6.2 Implement `apps/api/src/iguanatrader/shared/ports.py` — abstract `Port = Protocol` (PEP 544) with no methods (concrete subtypes added in T1/R1); export marker for downstream slices.
+- [x] 6.3 Unit test `apps/api/tests/unit/shared/test_kernel.py` — covers ContextVar resolution, LookupError when unset, ContextVar isolation across async tasks.
 
 ## 7. Boundary enforcement + structlog convention
 
