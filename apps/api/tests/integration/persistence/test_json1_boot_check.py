@@ -8,10 +8,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from sqlalchemy.exc import OperationalError
-
 from iguanatrader.persistence import engine_factory, verify_json1_extension
 from iguanatrader.persistence.errors import JSON1NotAvailableError
+from sqlalchemy.exc import OperationalError
 
 
 @dataclass
@@ -41,7 +40,7 @@ class _FakeConn:
             raise self._raises
         return _FakeResult(self._value)
 
-    async def __aenter__(self) -> "_FakeConn":
+    async def __aenter__(self) -> _FakeConn:
         return self
 
     async def __aexit__(self, *args: Any) -> None:

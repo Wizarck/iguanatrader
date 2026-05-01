@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -21,9 +20,7 @@ def alembic_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     api_dir = repo_root / "apps" / "api"
     cfg = Config(str(api_dir / "alembic.ini"))
     cfg.set_main_option("script_location", str(api_dir / "src" / "iguanatrader" / "migrations"))
-    cfg.set_main_option(
-        "sqlalchemy.url", f"sqlite+aiosqlite:///{db_path.as_posix()}"
-    )
+    cfg.set_main_option("sqlalchemy.url", f"sqlite+aiosqlite:///{db_path.as_posix()}")
     cfg.attributes["sync_url"] = db_url
     cfg.attributes["db_path"] = str(db_path)
     return cfg

@@ -11,13 +11,12 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Uuid, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Mapped, mapped_column
-
 from iguanatrader.persistence.base import Base
 from iguanatrader.persistence.errors import AppendOnlyViolationError
 from iguanatrader.shared.contextvars import with_tenant_context
+from sqlalchemy import Uuid, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class _AppendOnlyRow(Base):
@@ -69,9 +68,7 @@ async def test_update_on_append_only_row_raises_before_db(
 
     # Verify the row in the database is unchanged via a fresh session.
     async with with_tenant_context(tenant), session_factory_fx() as s:
-        row = (
-            await s.execute(select(_AppendOnlyRow).where(_AppendOnlyRow.id == pk))
-        ).scalar_one()
+        row = (await s.execute(select(_AppendOnlyRow).where(_AppendOnlyRow.id == pk))).scalar_one()
         assert row.payload == "original"
 
 

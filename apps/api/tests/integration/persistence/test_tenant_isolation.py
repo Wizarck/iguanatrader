@@ -9,16 +9,15 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Uuid, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Mapped, mapped_column
-
 from iguanatrader.persistence.base import Base
 from iguanatrader.persistence.errors import (
     TenantContextMismatchError,
     TenantContextMissingError,
 )
 from iguanatrader.shared.contextvars import with_tenant_context
+from sqlalchemy import Uuid, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class _ScopedFoo(Base):

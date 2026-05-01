@@ -22,9 +22,6 @@ if sys.platform == "win32":
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from sqlalchemy import Uuid, select
-from sqlalchemy.orm import Mapped, mapped_column
-
 from iguanatrader.persistence import (
     engine_factory,
     register_global_listeners,
@@ -33,6 +30,8 @@ from iguanatrader.persistence import (
 )
 from iguanatrader.persistence.base import Base
 from iguanatrader.shared.contextvars import with_tenant_context
+from sqlalchemy import Uuid, select
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class _PropFoo(Base):
@@ -105,9 +104,9 @@ def test_select_under_tenant_returns_only_that_tenant_rows(
                         # Count check: row count under tenant X equals the number
                         # of insert operations targeting X.
                         expected = sum(1 for t, _ in operations if t == tenant)
-                        assert len(rows) == expected, (
-                            f"Tenant {tenant}: expected {expected} rows, got {len(rows)}"
-                        )
+                        assert (
+                            len(rows) == expected
+                        ), f"Tenant {tenant}: expected {expected} rows, got {len(rows)}"
 
                 async with engine.begin() as conn:
                     await conn.run_sync(Base.metadata.drop_all)

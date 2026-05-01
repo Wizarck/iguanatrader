@@ -18,8 +18,6 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-
 from iguanatrader.persistence import (
     engine_factory,
     register_global_listeners,
@@ -27,6 +25,7 @@ from iguanatrader.persistence import (
     unregister_global_listeners,
 )
 from iguanatrader.persistence.base import Base
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 # Hypothesis + asyncio.run on Windows leaks file descriptors under
 # filterwarnings=["error"] when the default ProactorEventLoop is used (slice 2
