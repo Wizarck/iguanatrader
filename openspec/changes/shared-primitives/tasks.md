@@ -30,9 +30,9 @@
 
 ## 5. MessageBus
 
-- [ ] 5.1 Implement `apps/api/src/iguanatrader/shared/messagebus.py` — generic `Event` base, `MessageBus` with `subscribe(event_type, handler, *, idempotent=False)`, `publish(event)`, per-subscriber `asyncio.Queue`, dedup window for idempotent subscribers per design D1.
-- [ ] 5.2 Unit test `apps/api/tests/unit/shared/test_messagebus.py` — cover scenarios: FIFO single-subscriber, slow-vs-fast subscribers don't head-of-line block each other, idempotency dedup.
-- [ ] 5.3 Property test `apps/api/tests/property/test_message_ordering.py` (Hypothesis) — for any sequence of `N` distinct events published, every subscriber's observed sequence equals the publication sequence.
+- [x] 5.1 Implement `apps/api/src/iguanatrader/shared/messagebus.py` — generic `Event` base, `MessageBus` with `subscribe(event_type, handler, *, idempotent=False)`, `publish(event)`, per-subscriber `asyncio.Queue`, dedup window for idempotent subscribers per design D1.
+- [x] 5.2 Unit test `apps/api/tests/unit/shared/test_messagebus.py` — cover scenarios: FIFO single-subscriber, slow-vs-fast subscribers don't head-of-line block each other, idempotency dedup.
+- [x] 5.3 Property test `apps/api/tests/property/test_message_ordering.py` (Hypothesis) — for any sequence of `N` distinct events published, every subscriber's observed sequence equals the publication sequence.
 
 ## 6. Kernel (BaseRepository) + Ports
 
