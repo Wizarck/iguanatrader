@@ -15,10 +15,10 @@
 
 ## 3. Decimal + Money
 
-- [ ] 3.1 Implement `apps/api/src/iguanatrader/shared/decimal_utils.py` — `quantize(amount: Decimal, places: int) -> Decimal` using `ROUND_HALF_EVEN`; helper `currency_precision(currency: str) -> int` returning ISO 4217 minor-unit precision (USD=2, JPY=0, BTC=8 — at least these three; add more on demand).
-- [ ] 3.2 Implement `apps/api/src/iguanatrader/shared/types.py` — frozen `Money` dataclass with `amount: Decimal` + `currency: str`, `__post_init__` rejecting `float` input, `__add__`/`__sub__`/`__neg__` enforcing same-currency invariant, `quantize()` method using `currency_precision`.
-- [ ] 3.3 Unit tests `apps/api/tests/unit/shared/test_types.py` — covers float-input rejection, cross-currency error, banker's rounding scenarios.
-- [ ] 3.4 Property test `apps/api/tests/property/test_decimal_arithmetic.py` (Hypothesis) — for any pair of Decimals, `Money(a) + Money(b) - Money(b) == Money(a)` exactly (no float drift).
+- [x] 3.1 Implement `apps/api/src/iguanatrader/shared/decimal_utils.py` — `quantize(amount: Decimal, places: int) -> Decimal` using `ROUND_HALF_EVEN`; helper `currency_precision(currency: str) -> int` returning ISO 4217 minor-unit precision (USD=2, JPY=0, BTC=8 — at least these three; add more on demand).
+- [x] 3.2 Implement `apps/api/src/iguanatrader/shared/types.py` — frozen `Money` dataclass with `amount: Decimal` + `currency: str`, `__post_init__` rejecting `float` input, `__add__`/`__sub__`/`__neg__` enforcing same-currency invariant, `quantize()` method using `currency_precision`.
+- [x] 3.3 Unit tests `apps/api/tests/unit/shared/test_types.py` — covers float-input rejection, cross-currency error, banker's rounding scenarios.
+- [x] 3.4 Property test `apps/api/tests/property/test_decimal_arithmetic.py` (Hypothesis) — for any pair of Decimals, `Money(a) + Money(b) - Money(b) == Money(a)` exactly (no float drift).
 
 ## 4. Backoff + HeartbeatMixin
 
