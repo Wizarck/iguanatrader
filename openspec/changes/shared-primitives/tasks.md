@@ -1,9 +1,9 @@
 ## 1. Setup + dependencies
 
-- [ ] 1.1 Verify `hypothesis` is in `[tool.poetry.group.dev.dependencies]` in `pyproject.toml`; add if missing (no version pin tighter than `^6.0`).
-- [ ] 1.2 Create the package skeleton: `apps/api/src/iguanatrader/__init__.py` and `apps/api/src/iguanatrader/shared/__init__.py` (both empty placeholders so Python recognizes the package).
-- [ ] 1.3 Create the test directory skeleton: `apps/api/tests/__init__.py`, `apps/api/tests/unit/__init__.py`, `apps/api/tests/unit/shared/__init__.py`, `apps/api/tests/property/__init__.py`.
-- [ ] 1.4 Verify `mypy --strict` passes on the empty `shared/` package (sanity check that slice 1's mypy config sees the new path).
+- [x] 1.1 Verify `hypothesis` is in `[tool.poetry.group.dev.dependencies]` in `pyproject.toml`; add if missing (no version pin tighter than `^6.0`).
+- [x] 1.2 Create the package skeleton: `apps/api/src/iguanatrader/__init__.py` and `apps/api/src/iguanatrader/shared/__init__.py` (both empty placeholders so Python recognizes the package).
+- [x] 1.3 Create the test directory skeleton: `apps/api/tests/__init__.py`, `apps/api/tests/unit/__init__.py`, `apps/api/tests/unit/shared/__init__.py`, `apps/api/tests/property/__init__.py`.
+- [x] 1.4 Verify `mypy --strict` passes on the empty `shared/` package (sanity check that slice 1's mypy config sees the new path).
 
 ## 2. Time + ContextVars + Errors (foundations consumed by everything else)
 
