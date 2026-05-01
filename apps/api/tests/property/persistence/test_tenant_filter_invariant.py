@@ -31,6 +31,7 @@ from iguanatrader.persistence import (
 from iguanatrader.persistence.base import Base
 from iguanatrader.shared.contextvars import with_tenant_context
 from sqlalchemy import Uuid, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -47,7 +48,9 @@ class _PropFoo(Base):
 _TENANT_POOL = [uuid4() for _ in range(4)]
 
 
-def _setup_engine(tmp_path: Path) -> tuple:
+def _setup_engine(
+    tmp_path: Path,
+) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
     """Create a per-example engine + sessionmaker with schema."""
     db_path = tmp_path / "ig_property.db"
     engine = engine_factory(f"sqlite+aiosqlite:///{db_path.as_posix()}")
