@@ -91,7 +91,17 @@ class Subscription(Generic[EventT]):
 
 
 class MessageBus:
-    """In-process pub/sub with per-subscriber FIFO queues."""
+    """In-process pub/sub with per-subscriber FIFO queues.
+
+    .. caution:: handler exceptions kill the worker task
+
+       The internal worker task does NOT catch exceptions raised by a
+       handler. If a handler raises, its worker task terminates and
+       that subscriber stops receiving events. Slice 2 has no logging
+       wired up (slice O1 lands ``structlog``); until then, callers
+       SHOULD wrap their handler bodies in a ``try/except`` and decide
+       whether to log + swallow or let the failure propagate.
+    """
 
     def __init__(self) -> None:
         self._subscriptions: dict[type[Event], list[Subscription[Event]]] = {}

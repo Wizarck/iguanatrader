@@ -27,6 +27,21 @@ class _RecordingAdapter(HeartbeatMixin):
         self.disconnect_callback_count += 1
 
 
+class TestAbstractEnforcement:
+    def test_cannot_instantiate_without_overriding_abstract_methods(self) -> None:
+        # Subclasses that omit one of the abstract hooks must not be
+        # instantiable — caught at __init__ via ABC, not at the first
+        # method call.
+        class _Incomplete(HeartbeatMixin):
+            async def _send_heartbeat(self) -> None:
+                pass
+
+            # _on_disconnect intentionally not implemented.
+
+        with pytest.raises(TypeError, match="abstract"):
+            _Incomplete()  # type: ignore[abstract]
+
+
 class TestInitialState:
     def test_starts_disconnected(self) -> None:
         a = _RecordingAdapter()

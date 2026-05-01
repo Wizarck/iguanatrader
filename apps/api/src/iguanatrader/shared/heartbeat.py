@@ -33,7 +33,7 @@ schedules it as an :class:`asyncio.Task` after the first
 from __future__ import annotations
 
 import asyncio
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from enum import StrEnum
 
 from iguanatrader.shared.backoff import backoff_seconds
@@ -51,13 +51,19 @@ class ConnectionState(StrEnum):
     DISCONNECTED = "disconnected"
 
 
-class HeartbeatMixin:
+class HeartbeatMixin(ABC):
     """Mix in to any class that holds a live connection.
 
     The mixin owns one piece of state (``_state``) and a side-effect
     contract for transitions. It does not assume any particular network
     library; subclasses adapt it to ``ib_async``, ``python-telegram-bot``,
     ``hermes-client``, etc.
+
+    Inherits :class:`abc.ABC` so that
+    :meth:`_send_heartbeat` and :meth:`_on_disconnect` are enforced at
+    instantiation time — a subclass that forgets to override either
+    method raises :class:`TypeError` on construction (rather than
+    failing at runtime when the unimplemented method is invoked).
     """
 
     _state: ConnectionState
