@@ -73,6 +73,10 @@ def _inject_tenant_filter(state: ORMExecuteState) -> None:
 
     tenant = _read_tenant_or_raise()
 
+    # SA 2.x caches statements aggressively. Lambda-form criteria can capture
+    # stale tenant values across test runs because the lambda identity is
+    # cached, not the closure values. Pass the SQL expression directly so the
+    # tenant becomes a bind parameter per query — no closure capture.
     for mapper in Base.registry.mappers:
         cls = mapper.class_
         if not _is_tenant_scoped(cls):
@@ -81,7 +85,7 @@ def _inject_tenant_filter(state: ORMExecuteState) -> None:
             continue
         criteria = with_loader_criteria(
             cls,
-            lambda inst, _tenant=tenant: inst.tenant_id == _tenant,
+            cls.tenant_id == tenant,
             include_aliases=True,
         )
         state.statement = state.statement.options(criteria)

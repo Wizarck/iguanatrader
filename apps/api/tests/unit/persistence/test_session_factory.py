@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from iguanatrader.persistence.session import engine_factory, session_factory
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from iguanatrader.persistence.session import engine_factory, session_factory
 
 
 @pytest.mark.asyncio

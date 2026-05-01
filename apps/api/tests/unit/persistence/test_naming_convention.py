@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from iguanatrader.persistence.base import Base
 from sqlalchemy import ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-
-from iguanatrader.persistence.base import Base
 
 
 class _ParentTbl(Base):

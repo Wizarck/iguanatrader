@@ -18,7 +18,7 @@ from iguanatrader.persistence.append_only_listener import (
     register_append_only_listener,
     unregister_append_only_listener,
 )
-from iguanatrader.persistence.base import Base, NAMING_CONVENTION, metadata
+from iguanatrader.persistence.base import NAMING_CONVENTION, Base, metadata
 from iguanatrader.persistence.errors import (
     AppendOnlyViolationError,
     JSON1NotAvailableError,
@@ -58,12 +58,12 @@ def unregister_global_listeners() -> None:
 
 
 __all__ = [
+    "NAMING_CONVENTION",
     "AppendOnlyViolationError",
     "AsyncEngine",
     "AsyncSession",
     "Base",
     "JSON1NotAvailableError",
-    "NAMING_CONVENTION",
     "TenantContextMismatchError",
     "TenantContextMissingError",
     "engine_factory",
