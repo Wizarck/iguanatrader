@@ -230,6 +230,68 @@ Per-consumer the right invocation lives somewhere durable (Makefile target, runb
 
 ---
 
+## 14. Submodule untracked content trips `opsx_apply_companion` clean-tree check
+
+**Surfaced**: 2026-05-01 (slice 2, setup).
+
+**Symptom**: `python -m scripts.opsx_apply_companion --change-id <id> ...` exits 2 with `error: working tree is dirty. … M .ai-playbook` even though the consumer (iguanatrader) has no real changes. `cd .ai-playbook && git status` reveals the leaks: `?? hindsight-queue.jsonl` + `?? notifications.jsonl`.
+
+**Root cause**: The playbook submodule's operational scripts (`notify.py`, `retain_memory.py`) append to JSONL queues inside the submodule path. The playbook upstream `.gitignore` does not yet ignore `*.jsonl`, so those files show as untracked. By default `git status --porcelain` in the parent repo flags submodules with untracked content as `M`, which the companion's clean-tree gate rejects.
+
+**Workaround**: add `ignore = untracked` to every `[submodule …]` block in `.gitmodules` (committed in `slice/shared-primitives` infra commit `chore: ignore untracked content in submodules`). The submodule itself still tracks its committed content; only its operational scratch files become invisible to the parent.
+
+**Status**: ⚠️ active — `ignore = untracked` is the workaround. Permanent fix requires the playbook upstream to gitignore `*.jsonl`. Filed as upstream follow-up.
+
+## 15. mypy + Enum literal narrowing across method-driven state mutations
+
+**Surfaced**: 2026-05-01 (slice 2, group 4 — HeartbeatMixin tests).
+
+**Symptom**: A linear test that calls `mark_connected()` → `await mark_disconnected()` → `mark_reconnecting()` and asserts `a.state == ConnectionState.X` after each step trips `mypy --strict` with `Non-overlapping equality check (left operand: Literal[ConnectionState.CONNECTED], right operand: Literal[ConnectionState.DISCONNECTED]) [comparison-overlap]` on the second assertion onward.
+
+**Root cause**: After `mark_connected()`, mypy narrows `a.state` to `Literal[ConnectionState.CONNECTED]` (because the method body assigns that exact literal). It does NOT widen the narrow back when later methods mutate `_state`. Subsequent comparisons against a different literal therefore become non-overlapping in mypy's eyes — a documented limitation, not an mypy bug.
+
+**Workaround**: in tests that exercise multi-step state machines, suppress per-line with `# type: ignore[comparison-overlap]` on the assertions that follow the first transition. (For one or two lines this is cleaner than refactoring the test or using `cast`.) Better: split the test into smaller methods that don't span multiple transitions, when feasible.
+
+**Status**: ⚠️ active — known mypy limitation. Don't bother widening the type with `cast(ConnectionState, a.state)` — mypy re-narrows immediately.
+
+## 16. ruff `from datetime import timezone` → `from datetime import UTC` collides with mypy `no_implicit_reexport`
+
+**Surfaced**: 2026-05-01 (slice 2, group 2 — `shared/time.py`).
+
+**Symptom**: ruff's `UP` (pyupgrade) rule auto-rewrites `from datetime import timezone; UTC = timezone.utc` to `from datetime import UTC; UTC = UTC` (the second line is dead). Cleaning up by removing the dead alias and re-exporting the stdlib `UTC` via `__all__` then trips mypy's `no_implicit_reexport` rule because the import is not aliased explicitly.
+
+**Root cause**: With `[tool.mypy].no_implicit_reexport = true`, names imported into a module are NOT considered part of that module's public surface unless aliased like `from X import Y as Y`. Ruff's auto-fix doesn't add the alias.
+
+**Workaround**: write the import as `from datetime import UTC as UTC` (the explicit re-export form). Combine with a separate `from datetime import datetime, timedelta` line if needed (ruff's `I001` import-sorting rule is fine with two lines from the same module when one of them uses an alias).
+
+**Status**: ⚠️ active — small footgun whenever a public symbol is re-exported from stdlib.
+
+## 17. Hypothesis + `asyncio.run` on Windows leaks ProactorEventLoop FDs → ResourceWarning
+
+**Surfaced**: 2026-05-01 (slice 2, groups 4 & 5 — `test_heartbeat_idempotency.py`, `test_message_ordering.py`).
+
+**Symptom**: A property test that calls `asyncio.run(_run(...))` inside `@given` and runs hundreds of examples emits `ResourceWarning: unclosed event loop <ProactorEventLoop ...>` at process teardown. With `[tool.pytest.ini_options].filterwarnings = ["error"]` (slice 1 default), this turns into a test failure.
+
+**Root cause**: On Windows, asyncio defaults to `ProactorEventLoop` since Python 3.8. Each `asyncio.run()` creates and closes a fresh loop; the proactor implementation leaks a small number of FDs / GC-tracked objects per cycle. Across hundreds of Hypothesis examples this snowballs into a visible warning at GC time.
+
+**Workaround**: at the top of any property-test module that uses `asyncio.run` heavily, force the selector loop policy: `if sys.platform == "win32": asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())`. Selector loops are leak-free for our usage.
+
+**Status**: ⚠️ active — Windows-only quirk. Not a problem on CI's Ubuntu runner. Linux/macOS devs can ignore.
+
+## 18. `Money(amount=..., currency=...)` strict input typing requires `init=False` on the dataclass
+
+**Surfaced**: 2026-05-01 (slice 2, group 3 — `shared/types.py`).
+
+**Symptom**: A frozen dataclass declared as `Money(amount: Decimal, currency: str)` cannot accept `Money("100.00", "USD")` (str) or `Money(100, "USD")` (int) under `mypy --strict`. Loosening the field annotation to `Decimal | int | str` then makes every read of `m.amount` typed as the union — even though at runtime the constructor coerces to `Decimal`.
+
+**Root cause**: `@dataclass`'s auto-generated `__init__` mirrors the field annotations. There's no built-in way to have wide-input + narrow-storage type semantics with the auto-init. `dataclasses.field(default=...)` doesn't help either.
+
+**Workaround**: declare the dataclass with `@dataclass(frozen=True, slots=True, init=False)` and provide a custom `__init__(self, amount: Decimal | int | str, currency: str)` that coerces and stores via `object.__setattr__(self, "amount", Decimal(amount))`. The field annotation stays `Decimal`, so reads are correctly typed.
+
+**Status**: ⚠️ active — works fine but is not the obvious-first solution; document on the Money class.
+
+---
+
 ## Format for new entries
 
 ```markdown

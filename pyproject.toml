@@ -110,6 +110,10 @@ disallow_any_unimported = true
 disallow_untyped_decorators = true
 no_implicit_reexport = true
 show_error_codes = true
+# Slice 2 (shared-primitives) plants source under apps/api/src/iguanatrader/.
+# Subsequent slices add more bounded contexts under the same root. This entry
+# tells mypy where to resolve `iguanatrader.*` imports.
+mypy_path = ["apps/api/src"]
 exclude = [
     "^\\.venv/",
     "^node_modules/",
@@ -127,6 +131,9 @@ minversion = "8.0"
 asyncio_mode = "auto"
 addopts = "-q --strict-markers"
 testpaths = ["apps/api/tests", "tests"]
+# Same rationale as [tool.mypy].mypy_path — make `iguanatrader.*` importable
+# from tests without an installed wheel.
+pythonpath = ["apps/api/src"]
 markers = [
     "integration: integration tests (may hit DB / network)",
     "property: hypothesis property-based tests",
