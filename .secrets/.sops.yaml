@@ -1,0 +1,15 @@
+# SOPS encryption rules for iguanatrader.
+#
+# Recipients are age PUBLIC keys (no private keys here — those live in
+# ~/.config/sops/age/keys.txt per dev).
+#
+# - master:   derived from passphrase via scrypt(salt=iguanatrader-master-key-v1).
+#             Re-deriving on a new machine: see docs/getting-started.md §Secrets.
+# - per-node: optional, generated via `age-keygen` on each dev machine.
+#             Add the public key here, append the private key to keys.txt.
+#             Per-node keys allow decryption WITHOUT entering the passphrase
+#             every session.
+
+creation_rules:
+  - path_regex: \.env$
+    age: age10nqq3zd2t88nzym3wr95ju5rt0la9m3363sdnm8xfx44davzg4hqk0qh00

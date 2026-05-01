@@ -1,0 +1,23 @@
+# iguanatrader — test profile (CI + integration tests)
+#
+# Ephemeral SQLite (no litestream); broker mocked at the BrokerPort
+# interface (slice T1 lands the port; slice T2 the IBKR adapter; tests
+# inject a fake). Used by CI workflows to spin up an isolated stack for
+# E2E flow tests.
+
+services:
+
+  api:
+    image: iguanatrader/api:test
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: test
+    environment:
+      - IGUANATRADER_PROFILE=test
+      - "SQLITE_PATH=:memory:"
+    tmpfs:
+      - /data
+      - /logs
+    ports:
+      - "8001:8000"

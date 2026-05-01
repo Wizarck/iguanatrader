@@ -1,0 +1,68 @@
+# Reduce build context size — speed + avoid leaking dev artefacts into images.
+
+# Git internals
+.git/
+.gitignore
+.gitattributes
+.gitleaksignore
+
+# Python caches + venvs
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node + frontend build artefacts
+node_modules/
+.svelte-kit/
+dist/
+build/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets — encrypted .enc files OK to copy in (they're sealed); plaintext
+# overrides (e.g. dev.env) MUST NOT enter the build context.
+.secrets/*.env
+!.secrets/*.env.enc
+!.secrets/.sops.yaml
+
+# Documentation + repo metadata not needed at runtime
+docs/
+*.md
+!README.md
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md
+THIRD_PARTY_NOTICES.md
+
+# Tests + dev tooling
+tests/
+**/tests/
+**/test_*.py
+**/*_test.py
+**/conftest.py
+
+# CI / playbook integration (not needed at runtime)
+.github/
+.ai-playbook/
+.skills-sources/
+skills/
+.claude/
+.gemini/
+openspec/
+_bmad-output/
+
+# Misc
+*.log
+*.tmp
+*.bak
+data/
+logs/

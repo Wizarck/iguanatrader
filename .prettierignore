@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.svelte-kit/
+.skills-sources/
+.ai-playbook/
+skills/
+.claude/
+.gemini/
+.venv/
+poetry.lock
+pnpm-lock.yaml

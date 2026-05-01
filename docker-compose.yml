@@ -1,0 +1,53 @@
+# iguanatrader — dev profile (slice 1: skeleton with litestream sidecar)
+#
+# Service definitions are placeholders. Slice 2 (shared-primitives) lands
+# the actual API service; slice 3 (persistence-tenant-enforcement) lands
+# the SQLite + Alembic init. This file only declares the SHAPE of the dev
+# topology so `docker compose config` validates and downstream slices
+# extend without merge conflicts.
+#
+# Per AGENTS.md §4: paper-vs-live is a HARD boundary. Each environment has
+# its own standalone compose file (this dev / paper / live / test). Use
+# YAML anchors to share the litestream sidecar block; do NOT use `extends`
+# or compose v2 `profiles:` to share state across files.
+
+x-litestream: &litestream-defaults
+  image: litestream/litestream:latest
+  restart: unless-stopped
+  volumes:
+    - ./data:/data
+    - ./.litestream/litestream.yml:/etc/litestream.yml:ro
+
+services:
+
+  api:
+    image: iguanatrader/api:dev
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    environment:
+      - IGUANATRADER_PROFILE=dev
+      - SOPS_AGE_KEY_FILE=/run/secrets/age_key
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./.secrets/dev.env.enc:/run/secrets/dev.env.enc:ro
+    secrets:
+      - age_key
+    ports:
+      - "8000:8000"
+    depends_on:
+      - litestream
+
+  litestream:
+    <<: *litestream-defaults
+    command: ["replicate"]
+
+secrets:
+  age_key:
+    file: ${SOPS_AGE_KEY_FILE_HOST:-~/.config/sops/age/keys.txt}
+
+# Note: ./apps/api/Dockerfile + ./.litestream/litestream.yml are placeholders
+# expected to land in slices 2 + 3 + R4. Until then `docker compose build`
+# will fail (intended); `docker compose config` validates the YAML shape.

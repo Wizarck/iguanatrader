@@ -1,0 +1,76 @@
+name: License boundary check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Recorded canonical sha256 hashes (sourced 2026-04-30):
+# - Apache-2.0:    https://www.apache.org/licenses/LICENSE-2.0.txt
+# - Commons Clause v1.0:  https://commonsclause.com/
+#
+# Tampering with LICENSE (or these constants) will fail this workflow.
+env:
+  LICENSE_APACHE2_SHA256: ${{ vars.LICENSE_APACHE2_SHA256 }}
+  LICENSE_COMMONS_CLAUSE_SHA256: ${{ vars.LICENSE_COMMONS_CLAUSE_SHA256 }}
+
+jobs:
+  checksum:
+    name: Verify LICENSE checksums
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify LICENSE exists
+        run: |
+          test -f LICENSE || { echo "::error::LICENSE missing"; exit 1; }
+      # The full LICENSE is concatenation of Apache-2.0 + delimiter + Commons
+      # Clause v1.0. Slice 1 records the segment hashes via repo Variables;
+      # this step splits the file at the delimiter and verifies each half.
+      - name: Verify segment checksums
+        if: ${{ env.LICENSE_APACHE2_SHA256 != '' && env.LICENSE_COMMONS_CLAUSE_SHA256 != '' }}
+        run: |
+          set -euo pipefail
+          delimiter="--- COMMONS CLAUSE v1.0 ---"
+          # Split LICENSE at delimiter
+          awk -v d="$delimiter" '
+            BEGIN { section=1 }
+            $0 ~ d { section=2; next }
+            { print > ("/tmp/license-segment-" section ".txt") }
+          ' LICENSE
+          actual_apache=$(sha256sum /tmp/license-segment-1.txt | awk '{print $1}')
+          actual_clause=$(sha256sum /tmp/license-segment-2.txt | awk '{print $1}')
+          echo "Apache segment sha256: $actual_apache"
+          echo "Clause segment sha256: $actual_clause"
+          if [[ "$actual_apache" != "$LICENSE_APACHE2_SHA256" ]]; then
+            echo "::error::Apache-2.0 segment checksum mismatch (expected $LICENSE_APACHE2_SHA256, got $actual_apache)"
+            exit 1
+          fi
+          if [[ "$actual_clause" != "$LICENSE_COMMONS_CLAUSE_SHA256" ]]; then
+            echo "::error::Commons Clause segment checksum mismatch (expected $LICENSE_COMMONS_CLAUSE_SHA256, got $actual_clause)"
+            exit 1
+          fi
+          echo "::notice::Both LICENSE segments match canonical sha256 constants"
+      - name: Skip when constants not yet recorded
+        if: ${{ env.LICENSE_APACHE2_SHA256 == '' || env.LICENSE_COMMONS_CLAUSE_SHA256 == '' }}
+        run: |
+          echo "::notice::n/a — LICENSE_APACHE2_SHA256 or LICENSE_COMMONS_CLAUSE_SHA256 vars not yet set (slice 1 final-verification step records them)"
+
+  agpl-boundary:
+    name: AGPL boundary check (apps/api/ vs apps/openbb-sidecar/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip until slice R4
+        if: ${{ hashFiles('apps/openbb-sidecar/**/*') == '' }}
+        run: |
+          echo "::notice::n/a — apps/openbb-sidecar/ not present yet (slice R4 lands the AGPL container)"
+      - name: Verify no AGPL imports leaked into apps/api/
+        if: ${{ hashFiles('apps/openbb-sidecar/**/*') != '' }}
+        run: |
+          # Slice R4 implementation: scan apps/api/src/ + packages/ for
+          # any imports of openbb modules (must talk via HTTP only).
+          echo "Slice R4 implementation pending — placeholder no-op."

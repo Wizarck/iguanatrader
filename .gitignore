@@ -14,5 +14,48 @@
 .gemini/skills/
 .skills-sources/
 
-# Node — minimal stub before slice 1 (bootstrap-monorepo) expands this
+# Node — pnpm is the canonical workspace manager (per slice 1). npm/yarn
+# competing lockfiles must NOT enter the repo.
 node_modules/
+package-lock.json
+yarn.lock
+.pnpm-store/
+
+# Secrets — .env (plaintext) FORBIDDEN in repo; only .env.enc (sops-encrypted)
+# may be committed. AGENTS.md §4 hard rule.
+.secrets/*.env
+!.secrets/*.env.enc
+!.secrets/.sops.yaml
+*.key
+*.pem
+*.p12
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime data + logs
+data/
+logs/
+*.db
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Python — virtualenv + caches + build artefacts
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Poetry: only the per-developer local override (.local) is gitignored; the
+# committed `poetry.toml` carries the portable repo settings (e.g.
+# virtualenvs.in-project = true) that ALL devs benefit from.
