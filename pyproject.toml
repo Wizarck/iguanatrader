@@ -11,9 +11,20 @@ authors = [
 [tool.poetry]
 # Root pyproject is workspace-level only; no installable package at the root.
 # Slice 2 (shared-primitives) lands `apps/api/src/iguanatrader/` and slice 3
-# adds Alembic migrations. Until then the root just holds dev tooling shared
-# across the monorepo.
+# adds Alembic migrations + persistence layer runtime deps below.
 package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+sqlalchemy = { version = ">=2.0,<3.0", extras = ["asyncio"] }
+alembic = ">=1.13,<2.0"
+aiosqlite = ">=0.19,<1.0"
+
+[tool.poetry.group.postgres]
+optional = true
+
+[tool.poetry.group.postgres.dependencies]
+asyncpg = ">=0.29,<1.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = ">=0.7"
@@ -22,6 +33,7 @@ mypy = ">=1.13"
 pytest = ">=8.3"
 pytest-asyncio = ">=0.24"
 hypothesis = ">=6.115"
+pytest-cov = ">=5.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0"]
@@ -141,4 +153,10 @@ markers = [
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:poetry.*",
+    # Windows-only: aiosqlite + asyncio.run leaks event loops + sockets when
+    # multiple Hypothesis examples + coverage are combined in one process.
+    # The leaked resources don't cause test failures (correctness is fine);
+    # we accept the noise rather than block CI on a Windows quirk that
+    # doesn't reproduce on the Linux CI runners. See gotcha #17.
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]

@@ -292,6 +292,68 @@ Per-consumer the right invocation lives somewhere durable (Makefile target, runb
 
 ---
 
+## 19. SA 2.x lambda-form `with_loader_criteria` captures stale closure across statement cache
+
+**Surfaced**: 2026-05-01 (slice 3, group 12 integration tests for tenant isolation).
+
+**Symptom**: A `do_orm_execute` listener that wraps every Select with `with_loader_criteria(cls, lambda inst, _t=tenant: inst.tenant_id == _t)` works correctly when the tenant value never changes within the process. As soon as a *second* test changes the tenant, all subsequent Selects start filtering against the *first* test's tenant value — every read returns zero rows and the property test fails. Reproduces deterministically as long as both tests share the same Python process.
+
+**Root cause**: SQLAlchemy 2.x caches statements aggressively (`compiled_cache`). The cache key is derived from the lambda's *identity* and *bytecode*, not from its closure values (`_tenant=tenant` default arg). Two queries from different tests with the same lambda body collide on the cache, and the second query reuses the *first* compilation — including its bound `tenant` value.
+
+**Workaround**: Pass the SQL expression directly instead of a lambda. `with_loader_criteria(cls, cls.tenant_id == tenant, include_aliases=True)` produces a fresh BindParameter each call; the cache correctly invalidates per tenant. Documented in the listener (`apps/api/src/iguanatrader/persistence/tenant_listener.py`) with an inline comment.
+
+**Status**: resolved on 2026-05-01 — listener now passes the expression directly.
+
+## 20. `with_loader_criteria` is no-op for opt-out tables — no need to walk the FROM clause
+
+**Surfaced**: 2026-05-01 (slice 3, group 5 implementation of tenant_listener).
+
+**Symptom**: When designing the `do_orm_execute` listener, the obvious approach is to walk the Select's FROM clause and only attach criteria for tables actually referenced. This is fragile (FROM walking semantics differ across query shapes — joins, subqueries, CTEs).
+
+**Root cause**: `with_loader_criteria` is already idempotent for unreferenced classes — SA skips the criteria automatically when the class doesn't appear in the query. So iterating *every* tenant-scoped mapper in `Base.registry.mappers` and attaching criteria is correct AND simpler. Cost: one criteria-attach per mapper per query (negligible).
+
+**Workaround**: Don't try to be clever about FROM-walking. Iterate `Base.registry.mappers`, filter by `__tenant_scoped__` and `hasattr(cls, "tenant_id")`, attach criteria for each. Trust SA to no-op the unused ones.
+
+**Status**: documented as design choice 2026-05-01 — listener uses the simple iteration approach.
+
+## 21. SQLite `PRAGMA foreign_keys = ON` is per-connection, not per-database
+
+**Surfaced**: 2026-05-01 (slice 3, group 4 implementation of session.py).
+
+**Symptom**: A schema with `FOREIGN KEY` declarations and `ON DELETE RESTRICT` cascade rules silently allows orphan rows. `INSERT INTO users(tenant_id) VALUES ('non-existent')` succeeds even though `users.tenant_id` is a FK to `tenants.id`.
+
+**Root cause**: SQLite ignores foreign-key constraints by default. `PRAGMA foreign_keys = ON` enables enforcement *for the current connection only*. New connections start with FK enforcement OFF unless the PRAGMA is re-issued.
+
+**Workaround**: Wire a `connect` event listener on the engine: `event.listen(engine.sync_engine, "connect", _sqlite_pragmas)`. The handler runs `PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 30000` on every new connection. Implemented in `apps/api/src/iguanatrader/persistence/session.py`.
+
+**Status**: resolved on 2026-05-01 — engine listener applies PRAGMAs per connection.
+
+## 22. SQLAlchemy `AsyncSession` `expire_on_commit=False` rationale
+
+**Surfaced**: 2026-05-01 (slice 3, design D5).
+
+**Symptom**: With the default `expire_on_commit=True`, accessing any attribute on an ORM instance after `await session.commit()` triggers an *implicit refresh* — a new SELECT under the hood. In sync code this is fine. In async code the refresh is async too; without an `await` it raises `MissingGreenlet` or returns coroutine objects instead of attribute values. Easy to forget; gnarly to debug.
+
+**Root cause**: `expire_on_commit=True` is the SQLAlchemy default because in long-running web requests, stale data after commit is a real concern. In async code the implicit refresh creates a footgun that swamps the benefit.
+
+**Workaround**: Configure `async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)`. Trade-off: instances retain their pre-commit state; if another writer modified the row between load and commit, the in-memory instance is stale. MVP is single-writer per process so this is irrelevant. v2 multi-writer scenarios will need explicit `await session.refresh(instance)` after commit at the call sites that care.
+
+**Status**: documented as design D5 (slice 3). Revisit when multi-writer concurrency emerges.
+
+## 23. Raw SQL via `session.execute(text(...))` BYPASSES the ORM tenant filter listener
+
+**Surfaced**: 2026-05-01 (slice 3, design D1).
+
+**Symptom**: A code path drops to `await session.execute(text("SELECT * FROM users WHERE ..."))` — perfectly valid SQLAlchemy — and the `do_orm_execute` listener does NOT inject `WHERE tenant_id = :current` because the statement is raw SQL, not an ORM `Select`. The query returns cross-tenant rows.
+
+**Root cause**: The `do_orm_execute` event fires only for ORM-mapped queries (`Select(Model)`, `Update(Model)`, etc.). Raw `text()` statements bypass the ORM layer entirely.
+
+**Workaround**: Treat raw SQL as an *opt-in privilege*. Whenever a code path needs raw SQL, the author MUST: (a) document inline why the ORM is insufficient; (b) manually parameterise `:tenant` from `tenant_id_var.get()`; (c) add an ADR if the raw-SQL pattern is going to repeat across the codebase. The contract is "use the ORM unless documented otherwise". CI enforcement deferred — needs a ruff rule that flags `session.execute(text(...))` without a comment justification.
+
+**Status**: documented as design contract 2026-05-01. CI lint rule is a slice O1 follow-up.
+
+---
+
 ## Format for new entries
 
 ```markdown

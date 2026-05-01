@@ -1,0 +1,53 @@
+name: Regenerate poetry.lock
+
+# Manual trigger only. Use when pyproject.toml has been modified locally
+# without a working poetry available to regenerate the lock. Workflow
+# resolves dependencies on the runner and commits the updated lock back.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "slice/**"
+      - "chore/**"
+      - "fix/**"
+      - "feat/**"
+    paths:
+      - "pyproject.toml"
+      - ".github/workflows/regenerate-lock.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install poetry
+        run: pip install poetry
+
+      - name: Regenerate lock
+        run: poetry lock --no-cache
+
+      - name: Commit + push lock if changed
+        run: |
+          if ! git diff --quiet poetry.lock; then
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git add poetry.lock
+            git commit -m "chore(deps): regenerate poetry.lock to match pyproject.toml"
+            git push
+          else
+            echo "poetry.lock already in sync — no changes."
+          fi
