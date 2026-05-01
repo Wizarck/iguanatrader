@@ -42,9 +42,9 @@
 
 ## 7. Boundary enforcement + structlog convention
 
-- [ ] 7.1 Add an import-boundary check (script under `apps/api/scripts/check_shared_boundary.py` OR inline in `.pre-commit-config.yaml` as a regex hook) that scans `apps/api/src/iguanatrader/shared/**/*.py` and fails on any `from iguanatrader\.(contexts|api|persistence|cli)` line per spec requirement "shared/ has no domain dependencies".
-- [ ] 7.2 Wire the boundary check into `.pre-commit-config.yaml` so it runs locally + in CI.
-- [ ] 7.3 Document the structlog event-name convention `<context>.<entity>.<action>` in `apps/api/src/iguanatrader/shared/__init__.py` module docstring (no logger config yet; that's slice O1).
+- [x] 7.1 Add an import-boundary check (script under `apps/api/scripts/check_shared_boundary.py` OR inline in `.pre-commit-config.yaml` as a regex hook) that scans `apps/api/src/iguanatrader/shared/**/*.py` and fails on any `from iguanatrader\.(contexts|api|persistence|cli)` line per spec requirement "shared/ has no domain dependencies".
+- [x] 7.2 Wire the boundary check into `.pre-commit-config.yaml` so it runs locally + in CI.
+- [x] 7.3 Document the structlog event-name convention `<context>.<entity>.<action>` in `apps/api/src/iguanatrader/shared/__init__.py` module docstring (no logger config yet; that's slice O1).
 
 ## 8. Verification + acceptance gate
 

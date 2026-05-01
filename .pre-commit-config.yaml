@@ -103,6 +103,18 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
+      # Shared-kernel boundary: no imports from contexts/api/persistence/cli.
+      # Lands in slice 2 (shared-primitives) per the spec requirement
+      # "shared/ has no domain dependencies". The script under apps/api/
+      # scripts/ scans the shared package and exits non-zero on violation.
+      - id: shared-kernel-boundary
+        name: shared-kernel boundary check (no domain deps)
+        entry: python apps/api/scripts/check_shared_boundary.py
+        language: system
+        pass_filenames: false
+        files: ^apps/api/src/iguanatrader/shared/.*\.py$
+        stages: [pre-commit]
+
       # Playbook integration (preserved from bootstrap).
       - id: schema-validate-agents
         name: Validate AGENTS.md against playbook schema
