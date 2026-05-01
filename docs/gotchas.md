@@ -177,6 +177,23 @@ env:
 
 Tracked as a question for the playbook maintainer.
 
+## 11. CI: `pre-commit run --all-files` re-flags legacy issues + breaks `block-manual-spec-edit`
+
+**Surfaced**: 2026-05-01 (PR #23 — first PR through new branch-protection flow).
+
+**Symptom**: `Pre-commit hooks` job in CI fails on every PR with:
+- `fix end of files...........Failed` — auto-fixes legacy files in main that predate the hook
+- `Block manual edits to openspec/specs/...........Failed` — flags `openspec/specs/*.md` files even when the PR doesn't touch them
+
+**Root cause**: the CI step ran `pre-commit run --all-files`, which scans every file in the repo on every PR. Two consequences:
+
+1. **Legacy files** (whitespace, missing trailing newlines, etc.) added to main BEFORE the hook config existed get re-flagged on every PR, even when the PR never touches them. Auto-fix triggers a non-zero exit, marking the PR red for an issue it didn't introduce.
+2. **`block_manual_spec_edit.py` is buggy under `--all-files`**: it considers a file "edited" if the path matches `openspec/specs/*.md`, regardless of whether the PR's diff actually modifies it. With `--all-files`, every spec file is "checked" — and since the PR's HEAD commit message lacks the `openspec-archive:` marker, the hook fails. The script doesn't know how to distinguish "file exists" from "file modified by this commit".
+
+**Workaround**: change the CI invocation from `--all-files` to `--from-ref <BASE> --to-ref HEAD` so only files changed by THIS PR are checked. PR events use `origin/$GITHUB_BASE_REF` as base; push events use `HEAD~1`.
+
+**Status**: workaround in iguanatrader's `ci.yml`. **Upstream fix queued** for ai-playbook: `block_manual_spec_edit.py` should resolve "file modified vs file exists" via `git diff --name-only HEAD~1 HEAD --` filter instead of relying on the caller to pass only modified files. Phase 1 of multi-AI-dev release-management migration tracks this.
+
 ---
 
 ## Format for new entries
