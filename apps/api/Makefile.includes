@@ -1,0 +1,33 @@
+# apps/api/Makefile.includes — Python API package targets
+#
+# `-include`d from the root Makefile per the anti-collision pattern (each slice
+# owns its own .includes; root never edited). Slice 2 plants this file with
+# test/lint/type targets; slice 3 (persistence-tenant-enforcement) adds the
+# Alembic db-* targets below.
+
+API_DIR        := apps/api
+ALEMBIC_CONFIG := $(API_DIR)/alembic.ini
+PYTHONPATH_API := PYTHONPATH=$(API_DIR)/src
+
+.PHONY: db-upgrade db-downgrade db-current db-revision db-history
+
+# Apply all pending migrations (or upgrade to a specific revision via REV=...).
+db-upgrade:
+	$(PYTHONPATH_API) python -m alembic -c $(ALEMBIC_CONFIG) upgrade $(or $(REV),head)
+
+# Roll back one migration (or to a specific revision via REV=base).
+db-downgrade:
+	$(PYTHONPATH_API) python -m alembic -c $(ALEMBIC_CONFIG) downgrade $(or $(REV),-1)
+
+# Print the current revision applied to the database.
+db-current:
+	$(PYTHONPATH_API) python -m alembic -c $(ALEMBIC_CONFIG) current
+
+# Generate a new migration via autogenerate. Usage: make db-revision MSG="add foo"
+# Subsequent slices (R1, T1, K1, P1, O1, ...) use this to scaffold their migration.
+db-revision:
+	@if [ -z "$(MSG)" ]; then echo "ERROR: MSG=... required (e.g. make db-revision MSG='add research tables')"; exit 1; fi
+	$(PYTHONPATH_API) python -m alembic -c $(ALEMBIC_CONFIG) revision --autogenerate -m "$(MSG)"
+
+db-history:
+	$(PYTHONPATH_API) python -m alembic -c $(ALEMBIC_CONFIG) history --verbose
