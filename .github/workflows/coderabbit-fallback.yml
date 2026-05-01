@@ -57,7 +57,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # PAT required: the .ai-playbook + .skills-sources/ai-playbook
+          # submodules point to the private Wizarck/ai-playbook repo. The
+          # default GITHUB_TOKEN scope is the consumer repo only — cross-repo
+          # clone needs Contents:R on the playbook + skills repos. Stored as
+          # repo secret. Per gotcha #7 + ci.yml uses the same secret.
           submodules: true
+          token: ${{ secrets.ELIGIA_GOD_MODE }}
           ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-python@v5
