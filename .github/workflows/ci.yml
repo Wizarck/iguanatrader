@@ -146,7 +146,30 @@ jobs:
         # root is on sys.path. On developer machines that's true thanks to
         # `pip install -e .ai-playbook`; CI doesn't have that, so prepend
         # the path explicitly. (Documented in docs/gotchas.md.)
+        #
+        # Run on the diff vs base ref instead of --all-files so we only
+        # check what THIS PR changes. --all-files re-flags legacy issues in
+        # main (trailing whitespace, missing trailing newlines, etc.) that
+        # predate the hook config — false positives that block PRs without
+        # any actionable signal. block-manual-spec-edit also fails on
+        # --all-files because it cannot distinguish "file exists at path"
+        # from "file was modified by this commit"; with diff mode, only
+        # actually-changed files are checked. (Gotcha #11.)
         env:
           SKIP: mcp-validate
           PYTHONPATH: ${{ github.workspace }}/.ai-playbook
-        run: pre-commit run --all-files --show-diff-on-failure
+        run: |
+          if [ -n "$GITHUB_BASE_REF" ]; then
+            # Pull-request event: check only files changed vs the base.
+            git fetch origin "$GITHUB_BASE_REF" --depth=1
+            pre-commit run \
+              --from-ref "origin/$GITHUB_BASE_REF" \
+              --to-ref HEAD \
+              --show-diff-on-failure
+          else
+            # Push event (main, after merge): check the latest commit only.
+            pre-commit run \
+              --from-ref HEAD~1 \
+              --to-ref HEAD \
+              --show-diff-on-failure
+          fi

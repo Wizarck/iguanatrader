@@ -1,0 +1,76 @@
+# CodeRabbit configuration for iguanatrader.
+# Reference: https://docs.coderabbit.ai/configure-coderabbit
+#
+# CodeRabbit is enabled on this repo via GH Marketplace install (free for
+# public OSS). It comments on every PR with a high-level summary + inline
+# nits. Treat its review as advisory, not authoritative — the human Gate F
+# is still the merge prerequisite.
+
+language: en-US
+early_access: false
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  # Skip vendored / generated content. CodeRabbit charges no token cost on
+  # public OSS, but reviewing 600+ skills/ files dilutes signal in the diff
+  # summary and adds noise to inline comments.
+  path_filters:
+    - "!.ai-playbook/**"
+    - "!.skills-sources/**"
+    - "!.claude/skills/**"
+    - "!.gemini/**"
+    - "!skills/**"
+    - "!**/poetry.lock"
+    - "!**/pnpm-lock.yaml"
+    - "!**/*.min.js"
+    - "!**/*.min.css"
+    - "!**/__pycache__/**"
+    - "!**/.venv/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+  path_instructions:
+    - path: "openspec/specs/**/*.md"
+      instructions: |
+        These specs are promoted automatically by `npx openspec archive`
+        from `openspec/changes/<change-id>/specs/`. Direct hand-edits are
+        blocked by the `block-manual-spec-edit` pre-commit hook. If you see
+        a diff here without an `openspec-archive:<change-id>` trailer in
+        the commit message, flag it as a workflow violation.
+    - path: "openspec/changes/**/*.md"
+      instructions: |
+        Each `openspec/changes/<change-id>/` directory is the workspace for
+        one in-flight slice. Verify `proposal.md`, `design.md`, `tasks.md`,
+        and `specs/<capability>/spec.md` are coherent — proposal "What
+        Changes" should map 1:1 to spec capabilities + design decisions.
+    - path: "docs/adr/ADR-*.md"
+      instructions: |
+        ADRs follow the project template: Context / Decision / Consequences
+        / Alternatives Considered. Status field MUST be one of: proposed,
+        accepted, deprecated, superseded by ADR-NNN. Filename pattern:
+        `ADR-NNN-YYYY-MM-DD-kebab-title.md` where NNN is monotonic.
+    - path: "openspec/changes/*/tasks.md"
+      instructions: |
+        Tasks must be atomic (one verb per task) and CHECKABLE (a reviewer
+        can verify done/not-done). Flag tasks that are vague (e.g. "improve
+        X") or untestable.
+    - path: "apps/api/**/*.py"
+      instructions: |
+        Per AGENTS.md hard rules: structlog event names follow
+        `<context>.<entity>.<action>` (e.g. `trading.order.placed`). All
+        timestamps ISO 8601 UTC. No hardcoded API keys or secrets — those
+        live in SOPS. Async-only (no thread pools); single asyncio loop.
+    - path: ".github/workflows/**/*.yml"
+      instructions: |
+        Verify required permissions are minimal (principle of least
+        privilege). Any PAT (e.g. `${{ secrets.ELIGIA_GOD_MODE }}`) should
+        only be used where the default GITHUB_TOKEN cannot reach (e.g.
+        cross-repo private submodule clone).
+chat:
+  auto_reply: true
