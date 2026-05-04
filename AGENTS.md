@@ -2,9 +2,9 @@
 schema: agents-md/v1
 version: 0.1.0
 inherits_from:
-  - github.com/Wizarck/ai-playbook@v0.9.2
+  - github.com/Wizarck/ai-playbook@v0.9.3
 skills_sources:
-  - Wizarck/ai-playbook@v0.9.2
+  - Wizarck/ai-playbook@v0.9.3
   - Wizarck/eligia-skills@v0.3.0
 updated: 2026-05-04
 project: iguanatrader
@@ -33,6 +33,7 @@ Iguanatrader — algorithmic trading bot. Estrategias automatizadas para crypto 
 
 | Topic | Pointer |
 |---|---|
+| **How to make a change in this project (canonical entry point)** | [.ai-playbook/docs/development-flow.md](.ai-playbook/docs/development-flow.md) |
 | Daily-dev runbook | [docs/runbook.md](docs/runbook.md) |
 | Architecture decisions | `docs/architecture-decisions.md` *(create when first ADR lands)* |
 | PRD | `docs/prd.md` *(create when product brief lands)* |
