@@ -33,6 +33,7 @@ Iguanatrader — algorithmic trading bot. Estrategias automatizadas para crypto 
 
 | Topic | Pointer |
 |---|---|
+| **How to make a change in this project (canonical entry point)** | [.ai-playbook/docs/development-flow.md](.ai-playbook/docs/development-flow.md) |
 | Daily-dev runbook | [docs/runbook.md](docs/runbook.md) |
 | Architecture decisions | `docs/architecture-decisions.md` *(create when first ADR lands)* |
 | PRD | `docs/prd.md` *(create when product brief lands)* |
