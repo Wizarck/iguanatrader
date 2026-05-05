@@ -8,7 +8,7 @@ when the migration runs in lower environments — once R5 lands the
 synthesizer, populated values become the norm).
 
 **Merge order constraint (design D5)**: ``down_revision`` points at
-``"0002_research_tables"`` (slice R1's migration). R1 MUST merge into
+``"0003_research_tables"`` (slice R1's migration). R1 MUST merge into
 ``main`` before this migration's PR is merged — otherwise
 ``alembic upgrade head`` on a fresh DB fails because the parent
 revision is not present. CI gate: ``test_trading_migration.py`` runs
@@ -17,8 +17,8 @@ revisions are applied. Until R1 lands, the slice-T1 branch keeps this
 ``down_revision`` declaration unchanged; on rebase, no edit is needed
 because R1's revision string is the canonical anchor.
 
-Revision ID: 0003_trading_tables
-Revises: 0002_research_tables
+Revision ID: 0004_trading_tables
+Revises: 0003_research_tables
 Created at: 2026-05-05T00:00:00Z
 """
 
@@ -29,12 +29,12 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0003_trading_tables"
+revision: str = "0004_trading_tables"
 # Per design D5: anchor at R1's revision. The slice-T1 PR cannot merge
 # until R1 (``research-bitemporal-schema``) is merged into ``main``;
 # ``test_trading_migration.py`` enforces the gate by attempting
 # ``alembic upgrade head`` on a fresh DB.
-down_revision: str | None = "0002_research_tables"
+down_revision: str | None = "0003_research_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

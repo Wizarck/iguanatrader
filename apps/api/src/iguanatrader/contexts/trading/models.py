@@ -141,16 +141,17 @@ class TradeProposal(Base):
     reasoning: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     research_brief_id: Mapped[UUID | None] = mapped_column(
         Uuid,
-        # FK target lives in slice R1's migration ``0002_research_tables``
-        # (table ``research_briefs``); the merge order is documented in
-        # the design doc §D5. We deliberately do NOT declare an ORM-level
-        # ``ForeignKey("research_briefs.id", ...)`` here because the
-        # ``research_briefs`` table is owned by R1 and the bounded
-        # context's ORM does not yet have a sibling :class:`ResearchBrief`
-        # model — ``Base.metadata.create_all`` would fail to resolve the
-        # FK at test time. The FK is declared in the migration
-        # ``0003_trading_tables.py`` with ``ondelete='RESTRICT'`` so the
-        # DB-level enforcement is intact post-rebase on R1.
+        # FK target lives in slice R1's migration ``0003_research_tables``
+        # (table ``research_briefs``; R1 took 0003 because slice 4 had
+        # already taken 0002_users_role_enum). The merge order is
+        # documented in the design doc §D5. We deliberately do NOT declare
+        # an ORM-level ``ForeignKey("research_briefs.id", ...)`` here
+        # because the ``research_briefs`` table is owned by R1 and this
+        # bounded context's ORM does not have a sibling
+        # :class:`ResearchBrief` model — ``Base.metadata.create_all``
+        # would fail to resolve the FK at test time. The FK is declared
+        # in the migration ``0004_trading_tables.py`` with
+        # ``ondelete='RESTRICT'`` so the DB-level enforcement is intact.
         nullable=True,
     )
     mode: Mapped[str] = mapped_column(Text, nullable=False)

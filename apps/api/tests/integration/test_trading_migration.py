@@ -1,7 +1,7 @@
 """Alembic upgrade/downgrade smoke for the trading-context migration.
 
-Per design D5: ``0003_trading_tables`` requires R1's
-``0002_research_tables`` migration to be present in the ``versions/``
+Per design D5: ``0004_trading_tables`` requires R1's
+``0003_research_tables`` migration to be present in the ``versions/``
 directory; absence raises ``RevisionError`` (or similar) at
 ``alembic upgrade head``. The CI gate fails the slice-T1 PR until R1
 is rebased in.
@@ -28,11 +28,11 @@ def _versions_dir() -> Path:
 
 
 def _r1_migration_present() -> bool:
-    """Detect R1's ``0002_research_tables`` migration in ``versions/``."""
+    """Detect R1's ``0003_research_tables`` migration in ``versions/``."""
     versions = _versions_dir()
     if not versions.exists():
         return False
-    return any(p.name.startswith("0002_research_tables") for p in versions.iterdir())
+    return any(p.name.startswith("0003_research_tables") for p in versions.iterdir())
 
 
 @pytest.fixture
@@ -58,14 +58,14 @@ def alembic_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
 def test_r1_migration_required_for_upgrade(alembic_config: Config) -> None:
     """Without R1's migration in ``versions/``, ``upgrade head`` fails.
 
-    Per design D5 the ``down_revision='0002_research_tables'`` is the
+    Per design D5 the ``down_revision='0003_research_tables'`` is the
     explicit merge-order anchor; alembic refuses to walk past a missing
     parent revision.
     """
     if _r1_migration_present():
         pytest.skip(
             "R1 migration present locally — merge-order gate cannot be exercised "
-            "without temporarily removing 0002_research_tables.py from versions/"
+            "without temporarily removing 0003_research_tables.py from versions/"
         )
 
     with pytest.raises(Exception):  # noqa: B017 — alembic raises one of several internal types
