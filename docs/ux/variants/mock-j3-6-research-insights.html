@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · J3-6 — /research/insights surface</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --r-pill: 9999px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1500px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 1200px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__title {
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .surface-frame__header {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    border-bottom: 1px solid var(--border);
+  }
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 0;
+    min-height: 820px;
+    position: relative;
+  }
+
+  /* App shell */
+  .shell { display: grid; grid-template-columns: 200px 1fr; height: 100%; min-height: 820px; }
+  .sidebar { background: var(--surface-2); padding: 12px 8px; border-right: 1px solid var(--border); }
+  .sb-brand { display: flex; align-items: center; gap: 8px; padding: 8px 8px 16px; font-weight: 600; font-size: 14px; color: var(--ink); border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .sb-brand__mark { width: 22px; height: 22px; background: var(--accent); border-radius: var(--r-1); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-fg); font-weight: 700; font-size: 12px; font-family: var(--font-mono); }
+  .sb-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r-2); color: var(--mute); font-size: 13px; cursor: pointer; }
+  .sb-row.active { background: var(--bg); color: var(--accent); }
+  .sb-row [data-lucide] { width: 16px; height: 16px; stroke: currentColor; }
+  .sb-row .badge { margin-left: auto; background: var(--accent); color: var(--accent-fg); font-size: 10px; font-family: var(--font-mono); padding: 1px 6px; border-radius: var(--r-pill); font-weight: 600; }
+
+  .main { padding: 16px 22px; overflow: auto; }
+  .page-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  .page-h h1 { font-size: 20px; margin: 0; }
+  .page-sub { font-size: 12px; color: var(--mute); margin: 0 0 14px; font-family: var(--font-mono); }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .tab {
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--mute);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Stats row */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 12px;
+  }
+  .stat-card .label {
+    font-size: 10px;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+  }
+  .stat-card .value {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    color: var(--ink);
+    margin: 4px 0 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-card .delta {
+    font-size: 11px;
+    color: var(--mute);
+    font-family: var(--font-mono);
+  }
+  .stat-card .delta.up { color: var(--success); }
+  .stat-card .delta.down { color: var(--destructive); }
+
+  /* Cross-symbol aggregation row */
+  .agg-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .agg-row__title {
+    font-size: 11px;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+    margin-bottom: 10px;
+  }
+  .agg-list { display: flex; gap: 16px; flex-wrap: wrap; }
+  .agg-item { display: flex; flex-direction: column; gap: 2px; }
+  .agg-item .ptype { font-size: 12px; color: var(--ink); font-weight: 500; }
+  .agg-item .pmeta { font-size: 11px; color: var(--mute); font-family: var(--font-mono); }
+  .agg-item .ptype .count { color: var(--accent); font-family: var(--font-mono); font-weight: 600; }
+
+  /* Search bar */
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 0 12px;
+    height: 36px;
+    margin-bottom: 8px;
+  }
+  .search-bar [data-lucide].search-icon { width: 14px; height: 14px; color: var(--mute); flex-shrink: 0; }
+  .search-bar input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    height: 100%;
+  }
+  .search-bar input::placeholder { color: var(--mute); }
+  .search-bar .kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--mute);
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1);
+    background: var(--bg);
+  }
+  .search-bar .clear-btn {
+    background: transparent;
+    border: none;
+    color: var(--mute);
+    cursor: pointer;
+    padding: 2px 4px;
+    display: flex;
+  }
+  .search-bar .clear-btn [data-lucide] { width: 12px; height: 12px; }
+
+  /* Filter bar */
+  .filter-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--mute);
+    font-family: var(--font-mono);
+  }
+  .chip.active { color: var(--accent); border-color: var(--accent); background: oklch(72% 0.14 195 / 0.10); }
+  .chip [data-lucide] { width: 11px; height: 11px; }
+
+  /* Observation rows */
+  .obs-list { display: flex; flex-direction: column; gap: 6px; }
+  .obs-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 10px 14px;
+    display: grid;
+    grid-template-columns: 110px 60px 1fr 120px 90px;
+    gap: 14px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .obs-row:hover { border-color: var(--accent); }
+  .obs-row.selected { border-color: var(--accent); background: var(--surface-2); }
+  .obs-row .ptype-cell {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: oklch(72% 0.14 195 / 0.10);
+    padding: 2px 6px;
+    border-radius: var(--r-1);
+    text-align: center;
+  }
+  .obs-row .sym-cell {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .obs-row .desc-cell {
+    font-size: 12px;
+    color: var(--mute);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .obs-row .desc-cell .strong { color: var(--ink); }
+  .obs-row .recall-cell {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--r-1);
+    text-align: center;
+  }
+  .obs-row .recall-cell.off { background: oklch(72% 0.16 145 / 0.18); color: var(--success); }
+  .obs-row .recall-cell.on { background: oklch(78% 0.14 80 / 0.18); color: var(--warn-bg); }
+  .obs-row .time-cell { font-family: var(--font-mono); font-size: 11px; color: var(--mute); text-align: right; }
+
+  /* Drawer */
+  .drawer-backdrop { position: absolute; inset: 0; background: oklch(0% 0 0 / 0.55); z-index: 1; }
+  .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 460px; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -8px 0 24px oklch(0% 0 0 / 0.4); z-index: 2; overflow-y: auto; padding: 18px 22px; }
+  .drawer__head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .drawer__head h2 { margin: 0; font-size: 15px; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .drawer__close { background: transparent; border: 1px solid var(--border); border-radius: var(--r-1); padding: 4px 8px; color: var(--mute); cursor: pointer; font-family: var(--font-mono); font-size: 11px; }
+
+  .detail-section { margin-top: 18px; }
+  .detail-section h3 { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; font-weight: 500; font-family: var(--font-mono); }
+  .kv-grid { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 12px; }
+  .kv-grid dt { color: var(--mute); font-family: var(--font-mono); }
+  .kv-grid dd { margin: 0; color: var(--ink); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .citation { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--r-1); border: 1px solid var(--accent); color: var(--accent); font-size: 11px; background: oklch(72% 0.14 195 / 0.10); cursor: pointer; font-family: var(--font-mono); }
+  .citation [data-lucide] { width: 11px; height: 11px; }
+  .narrative { font-size: 12px; line-height: 1.6; color: var(--ink); padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-1); }
+  .recall-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 10px; font-family: var(--font-mono); border-radius: var(--r-pill); }
+  .recall-pill.off { background: oklch(72% 0.16 145 / 0.18); color: var(--success); border: 1px solid var(--success); }
+  .recall-pill.on { background: oklch(78% 0.14 80 / 0.18); color: var(--warn-bg); border: 1px solid var(--warn-bg); }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .footnote .strong { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · /research/insights surface</h1>
+<div class="meta">
+  <strong>Decision:</strong> J3-6 — hybrid (PDF appendix kept) + new <code>/research/insights</code> route in MVP
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked · <strong>Icons:</strong> Lucide · <strong>Pattern:</strong> modal-route §0.4b (drawer + URL state)
+</div>
+
+<p>Sub-route under <code>/research</code> via tab navigation (Watchlist · Insights). Inherits the <code>/alerts</code> archive shape: chronological list filterable, drawer for individual detail via <code>?insight=&lt;id&gt;</code>. Mock state: drawer open on observation <code>obs_a3f2</code>.</p>
+
+<div class="surface-frame">
+  <div class="surface-frame__title">/research/insights — pattern observation archive</div>
+  <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/research/insights?ptype=earnings_drift&amp;recall=off&amp;insight=obs_a3f2</code></div>
+  <div class="surface-frame__body">
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="sb-brand"><span class="sb-brand__mark">i</span>iguana</div>
+        <div class="sb-row"><i data-lucide="briefcase"></i>Portfolio</div>
+        <div class="sb-row"><i data-lucide="bell"></i>Approvals</div>
+        <div class="sb-row"><i data-lucide="megaphone"></i>Alerts<span class="badge">3</span></div>
+        <div class="sb-row"><i data-lucide="clock"></i>Trades</div>
+        <div class="sb-row active"><i data-lucide="lightbulb"></i>Research</div>
+        <div class="sb-row"><i data-lucide="gauge"></i>Risk</div>
+        <div class="sb-row"><i data-lucide="settings"></i>Settings</div>
+      </aside>
+      <main class="main">
+        <div class="page-h"><h1>Research</h1></div>
+        <div class="page-sub">last weekly write 2026-05-04T08:00:00Z · 23 active patterns tracked</div>
+
+        <div class="tabs">
+          <div class="tab"><i data-lucide="table" style="vertical-align:middle;width:13px;height:13px;margin-right:4px;"></i>Watchlist</div>
+          <div class="tab active"><i data-lucide="lightbulb" style="vertical-align:middle;width:13px;height:13px;margin-right:4px;"></i>Insights</div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="label">total observations</div>
+            <div class="value">142</div>
+            <div class="delta up">+12 last 7d</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">distinct patterns</div>
+            <div class="value">7</div>
+            <div class="delta">stable</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">recall-off (trustworthy)</div>
+            <div class="value">98</div>
+            <div class="delta up">69%</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">linked to trades</div>
+            <div class="value">61</div>
+            <div class="delta">43%</div>
+          </div>
+        </div>
+
+        <!-- Cross-symbol aggregation -->
+        <div class="agg-row">
+          <div class="agg-row__title">Top patterns · last 30d (cross-symbol)</div>
+          <div class="agg-list">
+            <div class="agg-item">
+              <div class="ptype">earnings_drift <span class="count">×7</span></div>
+              <div class="pmeta">4 symbols · 5 recall-off / 2 recall-on</div>
+            </div>
+            <div class="agg-item">
+              <div class="ptype">false_breakout <span class="count">×5</span></div>
+              <div class="pmeta">3 symbols · 4 recall-off / 1 recall-on</div>
+            </div>
+            <div class="agg-item">
+              <div class="ptype">pullback_held_MA50 <span class="count">×4</span></div>
+              <div class="pmeta">3 symbols · 4 recall-off / 0 recall-on</div>
+            </div>
+            <div class="agg-item">
+              <div class="ptype">capitulation_reversal <span class="count">×2</span></div>
+              <div class="pmeta">2 symbols · 1 recall-off / 1 recall-on</div>
+            </div>
+            <div class="agg-item">
+              <div class="ptype">gap_fade <span class="count">×2</span></div>
+              <div class="pmeta">2 symbols · 2 recall-off / 0 recall-on</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="search-bar">
+          <i data-lucide="search" class="search-icon"></i>
+          <input type="text" placeholder="Search observations · narrative, symbol, pattern, trade_id…" value="Q1 beat" />
+          <button class="clear-btn" title="Clear"><i data-lucide="x"></i></button>
+          <span class="kbd">⌘K</span>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-bar">
+          <span class="chip active">earnings_drift <i data-lucide="x"></i></span>
+          <span class="chip active">recall=off <i data-lucide="x"></i></span>
+          <span class="chip">+ symbol</span>
+          <span class="chip">+ date range</span>
+          <span class="chip">+ has_trade_link</span>
+          <span class="chip" style="margin-left:auto;cursor:pointer;"><i data-lucide="download"></i>Export CSV</span>
+        </div>
+
+        <!-- Observations list -->
+        <div class="obs-list">
+          <div class="obs-row selected">
+            <span class="ptype-cell">earnings_drift</span>
+            <span class="sym-cell">NVDA</span>
+            <span class="desc-cell"><span class="strong">Q1 beat → 5d positive drift</span> · post-print +6.4%, +2.1% next 5 sessions</span>
+            <span class="recall-cell off">recall: off</span>
+            <span class="time-cell">2026-05-04 08:00</span>
+          </div>
+          <div class="obs-row">
+            <span class="ptype-cell">earnings_drift</span>
+            <span class="sym-cell">MSFT</span>
+            <span class="desc-cell"><span class="strong">Q1 beat → 4d positive drift</span> · pattern matched 3 prior earnings cycles</span>
+            <span class="recall-cell off">recall: off</span>
+            <span class="time-cell">2026-04-27 08:00</span>
+          </div>
+          <div class="obs-row">
+            <span class="ptype-cell">earnings_drift</span>
+            <span class="sym-cell">AAPL</span>
+            <span class="desc-cell"><span class="strong">Q4 in-line → fade pattern</span> · classic post-earnings drift inverted</span>
+            <span class="recall-cell off">recall: off</span>
+            <span class="time-cell">2026-04-20 08:00</span>
+          </div>
+          <div class="obs-row">
+            <span class="ptype-cell">earnings_drift</span>
+            <span class="sym-cell">GOOGL</span>
+            <span class="desc-cell"><span class="strong">Q1 beat → drift damped by macro</span> · regime-aware variant</span>
+            <span class="recall-cell off">recall: off</span>
+            <span class="time-cell">2026-04-13 08:00</span>
+          </div>
+          <div class="obs-row">
+            <span class="ptype-cell">earnings_drift</span>
+            <span class="sym-cell">TSLA</span>
+            <span class="desc-cell"><span class="strong">Q4 miss → fade-then-recover</span> · cross-symbol divergence noted</span>
+            <span class="recall-cell off">recall: off</span>
+            <span class="time-cell">2026-04-06 08:00</span>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Drawer -->
+    <div class="drawer-backdrop"></div>
+    <div class="drawer">
+      <div class="drawer__head">
+        <h2>
+          <i data-lucide="lightbulb" style="color:var(--accent);width:14px;height:14px;"></i>
+          obs_a3f2
+        </h2>
+        <button class="drawer__close">Esc</button>
+      </div>
+
+      <div class="detail-section" style="margin-top: 0;">
+        <h3>Pattern</h3>
+        <dl class="kv-grid">
+          <dt>type</dt><dd style="color:var(--accent);">earnings_drift</dd>
+          <dt>symbol</dt><dd>NVDA</dd>
+          <dt>recorded_at</dt><dd>2026-05-04T08:00:12Z</dd>
+          <dt>brief_version</dt><dd>v17 (post-Q1 sync)</dd>
+          <dt>recall_state</dt><dd><span class="recall-pill off">off (trustworthy)</span></dd>
+        </dl>
+      </div>
+
+      <div class="detail-section">
+        <h3>Narrative</h3>
+        <div class="narrative">After the Q1 print on 2026-05-01 (EPS surprise +$0.18; revenue +$1.4B over guide), NVDA continued upward for 5 sessions: +6.4% post-print AH, +2.1% cumulative next 5 sessions. This matches the canonical earnings-drift pattern observed 3 times in prior cycles for the same symbol, AND in MSFT/GOOGL during the same earnings season.</div>
+      </div>
+
+      <div class="detail-section">
+        <h3>Linked artefacts</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="citation"><i data-lucide="clock"></i>tx_a3f2b1c</span>
+          <span class="citation"><i data-lucide="book-open"></i>brief_v17</span>
+          <span class="citation"><i data-lucide="file-text"></i>weekly_2026-W18.pdf</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h3>Cross-symbol context</h3>
+        <div style="font-size: 12px; color: var(--mute); line-height: 1.6;">
+          7 earnings_drift observations in last 30d across <strong style="color:var(--ink);">NVDA · MSFT · AAPL · GOOGL</strong>. 5 of 7 had recall=off (trustworthy as predictive signal). Average drift duration: 4.2d. Average post-print return: +1.8%.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>What's locked here</h2>
+
+<ul style="color:var(--ink);max-width:1500px;font-size:13px;line-height:1.7;">
+  <li><strong>IA</strong>: <code>/research</code> gains a tab navigation (<em>Watchlist</em> · <em>Insights</em>); <code>/research/insights</code> is the canonical URL for the new tab. Sidebar item stays "Research" (single slot).</li>
+  <li><strong>Modal-route pattern</strong>: each observation opens via <code>?insight=&lt;id&gt;</code> drawer (per components.md §0.4b).</li>
+  <li><strong>Search bar</strong> (above filters): full-text search across <code>narrative</code>, <code>symbol</code>, <code>pattern_type</code>, linked <code>trade_id</code>. Keyboard shortcut <code>⌘K</code> / <code>Ctrl+K</code> focuses it. Search query persists as <code>?q=</code> URL param so deep-links survive reload. Filters and search compose (AND).</li>
+  <li><strong>Filter chips</strong> (below search): <code>pattern_type</code>, <code>symbol</code>, <code>date_range</code>, <code>has_trade_link</code>, <code>recall_state</code>. Active chips persist in URL.</li>
+  <li><strong>Stats row</strong>: 4 cards — total observations, distinct patterns, recall-off (trustworthy %), linked-to-trades %.</li>
+  <li><strong>Cross-symbol aggregation</strong>: top patterns grouped by <code>pattern_type</code> with count + symbol distribution + recall-state breakdown. Above the list, below the stats.</li>
+  <li><strong>Recall-state visibility</strong>: every observation row shows the recall pill (<code>off</code>=success-tinted "trustworthy", <code>on</code>=warn-tinted "potentially biased"). This is the single most important meta-signal — without it, observations are mixed signal/noise.</li>
+  <li><strong>Linked artefacts</strong> in drawer: trade(s) where the pattern was matched, brief version that recorded it, weekly PDF that contains it.</li>
+  <li><strong>Export CSV</strong>: per-filter-selection, FR50 contract.</li>
+</ul>
+
+<div style="background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent); border-radius: var(--r-3); padding: 16px 20px; margin-top: 16px;">
+  <h3 style="color: var(--accent); margin: 0 0 6px;">→ Implementation hint</h3>
+  <p style="color: var(--ink); margin: 0; max-width: 1500px;">Slice <strong>R6 (hindsight-integration)</strong> already owns the <code>pattern_observations</code> schema (FR80 contract). The route + page surface lands as a <strong>scope extension to R6</strong>, NOT a new slice — the data + UI are conceptually the same delivery. New components: <code>InsightsTabs.svelte</code>, <code>PatternAggCard.svelte</code>, <code>ObservationRow.svelte</code>, <code>RecallPill.svelte</code> (could be a generic Badge variant; decide at impl time). Backend endpoint: <code>GET /api/v1/research/insights</code> (filterable, paginated). PDF appendix renderer (FR80 weekly write) reuses the same observation data.</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-j3-6-research-insights.html</code>
+  <br><br>
+  <strong class="strong">Note:</strong> the Sidebar shows "Research" as the active item (not a separate "Insights" slot). Tab-based sub-navigation keeps <code>/research/[symbol]</code> and <code>/research/insights</code> coherent under one IA umbrella. If we ever add <code>/research/methodology-comparison</code> or similar, it lands as another tab.
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>

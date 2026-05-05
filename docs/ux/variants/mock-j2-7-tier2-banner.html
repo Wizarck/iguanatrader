@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · J2-7 — Tier-2 cap warning surface on /risk</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --r-pill: 9999px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1700px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: var(--mute); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 1100px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__title {
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .surface-frame__title.recommended { background: var(--accent); }
+  .surface-frame__header {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    border-bottom: 1px solid var(--border);
+  }
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 0;
+    min-height: 720px;
+  }
+
+  /* App shell mini */
+  .shell { display: grid; grid-template-columns: 64px 1fr; height: 100%; min-height: 720px; }
+  .sidebar-mini { background: var(--surface-2); border-right: 1px solid var(--border); padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .sb-mark { width: 28px; height: 28px; background: var(--accent); border-radius: var(--r-1); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-fg); font-weight: 700; font-size: 13px; font-family: var(--font-mono); margin-bottom: 8px; }
+  .sb-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--r-1); color: var(--mute); cursor: pointer; }
+  .sb-icon.active { color: var(--accent); background: var(--bg); }
+  .sb-icon [data-lucide] { width: 18px; height: 18px; }
+  .main { padding: 16px 18px; overflow: auto; }
+
+  .page-h { font-size: 18px; margin: 0 0 4px; }
+  .page-sub { font-size: 12px; color: var(--mute); margin: 0 0 14px; font-family: var(--font-mono); }
+
+  /* Tier-2 banner */
+  .banner-warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: oklch(78% 0.14 80 / 0.14);
+    border: 1px solid var(--warn-bg);
+    border-radius: var(--r-2);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+  .banner-warn [data-lucide] { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; color: var(--warn-bg); }
+  .banner-warn__main { flex: 1; min-width: 0; }
+  .banner-warn__title { font-size: 13px; font-weight: 500; color: var(--ink); margin: 0 0 2px; }
+  .banner-warn__body { font-size: 12px; color: var(--mute); margin: 0; }
+  .banner-warn__body code { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; background: var(--bg); }
+  .banner-warn__close { background: transparent; border: 1px solid var(--border); border-radius: var(--r-1); color: var(--mute); padding: 2px 6px; cursor: pointer; font-family: var(--font-mono); font-size: 10px; }
+
+  /* Caps display */
+  .caps-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .cap-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 12px;
+  }
+  .cap-card.warn { border-color: var(--warn-bg); background: oklch(78% 0.14 80 / 0.06); }
+  .cap-card.danger { border-color: var(--destructive); background: oklch(64% 0.20 25 / 0.08); }
+  .cap-label { font-size: 10px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); }
+  .cap-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 18px; color: var(--ink); margin: 4px 0; }
+  .cap-bar { height: 4px; background: var(--surface-2); border-radius: var(--r-pill); overflow: hidden; margin-top: 4px; }
+  .cap-bar__fill { height: 100%; background: var(--success); border-radius: var(--r-pill); }
+  .cap-card.warn .cap-bar__fill { background: var(--warn-bg); }
+  .cap-card.danger .cap-bar__fill { background: var(--destructive); }
+  .cap-card .pct { font-size: 11px; color: var(--mute); font-family: var(--font-mono); }
+
+  /* Section title */
+  .section-h { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; margin: 18px 0 8px; font-weight: 500; }
+
+  /* Timeline */
+  .timeline { display: flex; flex-direction: column; gap: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); padding: 4px 0; }
+  .tl-row { display: flex; gap: 10px; padding: 9px 14px; align-items: flex-start; border-bottom: 1px solid var(--border); }
+  .tl-row:last-child { border-bottom: none; }
+  .tl-icon-wrap { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .tl-icon-wrap.warn { background: oklch(78% 0.14 80 / 0.14); color: var(--warn-bg); }
+  .tl-icon-wrap.info { background: oklch(72% 0.14 195 / 0.14); color: var(--accent); }
+  .tl-icon-wrap.danger { background: oklch(64% 0.20 25 / 0.14); color: var(--destructive); }
+  .tl-icon-wrap.success { background: oklch(72% 0.16 145 / 0.14); color: var(--success); }
+  .tl-icon-wrap [data-lucide] { width: 13px; height: 13px; }
+  .tl-body { flex: 1; min-width: 0; }
+  .tl-time { font-size: 11px; color: var(--mute); font-family: var(--font-mono); }
+  .tl-title { font-size: 13px; color: var(--ink); margin: 1px 0; }
+  .tl-detail { font-size: 11px; color: var(--mute); font-family: var(--font-mono); }
+
+  /* Comparison */
+  .comparison { background: var(--surface); border-radius: var(--r-3); padding: 20px; margin-top: 32px; max-width: 1400px; }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .opt { border: 1px solid var(--border); border-radius: var(--r-2); padding: 14px; }
+  .opt h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); font-weight: 500; }
+  .opt ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--mute); }
+  .opt ul li { margin-bottom: 4px; }
+  .opt.recommended { border-color: var(--accent); background: oklch(72% 0.14 195 / 0.06); }
+  .opt.recommended h4::after { content: ' ← my read'; color: var(--mute); font-size: 12px; font-weight: 400; }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · Tier-2 cap warning UI on /risk</h1>
+<div class="meta">
+  <strong>Decision:</strong> J2-7 — banner / timeline entry / both
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked · <strong>Icons:</strong> Lucide
+  &nbsp;·&nbsp;
+  <strong>Scenario rendered:</strong> daily cap at 4.10% / 5.00% (82% consumed) — Tier-2 threshold breached, no Tier-1 yet
+</div>
+
+<p>The same /risk page rendered three ways with the same active Tier-2 warning. Caps display, kill-switch, and broker connection are identical across frames; only the warning treatment differs.</p>
+
+<div class="grid-3">
+
+  <!-- =========== A: BANNER ONLY =========== -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">A — Banner only</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/risk</code></div>
+    <div class="surface-frame__body">
+      <div class="shell">
+        <aside class="sidebar-mini">
+          <span class="sb-mark">i</span>
+          <div class="sb-icon"><i data-lucide="briefcase"></i></div>
+          <div class="sb-icon"><i data-lucide="bell"></i></div>
+          <div class="sb-icon"><i data-lucide="clock"></i></div>
+          <div class="sb-icon active"><i data-lucide="gauge"></i></div>
+          <div class="sb-icon"><i data-lucide="settings"></i></div>
+        </aside>
+        <main class="main">
+          <h1 class="page-h">Risk</h1>
+          <p class="page-sub">last updated 2026-05-05T14:32:18Z</p>
+
+          <div class="banner-warn">
+            <i data-lucide="alert-triangle"></i>
+            <div class="banner-warn__main">
+              <p class="banner-warn__title">Daily cap approaching</p>
+              <p class="banner-warn__body">Daily P&amp;L at <code>−4.10%</code> · Tier-2 threshold (80%) breached at 13:47Z. Next proposal will require override.</p>
+            </div>
+            <button class="banner-warn__close">dismiss</button>
+          </div>
+
+          <div class="caps-grid">
+            <div class="cap-card"><div class="cap-label">per_trade</div><div class="cap-value">0.42%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:21%"></div></div><div class="pct">21% of 2.00%</div></div>
+            <div class="cap-card warn"><div class="cap-label">daily</div><div class="cap-value">−4.10%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:82%"></div></div><div class="pct">82% of 5.00%</div></div>
+            <div class="cap-card"><div class="cap-label">weekly</div><div class="cap-value">−6.20%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:41%"></div></div><div class="pct">41% of 15.00%</div></div>
+          </div>
+
+          <div class="section-h">Kill switch · armed</div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-2);padding:10px 12px;font-size:12px;color:var(--mute);font-family:var(--font-mono);">state: armed · last activated: never · broker: ibkr_paper · heartbeat: 2s ago</div>
+
+          <div class="section-h">Recent overrides (none)</div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-2);padding:14px;font-size:12px;color:var(--mute);text-align:center;">No overrides in the last 7 days.</div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========== B: TIMELINE ONLY =========== -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">B — Timeline only</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/risk</code></div>
+    <div class="surface-frame__body">
+      <div class="shell">
+        <aside class="sidebar-mini">
+          <span class="sb-mark">i</span>
+          <div class="sb-icon"><i data-lucide="briefcase"></i></div>
+          <div class="sb-icon"><i data-lucide="bell"></i></div>
+          <div class="sb-icon"><i data-lucide="clock"></i></div>
+          <div class="sb-icon active"><i data-lucide="gauge"></i></div>
+          <div class="sb-icon"><i data-lucide="settings"></i></div>
+        </aside>
+        <main class="main">
+          <h1 class="page-h">Risk</h1>
+          <p class="page-sub">last updated 2026-05-05T14:32:18Z</p>
+
+          <div class="caps-grid">
+            <div class="cap-card"><div class="cap-label">per_trade</div><div class="cap-value">0.42%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:21%"></div></div><div class="pct">21% of 2.00%</div></div>
+            <div class="cap-card warn"><div class="cap-label">daily</div><div class="cap-value">−4.10%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:82%"></div></div><div class="pct">82% of 5.00%</div></div>
+            <div class="cap-card"><div class="cap-label">weekly</div><div class="cap-value">−6.20%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:41%"></div></div><div class="pct">41% of 15.00%</div></div>
+          </div>
+
+          <div class="section-h">Risk events · today</div>
+          <div class="timeline">
+            <div class="tl-row">
+              <div class="tl-icon-wrap warn"><i data-lucide="alert-triangle"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">14:32:18</div>
+                <div class="tl-title">Daily cap entered Tier-2</div>
+                <div class="tl-detail">daily=−4.10% / 5.00% (82%)</div>
+              </div>
+            </div>
+            <div class="tl-row">
+              <div class="tl-icon-wrap info"><i data-lucide="circle-arrow-down"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">13:47:02</div>
+                <div class="tl-title">Loss recorded · MSFT exit</div>
+                <div class="tl-detail">−$184.50 · daily moved 3.21% → 4.10%</div>
+              </div>
+            </div>
+            <div class="tl-row">
+              <div class="tl-icon-wrap success"><i data-lucide="check"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">13:31:11</div>
+                <div class="tl-title">Heartbeat ok</div>
+                <div class="tl-detail">broker=ibkr_paper · last_tick=−1s</div>
+              </div>
+            </div>
+            <div class="tl-row">
+              <div class="tl-icon-wrap info"><i data-lucide="circle-arrow-down"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">11:08:55</div>
+                <div class="tl-title">Loss recorded · AAPL exit</div>
+                <div class="tl-detail">−$236.10 · daily moved 1.50% → 3.21%</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-h">Recent overrides (none)</div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-2);padding:14px;font-size:12px;color:var(--mute);text-align:center;">No overrides in the last 7 days.</div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========== C: BANNER + TIMELINE =========== -->
+  <div class="surface-frame">
+    <div class="surface-frame__title recommended">C — Banner + Timeline (both)</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/risk</code></div>
+    <div class="surface-frame__body">
+      <div class="shell">
+        <aside class="sidebar-mini">
+          <span class="sb-mark">i</span>
+          <div class="sb-icon"><i data-lucide="briefcase"></i></div>
+          <div class="sb-icon"><i data-lucide="bell"></i></div>
+          <div class="sb-icon"><i data-lucide="clock"></i></div>
+          <div class="sb-icon active"><i data-lucide="gauge"></i></div>
+          <div class="sb-icon"><i data-lucide="settings"></i></div>
+        </aside>
+        <main class="main">
+          <h1 class="page-h">Risk</h1>
+          <p class="page-sub">last updated 2026-05-05T14:32:18Z</p>
+
+          <div class="banner-warn">
+            <i data-lucide="alert-triangle"></i>
+            <div class="banner-warn__main">
+              <p class="banner-warn__title">Daily cap approaching</p>
+              <p class="banner-warn__body">Daily P&amp;L at <code>−4.10%</code> · Tier-2 threshold (80%) breached at 13:47Z. Next proposal will require override.</p>
+            </div>
+            <button class="banner-warn__close">dismiss</button>
+          </div>
+
+          <div class="caps-grid">
+            <div class="cap-card"><div class="cap-label">per_trade</div><div class="cap-value">0.42%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:21%"></div></div><div class="pct">21% of 2.00%</div></div>
+            <div class="cap-card warn"><div class="cap-label">daily</div><div class="cap-value">−4.10%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:82%"></div></div><div class="pct">82% of 5.00%</div></div>
+            <div class="cap-card"><div class="cap-label">weekly</div><div class="cap-value">−6.20%</div><div class="cap-bar"><div class="cap-bar__fill" style="width:41%"></div></div><div class="pct">41% of 15.00%</div></div>
+          </div>
+
+          <div class="section-h">Risk events · today</div>
+          <div class="timeline">
+            <div class="tl-row">
+              <div class="tl-icon-wrap warn"><i data-lucide="alert-triangle"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">14:32:18</div>
+                <div class="tl-title">Daily cap entered Tier-2</div>
+                <div class="tl-detail">daily=−4.10% / 5.00% (82%) <span style="color:var(--accent);">↑ same event as banner</span></div>
+              </div>
+            </div>
+            <div class="tl-row">
+              <div class="tl-icon-wrap info"><i data-lucide="circle-arrow-down"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">13:47:02</div>
+                <div class="tl-title">Loss recorded · MSFT exit</div>
+                <div class="tl-detail">−$184.50 · daily moved 3.21% → 4.10%</div>
+              </div>
+            </div>
+            <div class="tl-row">
+              <div class="tl-icon-wrap success"><i data-lucide="check"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">13:31:11</div>
+                <div class="tl-title">Heartbeat ok</div>
+                <div class="tl-detail">broker=ibkr_paper · last_tick=−1s</div>
+              </div>
+            </div>
+            <div class="tl-row">
+              <div class="tl-icon-wrap info"><i data-lucide="circle-arrow-down"></i></div>
+              <div class="tl-body">
+                <div class="tl-time">11:08:55</div>
+                <div class="tl-title">Loss recorded · AAPL exit</div>
+                <div class="tl-detail">−$236.10 · daily moved 1.50% → 3.21%</div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h2>The three options compared</h2>
+
+<div class="comparison">
+  <div class="comparison-grid">
+    <div class="opt">
+      <h4>A — Banner only</h4>
+      <ul>
+        <li>Surface: banner sticky at top + dismissable.</li>
+        <li><strong>Loses history</strong>: once dismissed (or auto-dismissed when cap drops), the user has no record of "the system warned me at 14:32".</li>
+        <li>Audit gap: J2 §6 (audit trail) cites <code>risk_overrides</code> but cap warnings aren't override events — they need their own audit surface.</li>
+        <li>Implementation: 1 component (Banner). Cheapest.</li>
+      </ul>
+    </div>
+    <div class="opt">
+      <h4>B — Timeline only</h4>
+      <ul>
+        <li>Surface: chronological event list as a section.</li>
+        <li><strong>No urgency cue</strong>: a Tier-2 entry sits 4th from the top after newer events; user scanning the page may miss it; no dismissal interaction.</li>
+        <li>History preserved cleanly: every cap event is a row with timestamp.</li>
+        <li>Implementation: 1 component (Timeline list).</li>
+      </ul>
+    </div>
+    <div class="opt recommended">
+      <h4>C — Banner + Timeline</h4>
+      <ul>
+        <li>Banner = <strong>active state</strong> (urgent, dismissable, auto-reappears on next state change).</li>
+        <li>Timeline = <strong>history</strong> (audit trail of cap events with timestamps).</li>
+        <li>The same event lives in both: banner shows current; timeline shows history. Cross-reference visible (the timeline row that mirrors the banner shows a small "↑ same event" anchor).</li>
+        <li>Same pattern Datadog / PagerDuty use: active state at top, history below. Familiar.</li>
+        <li>Implementation: 2 components (Banner + Timeline). Both already needed elsewhere — Banner is reused on stale-data alerts (J1 §3 step 1), Timeline is reused on broker reconnects.</li>
+        <li>Cost: ~10% more LOC than B alone (Banner is small).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>My read</h2>
+<p style="color:var(--ink);max-width:1400px;">A alone fails the audit / history requirement (cap warnings need to be reviewable later — Arturo will retro "what happened on 2026-05-05?"). B alone fails the urgency requirement (a fresh Tier-2 buried 4th in a list won't trigger action). The "noise" cost of <strong>both</strong> is small because the banner auto-clears when state drops below threshold; on healthy days the page is just caps + timeline.</p>
+
+<div class="comparison" style="background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent);">
+  <h3 style="color: var(--accent);">→ Recommendation: Option C — Banner + Timeline</h3>
+  <p style="color: var(--ink); margin: 0;">Banner sticky at top of <code>/risk</code> while a Tier-2 cap is active (auto-dismisses when state drops below 80% threshold; user "dismiss" hides it for the session but it reappears if a new threshold breach occurs). Timeline section below caps shows chronological history (last 24h on /risk; full history on a future <code>/risk/events</code> route). Banner mirror-anchors to the timeline row via "↑ same event" link. Tier-1 (cap fully consumed) reuses the Banner shape with destructive tokens instead of warn-bg.</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-j2-7-tier2-banner.html</code>
+  <br><br>
+  <strong>Note:</strong> Banner shape = canonical alert primitive composing Card + Lucide alert-triangle + dismiss Button. Worth promoting to <code>Alert.svelte</code> primitive (variants: <code>warn</code>, <code>destructive</code>, <code>info</code>) since it's reused on /risk Tier-2/1, J1 §3 stale-data, J0 rate-limit. Decision: ship as primitive in slice K1 (or W1, whichever lands first).
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>

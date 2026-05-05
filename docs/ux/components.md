@@ -51,13 +51,64 @@ Hover-only affordances are forbidden on `pointer:coarse` (mobile/tablet). All to
 
 ### 0.3 Design tokens
 
-**TBD:** Sally + Arturo to lock palette, typography stack, and spacing scale during the §3 variant round before slice 4 (`auth-jwt-cookie`) starts. The catalogue references token names (`--bg`, `--surface`, `--ink`, `--mute`, `--accent`, `--accent-fg`, `--success`, `--destructive`, `--warn-bg`, `--focus-ring`) without committing concrete OKLCH values yet. All concrete values will land in `docs/ux/DESIGN.md`.
+Locked 2026-05-05 (Sally + Arturo). Canonical values live in [`DESIGN.md`](DESIGN.md) §1; the catalogue references token names only.
 
-Spacing scale uses Tailwind defaults (`0.25rem` base) — `--space-1` through `--space-12` mapped to Tailwind utility classes in component implementation.
+**Philosophy**: dark-first (Bloomberg/TradingView lineage; trading software is read in low-light operational sessions); P&L semantics are **dual-channel** (color + sign + icon) so red/green never carry the load alone (color-blind safety). Tailwind 4.x native OKLCH.
+
+| Token | OKLCH | Use | Contrast on `--bg` |
+|---|---|---|---|
+| `--bg` | `oklch(18% 0.02 250)` | app background | base |
+| `--surface` | `oklch(22% 0.02 250)` | cards, panels | — |
+| `--surface-2` | `oklch(26% 0.02 250)` | popovers, drawers, modal | — |
+| `--ink` | `oklch(95% 0.005 250)` | body text | 12.6:1 (AAA) |
+| `--mute` | `oklch(70% 0.012 250)` | secondary text, helper | 6.5:1 (AA) |
+| `--border` | `oklch(32% 0.02 250)` | dividers, Input border resting | — |
+| `--accent` | `oklch(72% 0.14 195)` | iguana teal — primary CTA, focus, brand | 4.7:1 (AA) |
+| `--accent-fg` | `oklch(15% 0.02 250)` | text on accent fills | — |
+| `--success` | `oklch(72% 0.16 145)` | P&L positive, "Open" Badge | 5.4:1 (AA) |
+| `--destructive` | `oklch(64% 0.20 25)` | P&L negative, kill-switch, "Reject" CTA | 4.6:1 (AA) |
+| `--warn-bg` | `oklch(78% 0.14 80)` | Tier-2 cap banner, T-10s countdown | — |
+| `--focus-ring` | `oklch(72% 0.14 195)` | 2px outline (= `--accent`) | — |
+
+**Typography**:
+
+- Body: **Inter Variable** with `font-feature-settings: 'cv11', 'ss01'`; fallback chain `system-ui, -apple-system, sans-serif`. Single variable woff2 covers all weights.
+- Mono: **JetBrains Mono Variable** for monetary values, equity, prices, JSON audit, YAML editor. Monetary cells always carry `font-variant-numeric: tabular-nums`.
+- No serif (operational software).
+
+**Spacing**: Tailwind 4.x defaults (4px grid). No custom scale.
+
+**Border radius**: `--r-1: 4px` (Input sm, Badge sm) · `--r-2: 8px` (Button, Input default) · `--r-3: 12px` (Card, Drawer) · `--r-pill: 9999px` (Badge variant).
+
+**Light mode**: deferred non-blocker. Slice 4 ships dark-only; light derivation lands in slice W1 alongside the system-preference toggle (per Architecture Decisions §Frontend Architecture line 382: "Tailwind dark mode + system preference desde MVP" — *availability* is MVP, but the *toggle UI surface* lives in W1).
 
 ### 0.4 Accessibility floor (MVP)
 
-Per Architecture Decisions §Frontend Architecture: WCAG 2.1 AA target is v3 SaaS; **MVP catches low-hanging via `eslint-plugin-svelte` a11y rules**. The catalogue still records the AA-friendly choice for every component so Sally's pass to v3 is incremental, not a rewrite. WCAG-AA contrast ratios are recorded per token pair in `DESIGN.md` §15 once palette is locked.
+Per Architecture Decisions §Frontend Architecture: WCAG 2.1 AA target is v3 SaaS; **MVP catches low-hanging via `eslint-plugin-svelte` a11y rules**. The catalogue still records the AA-friendly choice for every component so Sally's pass to v3 is incremental, not a rewrite. WCAG-AA contrast ratios are recorded per token pair in [`DESIGN.md`](DESIGN.md) §1.2 + §1.3 (locked 2026-05-05).
+
+### 0.4b Modal-route pattern (drawers + modals carry URL state)
+
+Locked 2026-05-05 (Sally + Arturo, validated against [variants/mock-j1-3-trade-detail.html](variants/mock-j1-3-trade-detail.html)).
+
+Drawers and modals that show a specific entity (a trade, an audit-trail version, an override audit row) **MUST carry the entity ID as a URL query param** (e.g. `?detail=<id>`, `?audit=<version>`, `?override=<id>`). The pattern:
+
+- Opening the drawer pushes the param via `goto({ keepFocus: true })` (SvelteKit) — preserves the parent page's filters, scroll position, and active SSE connections.
+- Closing the drawer (Esc / X / backdrop click) drops the param via `goto` again.
+- Reload re-mounts the drawer over the current filtered view.
+- Browser back button closes the drawer first; second Back leaves the filtered page.
+
+Forbidden: drawers backed by purely local component state (not deep-linkable, breaks back-button, defeats the bridge between J1 trade rows and J3 audit-trail / brief versions). Inspired by Linear / Notion / GitHub Issues. First consumer = J1 §3 trade detail (slice T4).
+
+### 0.5 Iconography
+
+Locked 2026-05-05 (Sally + Arturo, validated against [mock-c4-icons.html](variants/mock-c4-icons.html)).
+
+- **Library**: [Lucide](https://lucide.dev/) — cherry-picked imports via `lucide-svelte` (ISC licence; tree-shakeable). Every icon ships as a Svelte component using `currentColor` for fill/stroke — colour is owned by the surrounding component (`color: var(--accent)` etc.), never hard-coded in the icon import.
+- **Stroke**: `1.5px` for 24px icons, `1.25px` for ≤16px (auto via `stroke-width` prop). Avoid `2px` outside hover-pulse animations — clashes with the operational/Bloomberg lineage chosen for surface tokens.
+- **Sizing**: `16px` inside Button slots, `18px` in Sidebar nav rows, `24px` standalone, `48px` in EmptyState. No other sizes.
+- **Naming**: components reference Lucide names verbatim (e.g. `octagon-x` for KillSwitchButton, `gauge` for Risk Cockpit nav, `arrow-trending-up`/`-down` for P&L cells, `shield-check` for RBAC indicators, `briefcase` for Portfolio nav, `bell` for Approvals nav).
+- **Forbidden**: emoji or unicode symbols as iconography (accessibility + cross-platform rendering risk). Inline SVG paths invented in component files (must come from Lucide).
+- **Audit**: a slice that needs an icon Lucide does not ship MUST file an entry in §7 *Open questions* + propose either (a) a Lucide community icon by name OR (b) a one-off custom icon to vet with Sally before merge.
 
 ---
 
@@ -216,6 +267,135 @@ Per Architecture Decisions §Frontend Architecture: WCAG 2.1 AA target is v3 Saa
 - **Edge cases**: no emoji icons (per anti-pattern `emoji icons in critical paths`); use the curated icon set only.
 - **Storybook stories**: minimal (title only), with-description, with-icon, with-cta, all-three.
 
+### 1.7 `Switch.svelte`
+
+- **Purpose**: binary on/off toggle primitive — the canonical control for boolean state. Replaces the temptation to use a Checkbox or paired buttons for "is it on?" UX.
+- **Status**: canonical (MVP).
+- **Used by**: `FeatureFlagToggle` (composes), `/strategies` per-symbol enable/disable rows, settings rows that don't need helper text or warnings.
+- **Capability**: foundation — generic boolean affordance.
+- **Data shape**:
+  ```ts
+  interface SwitchProps {
+    checked: boolean;
+    onchange: (next: boolean) => void;
+    disabled?: boolean;
+    size?: 'sm' | 'md';                    // default 'md'
+    'aria-label'?: string;                 // required when no visible label sibling
+    'aria-describedby'?: string;           // wires to helper / warning text
+  }
+  ```
+- **Component-specific states**: `checked` / `unchecked`, plus universal `disabled` and `focus`.
+- **Tokens used**: `--surface-2` track unchecked, `--accent` track checked, `--mute` thumb unchecked, `--accent-fg` thumb checked, `--focus-ring` outline.
+- **Behaviour**: keyboard `Space` toggles; click target ≥48×48 CSS px (the visible track is smaller; padding extends the hitbox); transitions clamped to 0ms under `prefers-reduced-motion: reduce`.
+- **Edge cases**: never use as the sole control of a destructive action (kill-switch is a Button, not a Switch — Switches imply a low-stakes binary).
+- **Storybook stories**: unchecked, checked, disabled-unchecked, disabled-checked, sm, md, with-aria-describedby.
+
+### 1.8 `FeatureFlagToggle.svelte`
+
+- **Purpose**: canonical surface for a tenant-scoped feature flag — composes `Switch` with a label, helper paragraph, optional "Experimental" Badge, and optional destructive warning row.
+- **Status**: canonical (MVP).
+- **Used by**: `/settings` Feature flags section. First consumer = slice R6 (`hindsight-integration`) for FR81 Hindsight bias guard; future flags (e.g. paper-trading-only, verbose-audit-mode) reuse the same shape.
+- **Capability**: FR81 (Hindsight toggle) + any future tenant-scoped boolean flag.
+- **Data shape**:
+  ```ts
+  interface FeatureFlagToggleProps {
+    flagKey: string;                       // server identifier, e.g. 'hindsight_bias_guard'
+    label: string;                         // visible label, e.g. 'Hindsight bias guard'
+    helper: string;                        // one-paragraph description; may include inline <code>
+    checked: boolean;
+    onchange: (next: boolean) => Promise<void>;   // server-bound; component shows loading state
+    experimental?: boolean;                // renders the warn-bg "Experimental" Badge
+    sideEffectWarning?: string;            // renders a destructive-tinted row with alert-triangle icon
+    disabled?: boolean;                    // e.g. while RBAC is loading
+  }
+  ```
+- **Component-specific states**:
+  - `default` (resting at current value).
+  - `loading` (during `onchange` promise — Switch shows inline Spinner; full card non-interactive).
+  - `error` (onchange rejected — Toast emits + Switch reverts; the card itself returns to `default`).
+  - `disabled` (RBAC mismatch or feature-locked).
+- **Tokens used**: `--surface` card background, `--border`, `--ink` label, `--mute` helper, `--warn-bg` Experimental Badge, `--destructive` side-effect warning row, plus all Switch tokens.
+- **Behaviour**:
+  - The card is NOT a `<button>`; the Switch is the only interactive control. Click on label / helper does NOT toggle (avoids accidental flips on read).
+  - Helper paragraph supports inline `<code>` for technical terms; no other inline markup (no links — would compete with the Switch as the primary action).
+  - `experimental` Badge uses the warn-bg accent (Lucide icon optional; prefer label-only).
+  - `sideEffectWarning` row uses `alert-triangle` Lucide icon + destructive-tinted background; surfaces below the Switch row, not inline with helper.
+  - `aria-describedby` on the inner Switch references both helper text id and (if present) warning row id.
+- **Edge cases**:
+  - Optimistic toggle is forbidden — the Switch waits on the server promise; rejection reverts atomically. Reason: feature flags affect tenant-wide behaviour; lying about state is dangerous.
+  - If `onchange` rejects, emit a Toast with the correlation ID; do NOT add error copy inside the card (avoids permanent error surface for transient failures).
+  - The card NEVER mutates its own helper / warning copy at runtime — those are static per flag definition. Dynamic per-state messaging belongs in a Toast.
+- **Storybook stories**: default-off, default-on, experimental-off, experimental-on, with-side-effect-warning, with-side-effect-warning-on, loading, disabled-rbac.
+
+### 1.9 `Alert.svelte`
+
+- **Purpose**: canonical inline alert surface — title + body + optional dismiss action, with semantic variant. Replaces the temptation for each slice to invent its own banner HTML (per §6 stewardship clause).
+- **Status**: canonical (MVP).
+- **Used by**: at least 4 sites identified at lock time (2026-05-05) — `/risk` Tier-2 cap warning ([j2.md](j2.md) §7), `/risk` Tier-1 cap exhaustion ([j2.md](j2.md) §7), J1 §3 SSE stale-data alert ([j1.md](j1.md) §3 Step 1), J0 Step 1 rate-limit banner ([j0.md](j0.md)).
+- **Capability**: foundation — any non-Toast, non-error-boundary inline alert surface.
+- **Data shape**:
+  ```ts
+  interface AlertProps {
+    variant: 'warn' | 'destructive' | 'info';
+    title: string;                         // short, sentence case
+    body?: string;                         // one paragraph; may include inline <code>
+    dismissible?: boolean;                 // shows the dismiss Button
+    onDismiss?: () => void;                // called when dismiss is clicked
+    icon?: string;                         // Lucide icon name; defaults per variant (see Behaviour)
+    role?: 'alert' | 'status';             // aria role; defaults per variant (see Behaviour)
+  }
+  ```
+- **Component-specific states**:
+  - `default` (visible, resting).
+  - `dismissed` (component is unmounted by the parent — Alert itself does NOT manage the dismissed state, only emits `onDismiss`).
+- **Tokens used per variant**:
+  - `warn`: `oklch(78% 0.14 80 / 0.14)` background tint, `--warn-bg` border + icon, `--ink` title, `--mute` body.
+  - `destructive`: `oklch(64% 0.20 25 / 0.14)` background tint, `--destructive` border + icon, `--ink` title, `--destructive` body (when copy IS the alert), else `--mute`.
+  - `info`: `oklch(72% 0.14 195 / 0.14)` background tint, `--accent` border + icon, `--ink` title, `--mute` body.
+- **Behaviour**:
+  - Default Lucide icons per variant: `warn` → `alert-triangle`, `destructive` → `octagon-alert`, `info` → `info`. Override via `icon` prop only when justified (e.g. J0 rate-limit uses `alert-triangle` even though variant is destructive — context-specific).
+  - Default `role`: `warn` and `destructive` → `role="alert"` (assertive announcement); `info` → `role="status"` (polite). Override only with explicit a11y reason.
+  - **Alert is presentational only**. Auto-clear semantics, dismiss persistence, session memory — all owned by the parent (e.g. /risk page logic clears the Tier-2 banner when `daily_pct < 0.80`; Alert itself is unmounted, never self-times-out).
+  - Dismissible variant has a `Button variant="ghost" size="sm"` labelled "dismiss" or an X icon-only Button with `aria-label="Dismiss"`.
+- **Edge cases**:
+  - Multiple Alerts stacked: parent wraps in a flex column with `gap: 8px`; Alert itself does NOT manage stacking.
+  - Body with very long copy: NO truncation in the primitive — alert messages should be short by contract; if a slice needs collapsible alert bodies, it's a different component.
+  - Inline links inside body: forbidden in MVP. If a slice needs a CTA, use a separate `Button` outside Alert (or compose into a `Card`-shaped surface, not Alert).
+- **Storybook stories**: warn-default, warn-with-body, warn-dismissible, destructive-default, destructive-with-body, destructive-dismissible, info-default, info-dismissible, custom-icon.
+
+### 1.10 `YAMLEditor.svelte`
+
+- **Purpose**: lazy-loaded CodeMirror 6 wrapper for editing structured YAML config (strategy params, risk policy, methodology profile). Replaces the temptation to either ship Monaco (~600 KB) or fall back to a plain textarea (YAML indentation breaks too easily).
+- **Status**: canonical (MVP).
+- **Used by**: J1 §3 Step 4 strategy edit modal (first consumer, slice T4); future surfaces — risk policy editor (slice K1), methodology config editor (slice R5), feature-flag config editor (slice R6 if structured).
+- **Capability**: FR3 (per-symbol YAML params) + any future YAML editing surface.
+- **Data shape**:
+  ```ts
+  interface YAMLEditorProps {
+    value: string;                                // YAML source text
+    onChange: (next: string) => void;
+    readonly?: boolean;
+    schema?: object;                              // optional JSON Schema for client-side lint
+    height?: string;                              // CSS height; default '320px'
+    'aria-label'?: string;                        // required when no visible label
+  }
+  ```
+- **Component-specific states**:
+  - `default` (editing).
+  - `readonly` (display-only; no caret; gutter still visible).
+  - `lint-error` (inline squiggle on offending line; `Toast` is NOT raised — server-side validation is the canonical authority and shows on submit).
+- **Tokens used**: gutter background `--surface`, content background `--bg`, line-numbers `--mute`, indent guides `--border`. Syntax mapping: `--accent` for keys, `--success` for strings, `--warn-bg` for numbers, `--destructive` for booleans, `--mute` for comments, `--ink` for raw values. Custom theme exported as `iguanaDarkTheme`.
+- **Behaviour**:
+  - **Lazy-loaded**: the CodeMirror bundle (`codemirror` + `@codemirror/lang-yaml` + theme) is dynamically imported when the component first mounts. Parent renders a `Spinner` for ≤300ms before swapping in.
+  - **Client-side lint is convenience only**: server-side schema validation is canonical. Inline squiggles flag obvious issues (unquoted strings starting with `*`, mixed tabs/spaces); the server is the source of truth on save.
+  - **Theme is dark-only at MVP**: light derivation lands alongside the slice W1 theme toggle (deferred non-blocker).
+  - **No autosave**. Parent owns the dirty state and the save action; `YAMLEditor` is a controlled component.
+- **Edge cases**:
+  - Very large YAML (>500 lines): not supported. Throw a friendly error from the parent if the source exceeds 500 lines (config files for iguanatrader strategies / risk / methodology are bounded; if a slice needs more, the surface is wrong).
+  - Mobile: editing on touch devices is acceptable but not promoted; the strategy modal closes back to a read-only view on `pointer:coarse` with "Edit YAML on desktop" copy if width <600px.
+  - Bundle never available offline (localhost dev only): CodeMirror is bundled by Vite into the app, not loaded from a CDN.
+- **Storybook stories**: default, readonly, with-schema, lint-error, dirty-state, lazy-loading.
+
 ---
 
 ## 2. Layout & navigation
@@ -277,7 +457,7 @@ Per Architecture Decisions §Frontend Architecture: WCAG 2.1 AA target is v3 Saa
 - **Edge cases**:
   - Mobile drawer must trap focus while open + close on outside click + close on route change.
   - Glob enumeration order is alphabetical by route path; per-route metadata exports an `order: number` to override (default 100). New routes from later slices declare their own order to land in the right slot.
-- **Storybook stories**: expanded, collapsed, mobile-drawer-open, with-badges (each variant), admin-only-items-visible, user-role (admin items hidden).
+- **Storybook stories**: expanded, collapsed, mobile-drawer-open, with-badges (each variant), with-impersonation-banner (god-admin context — see [personas-jtbd.md](../personas-jtbd.md) §RBAC Matrix).
 
 ### 2.3 `+error.svelte`
 
@@ -450,11 +630,10 @@ Per Architecture Decisions §Frontend Architecture: WCAG 2.1 AA target is v3 Saa
   - Compact variant in the top bar shows only the icon + tooltip; large variant on `/risk` shows full label + state copy.
   - Activation is optimistic — UI flips to `active` immediately; server SSE confirms. If server rejects, revert + toast.
   - Resume requires typing "RESUME" (mirrors HALT).
-  - Admin-only for Resume; non-admin sees Resume disabled with tooltip "Admin role required" (RBAC per personas-jtbd.md).
 - **Edge cases**:
   - State arrives via `riskStore` SSE — kill-switch fired from CLI / Telegram propagates to UI within the SSE round-trip.
   - Network failure during activation: state stays `armed-confirm` with inline error and a retry CTA.
-- **Storybook stories**: armed (compact, large), armed-confirm (typing HALT), activating, active (admin), active (user — Resume disabled), error.
+- **Storybook stories**: armed (compact, large), armed-confirm (typing HALT), activating, active, error.
 
 ---
 
@@ -477,7 +656,7 @@ Per Architecture Decisions §Frontend Architecture: WCAG 2.1 AA target is v3 Saa
     nextScheduledRefreshAt?: string;       // ISO 8601 UTC; null if manual-only
     refreshing: boolean;
     onRefresh: () => Promise<void>;
-    onMethodologyChange?: (m: BriefHeaderProps['methodology']) => void;   // admin-only
+    onMethodologyChange?: (m: BriefHeaderProps['methodology']) => void;   // tenant_user; v3 multi-seat may gate
     onOpenAuditTrail: () => void;          // navigates to /audit-trail/[version]
   }
   ```
@@ -488,7 +667,7 @@ Per Architecture Decisions §Frontend Architecture: WCAG 2.1 AA target is v3 Saa
 - **Tokens used**: `--surface` band, `--ink`, `--mute` for timestamps, `--accent` for refresh CTA, `--warn-bg` for stale badge.
 - **Behaviour**:
   - Version badge composed from `Badge variant="info"` + `MethodologyBadge`.
-  - Methodology change is admin-only (RBAC); non-admins see methodology as a read-only `Badge`.
+  - Methodology change is exposed to the tenant user (single-seat MVP/v2 model — see [personas-jtbd.md](../personas-jtbd.md) §RBAC Matrix). The read-only `Badge` fallback is preserved as a v3 multi-seat hook (when `tenant_member` role lands, the dropdown becomes a Badge).
   - Refresh CTA disabled while refreshing; cancel option after 30s (per Architecture Decisions §Frontend Architecture loading-states rule).
   - Timestamps formatted via `useFormatPrice`-equivalent date helper — display always pairs absolute ISO 8601 with relative ("3h ago"), never relative-only.
 - **Edge cases**:
@@ -662,18 +841,24 @@ The following components are inventoried in [architecture-decisions.md](../archi
 
 The components catalogue is the contract between design and engineering. If a Svelte story does not match the doc here, the doc is wrong — fix it.
 
-For tokens (`--bg`, `--accent`, etc.), the canonical source is `docs/ux/DESIGN.md` (to be authored by Sally before slice 4 starts). For component visuals once mounted, Storybook is canonical. The catalogue's role is to enforce that no two slices invent two ways to express the same idea.
+For tokens (`--bg`, `--accent`, etc.), the canonical source is [`docs/ux/DESIGN.md`](DESIGN.md) (locked 2026-05-05). For component visuals once mounted, Storybook is canonical. The catalogue's role is to enforce that no two slices invent two ways to express the same idea.
 
 ---
 
 ## 7. Open questions for Sally
 
-- **TBD:** lock the palette + typography stack via the §3 variant round (ux-track.md spec) before slice 4 (`auth-jwt-cookie`) starts so the login surface uses canonical tokens.
-- **TBD:** confirm whether `/login` and `+error.svelte` deserve a journey of their own (sub-J1) or are folded into J1's Walkthrough §0.
-- **TBD:** decide the icon library (lucide cherry-picked vs Heroicons full) — affects Sidebar, Button icon slot, EmptyState icon, MethodologyBadge.
-- **TBD:** confirm dark mode is on from MVP day 1 (Architecture Decisions says yes — system preference) or deferred until v1.5.
-- **TBD:** Hindsight settings toggle (R6) — does its UI live as a generic settings row or warrants a dedicated `FeatureFlagToggle` component? Spec it once R6 design lands.
+Resolved 2026-05-05:
+
+- ✅ **Tokens** locked — see §0.3 + [`DESIGN.md`](DESIGN.md) §1.
+- ✅ **Dark mode** — on from MVP day 1 (dark-only at slice 4; toggle UI lands in slice W1 per [openspec-slice.md](../openspec-slice.md)).
+- ✅ **Iconography** — Lucide cherry-picked via `lucide-svelte`; spec in §0.5 + validated mock at [variants/mock-c4-icons.html](variants/mock-c4-icons.html).
+- ✅ **Auth + error surfaces** — promoted to a dedicated [`j0.md`](j0.md) (split from J1 §0); validated mock at [variants/mock-c3-auth-surfaces.html](variants/mock-c3-auth-surfaces.html). Slice 4 (`auth-jwt-cookie`) cites `j0.md`; slice W1 owns `+error.svelte`.
+- ✅ **Feature flag toggle** — dedicated `FeatureFlagToggle.svelte` (composes Switch + label + helper + optional Experimental Badge + optional side-effect warning); spec in §1.8 + validated mock at [variants/mock-c6-feature-flag-toggle.html](variants/mock-c6-feature-flag-toggle.html). Switch primitive added at §1.7. First consumer: slice R6 (FR81 Hindsight); future flags reuse the shape.
+
+Still open:
+
+- (none open at this layer; remaining TBDs live in journey docs J1/J2/J3.)
 
 ---
 
-Status: DRAFT v1 — to be refined interactively via /bmad-agent-ux-expert (Sally) before slice 4 (auth-jwt-cookie) starts.
+Status: **REFINED v1** (locked 2026-05-05 by Sally + Arturo). All TBDs closed; mocks validated in [variants/](variants/). Catalogue is canonical for slice 4 (`auth-jwt-cookie`) and onward; updates land via revision rows at the top of this file.

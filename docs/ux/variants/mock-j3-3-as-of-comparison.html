@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · J3-3 — As-of comparison view</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --r-pill: 9999px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1700px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: var(--mute); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 1100px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__title {
+    background: var(--surface-2);
+    color: var(--mute);
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .surface-frame__title.recommended { background: var(--accent); color: var(--accent-fg); }
+  .surface-frame__header {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    border-bottom: 1px solid var(--border);
+  }
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 14px;
+    min-height: 720px;
+    overflow: auto;
+  }
+
+  /* Page chrome */
+  .brief-banner {
+    display: flex; align-items: center; gap: 10px;
+    background: oklch(78% 0.14 80 / 0.10);
+    border: 1px solid var(--warn-bg);
+    border-radius: var(--r-2);
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .brief-banner [data-lucide] { width: 14px; height: 14px; color: var(--warn-bg); flex-shrink: 0; }
+  .brief-banner__main { flex: 1; }
+  .brief-banner__title { color: var(--ink); font-weight: 500; }
+  .brief-banner__sub { color: var(--mute); font-family: var(--font-mono); font-size: 11px; }
+
+  .toggle-bar {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 3px;
+    margin-bottom: 14px;
+    width: fit-content;
+  }
+  .toggle-btn {
+    padding: 5px 12px;
+    border-radius: var(--r-1);
+    font-size: 12px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--mute);
+    border: none;
+    font-family: var(--font-sans);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .toggle-btn [data-lucide] { width: 12px; height: 12px; }
+  .toggle-btn.active { background: var(--bg); color: var(--accent); }
+
+  /* ============ SIDE-BY-SIDE ============ */
+  .sxs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .sxs-col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); padding: 12px; }
+  .sxs-col__h { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .sxs-col__label { font-size: 10px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); }
+  .sxs-col__label.now { color: var(--accent); }
+  .sxs-col__label.then { color: var(--warn-bg); }
+  .sxs-col__time { font-family: var(--font-mono); font-size: 11px; color: var(--mute); margin-left: auto; }
+
+  .pillar { margin-bottom: 10px; }
+  .pillar__h { font-size: 11px; color: var(--mute); text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.06em; margin-bottom: 4px; }
+  .pillar__body { font-size: 12px; color: var(--ink); line-height: 1.55; }
+  .pillar__body .added { background: oklch(72% 0.16 145 / 0.18); border-bottom: 1.5px solid var(--success); padding: 0 2px; }
+  .pillar__body .removed { background: oklch(64% 0.20 25 / 0.14); text-decoration: line-through; color: var(--mute); padding: 0 2px; }
+  .pillar__body .changed { background: oklch(78% 0.14 80 / 0.18); padding: 0 2px; }
+  .pillar__body code { font-size: 11px; }
+
+  .fact-row {
+    display: flex; gap: 10px; padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: var(--r-1);
+    background: var(--bg);
+    margin-bottom: 4px;
+    font-size: 12px;
+    align-items: center;
+  }
+  .fact-row .ftype { font-family: var(--font-mono); font-size: 10px; color: var(--mute); width: 84px; flex-shrink: 0; }
+  .fact-row .fval { font-family: var(--font-mono); color: var(--ink); flex: 1; }
+  .fact-row .ftier { font-size: 10px; padding: 1px 5px; border-radius: var(--r-1); font-family: var(--font-mono); }
+  .fact-row .ftier.a { background: oklch(72% 0.16 145 / 0.18); color: var(--success); }
+  .fact-row .ftier.b { background: oklch(72% 0.14 195 / 0.14); color: var(--accent); }
+  .fact-row.added { border-color: var(--success); background: oklch(72% 0.16 145 / 0.06); }
+  .fact-row.removed { border-color: var(--destructive); background: oklch(64% 0.20 25 / 0.06); }
+  .fact-row.changed { border-color: var(--warn-bg); background: oklch(78% 0.14 80 / 0.06); }
+  .fact-row .delta { font-family: var(--font-mono); font-size: 10px; padding: 1px 5px; border-radius: var(--r-1); margin-left: auto; }
+  .fact-row .delta.up { color: var(--success); }
+  .fact-row .delta.down { color: var(--destructive); }
+
+  /* ============ OVERLAY (unified diff) ============ */
+  .overlay-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); padding: 12px; margin-bottom: 10px; }
+  .overlay-block .pillar__body { color: var(--ink); }
+  .overlay-block .legend { display: flex; gap: 12px; font-size: 11px; color: var(--mute); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); }
+  .legend-tag { display: inline-flex; align-items: center; gap: 4px; }
+  .legend-tag .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .legend-tag.added .dot { background: var(--success); }
+  .legend-tag.removed .dot { background: var(--destructive); }
+  .legend-tag.changed .dot { background: var(--warn-bg); }
+
+  /* ============ DIFF (line-prefix) ============ */
+  .diff-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); padding: 0; margin-bottom: 10px; overflow: hidden; }
+  .diff-line {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 3px 12px 3px 8px;
+    display: flex;
+    gap: 8px;
+    border-left: 3px solid transparent;
+  }
+  .diff-line__sigil { width: 12px; flex-shrink: 0; color: var(--mute); text-align: center; }
+  .diff-line__body { flex: 1; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+  .diff-line.added { background: oklch(72% 0.16 145 / 0.10); border-left-color: var(--success); }
+  .diff-line.added .diff-line__sigil { color: var(--success); }
+  .diff-line.removed { background: oklch(64% 0.20 25 / 0.10); border-left-color: var(--destructive); }
+  .diff-line.removed .diff-line__body { color: var(--mute); }
+  .diff-line.removed .diff-line__sigil { color: var(--destructive); }
+  .diff-line.context .diff-line__body { color: var(--mute); }
+  .diff-block .diff-h { background: var(--surface-2); padding: 5px 10px; font-family: var(--font-mono); font-size: 11px; color: var(--mute); border-bottom: 1px solid var(--border); }
+
+  /* Comparison */
+  .comparison { background: var(--surface); border-radius: var(--r-3); padding: 20px; margin-top: 32px; max-width: 1500px; }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .opt { border: 1px solid var(--border); border-radius: var(--r-2); padding: 14px; }
+  .opt h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); font-weight: 500; }
+  .opt ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--mute); }
+  .opt ul li { margin-bottom: 4px; }
+  .opt.recommended { border-color: var(--accent); background: oklch(72% 0.14 195 / 0.06); }
+  .opt.recommended h4::after { content: ' ← my read'; color: var(--mute); font-size: 12px; font-weight: 400; }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · As-of comparison view</h1>
+<div class="meta">
+  <strong>Decision:</strong> J3-3 — side-by-side / overlay / diff
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked · <strong>Icons:</strong> Lucide
+  &nbsp;·&nbsp;
+  <strong>Scenario:</strong> Arturo retro-audits a losing NVDA trade from 2026-04-15. Comparing the brief that informed the trade (<code>as_of=2026-04-15</code>) vs current brief (<code>2026-05-05</code>). Earnings beat on May 1st added new facts; price moved $822 → $874; analyst target raised.
+</div>
+
+<div class="grid-3">
+
+  <!-- ============ A: SIDE-BY-SIDE ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">A — Side-by-side</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/research/NVDA?as_of=2026-04-15&amp;view=sxs</code></div>
+    <div class="surface-frame__body">
+      <div class="brief-banner">
+        <i data-lucide="rewind"></i>
+        <div class="brief-banner__main">
+          <div class="brief-banner__title">As-of replay · 2026-04-15 vs current</div>
+          <div class="brief-banner__sub">v14 ↔ v17 · 5 changes · brief body, 3 facts</div>
+        </div>
+      </div>
+
+      <div class="toggle-bar">
+        <button class="toggle-btn active"><i data-lucide="columns-2"></i>Side-by-side</button>
+        <button class="toggle-btn"><i data-lucide="layers"></i>Overlay</button>
+        <button class="toggle-btn"><i data-lucide="git-compare"></i>Diff</button>
+      </div>
+
+      <div class="sxs-grid">
+        <div class="sxs-col">
+          <div class="sxs-col__h">
+            <span class="sxs-col__label then">As-of</span>
+            <span class="sxs-col__time">2026-04-15 v14</span>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">3p · fundamentals</div>
+            <div class="pillar__body">EPS TTM <code>$2.95</code>; FY estimate <code>$3.40</code> revised flat. Revenue growth decelerating per Q4 guidance. Analyst price target consensus <code>$850</code>.</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">3p · macro</div>
+            <div class="pillar__body">AI capex narrative intact; data-center demand holds.</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">3p · news</div>
+            <div class="pillar__body">No material 8-K filings in the last 30 days.</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">facts</div>
+            <div class="fact-row"><span class="ftype">price.last</span><span class="fval">$822.40</span><span class="ftier a">A</span></div>
+            <div class="fact-row"><span class="ftype">eps.ttm</span><span class="fval">$2.95</span><span class="ftier a">A</span></div>
+            <div class="fact-row"><span class="ftype">target.consensus</span><span class="fval">$850.00</span><span class="ftier b">B</span></div>
+          </div>
+        </div>
+        <div class="sxs-col">
+          <div class="sxs-col__h">
+            <span class="sxs-col__label now">Current</span>
+            <span class="sxs-col__time">2026-05-05 v17</span>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">3p · fundamentals</div>
+            <div class="pillar__body">EPS TTM <code>$3.18</code> <span class="changed">(+$0.23)</span>; FY estimate <code>$3.62</code>. Revenue growth re-accelerating after Q1 beat. <span class="added">Earnings call cited "data-center demand pull-forward into FY27".</span> Analyst price target consensus <code>$920</code> <span class="changed">(+$70)</span>.</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">3p · macro</div>
+            <div class="pillar__body">AI capex narrative intact; data-center demand holds.</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">3p · news</div>
+            <div class="pillar__body"><span class="added">2026-05-01 · Q1 earnings: beat on EPS ($0.18 surprise) and revenue ($1.4B over guide). Stock +6.4% AH.</span></div>
+          </div>
+          <div class="pillar">
+            <div class="pillar__h">facts</div>
+            <div class="fact-row changed"><span class="ftype">price.last</span><span class="fval">$874.10</span><span class="ftier a">A</span><span class="delta up">+6.3%</span></div>
+            <div class="fact-row changed"><span class="ftype">eps.ttm</span><span class="fval">$3.18</span><span class="ftier a">A</span><span class="delta up">+7.8%</span></div>
+            <div class="fact-row changed"><span class="ftype">target.consensus</span><span class="fval">$920.00</span><span class="ftier b">B</span><span class="delta up">+8.2%</span></div>
+            <div class="fact-row added"><span class="ftype">earnings.q1.surprise</span><span class="fval">+$0.18 EPS</span><span class="ftier a">A</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ B: OVERLAY (unified) ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">B — Overlay (unified, inline marks)</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/research/NVDA?as_of=2026-04-15&amp;view=overlay</code></div>
+    <div class="surface-frame__body">
+      <div class="brief-banner">
+        <i data-lucide="rewind"></i>
+        <div class="brief-banner__main">
+          <div class="brief-banner__title">As-of replay · 2026-04-15 vs current</div>
+          <div class="brief-banner__sub">v14 ↔ v17 · 5 changes · brief body, 3 facts</div>
+        </div>
+      </div>
+
+      <div class="toggle-bar">
+        <button class="toggle-btn"><i data-lucide="columns-2"></i>Side-by-side</button>
+        <button class="toggle-btn active"><i data-lucide="layers"></i>Overlay</button>
+        <button class="toggle-btn"><i data-lucide="git-compare"></i>Diff</button>
+      </div>
+
+      <div class="overlay-block">
+        <div class="legend">
+          <span class="legend-tag added"><span class="dot"></span>added since as-of</span>
+          <span class="legend-tag removed"><span class="dot"></span>removed</span>
+          <span class="legend-tag changed"><span class="dot"></span>changed</span>
+        </div>
+
+        <div class="pillar">
+          <div class="pillar__h">3p · fundamentals</div>
+          <div class="pillar__body">EPS TTM <span class="changed"><code>$2.95</code> → <code>$3.18</code></span>; FY estimate <span class="changed"><code>$3.40</code> → <code>$3.62</code></span> <span class="removed">revised flat</span>. Revenue growth <span class="removed">decelerating per Q4 guidance</span> <span class="added">re-accelerating after Q1 beat</span>. <span class="added">Earnings call cited "data-center demand pull-forward into FY27".</span> Analyst price target consensus <span class="changed"><code>$850</code> → <code>$920</code></span>.</div>
+        </div>
+
+        <div class="pillar">
+          <div class="pillar__h">3p · news</div>
+          <div class="pillar__body"><span class="removed">No material 8-K filings in the last 30 days.</span><br><span class="added">2026-05-01 · Q1 earnings: beat on EPS ($0.18 surprise) and revenue ($1.4B over guide). Stock +6.4% AH.</span></div>
+        </div>
+
+        <div class="pillar">
+          <div class="pillar__h">facts</div>
+          <div class="fact-row changed"><span class="ftype">price.last</span><span class="fval">$822.40 → <strong style="color:var(--ink);">$874.10</strong></span><span class="delta up">+6.3%</span></div>
+          <div class="fact-row changed"><span class="ftype">eps.ttm</span><span class="fval">$2.95 → <strong style="color:var(--ink);">$3.18</strong></span><span class="delta up">+7.8%</span></div>
+          <div class="fact-row changed"><span class="ftype">target.consensus</span><span class="fval">$850 → <strong style="color:var(--ink);">$920</strong></span><span class="delta up">+8.2%</span></div>
+          <div class="fact-row added"><span class="ftype">earnings.q1.surprise</span><span class="fval">+$0.18 EPS</span><span class="ftier a">A</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ C: DIFF (line-prefix) ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">C — Diff (git-style ±)</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/research/NVDA?as_of=2026-04-15&amp;view=diff</code></div>
+    <div class="surface-frame__body">
+      <div class="brief-banner">
+        <i data-lucide="rewind"></i>
+        <div class="brief-banner__main">
+          <div class="brief-banner__title">As-of replay · 2026-04-15 vs current</div>
+          <div class="brief-banner__sub">v14 ↔ v17 · 5 changes · brief body, 3 facts</div>
+        </div>
+      </div>
+
+      <div class="toggle-bar">
+        <button class="toggle-btn"><i data-lucide="columns-2"></i>Side-by-side</button>
+        <button class="toggle-btn"><i data-lucide="layers"></i>Overlay</button>
+        <button class="toggle-btn active"><i data-lucide="git-compare"></i>Diff</button>
+      </div>
+
+      <div class="diff-block">
+        <div class="diff-h">@@ 3p / fundamentals @@</div>
+        <div class="diff-line context"><span class="diff-line__sigil">·</span><span class="diff-line__body">EPS TTM</span></div>
+        <div class="diff-line removed"><span class="diff-line__sigil">−</span><span class="diff-line__body">$2.95; FY estimate $3.40 revised flat. Revenue growth decelerating per Q4 guidance.</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">$3.18; FY estimate $3.62. Revenue growth re-accelerating after Q1 beat.</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">Earnings call cited "data-center demand pull-forward into FY27".</span></div>
+        <div class="diff-line context"><span class="diff-line__sigil">·</span><span class="diff-line__body">Analyst price target consensus</span></div>
+        <div class="diff-line removed"><span class="diff-line__sigil">−</span><span class="diff-line__body">$850.</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">$920.</span></div>
+      </div>
+
+      <div class="diff-block">
+        <div class="diff-h">@@ 3p / news @@</div>
+        <div class="diff-line removed"><span class="diff-line__sigil">−</span><span class="diff-line__body">No material 8-K filings in the last 30 days.</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">2026-05-01 · Q1 earnings: beat on EPS ($0.18 surprise) and revenue ($1.4B over guide). Stock +6.4% AH.</span></div>
+      </div>
+
+      <div class="diff-block">
+        <div class="diff-h">@@ facts @@</div>
+        <div class="diff-line removed"><span class="diff-line__sigil">−</span><span class="diff-line__body">price.last        $822.40   [A]</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">price.last        $874.10   [A]   +6.3%</span></div>
+        <div class="diff-line removed"><span class="diff-line__sigil">−</span><span class="diff-line__body">eps.ttm           $2.95     [A]</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">eps.ttm           $3.18     [A]   +7.8%</span></div>
+        <div class="diff-line removed"><span class="diff-line__sigil">−</span><span class="diff-line__body">target.consensus  $850.00   [B]</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">target.consensus  $920.00   [B]   +8.2%</span></div>
+        <div class="diff-line added"><span class="diff-line__sigil">+</span><span class="diff-line__body">earnings.q1.surprise  +$0.18 EPS  [A]</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h2>Three options compared</h2>
+
+<div class="comparison">
+  <div class="comparison-grid">
+    <div class="opt recommended">
+      <h4>A — Side-by-side</h4>
+      <ul>
+        <li>Two columns: as-of (left, warn-bg label) vs current (right, accent label).</li>
+        <li>Inline highlights inside each column show what's added (success-tinted) / removed (destructive-tinted) / changed (warn-tinted).</li>
+        <li><strong>Best for spatial recall</strong>: "what did I see when I made the trade?" → eyes go left; "what do I see now?" → eyes go right.</li>
+        <li>Works well across all content types: prose, fact tables, numerical deltas all fit the 2-col grid.</li>
+        <li>Tradeoff: doubles horizontal space. On narrow widths (≤1200px) becomes cramped — mock-tested at 480px-per-col, fine on desktop.</li>
+        <li>Familiar from doc-comparison tools (Google Docs, Word, Notion versioning).</li>
+      </ul>
+    </div>
+    <div class="opt">
+      <h4>B — Overlay (unified)</h4>
+      <ul>
+        <li>Single column; old + new merged with inline highlight markers.</li>
+        <li>Compact horizontally; great on narrow widths.</li>
+        <li>Loses the "where did this come from" mental anchor — the user sees "$850 → $920" but has to read the legend to know which is which.</li>
+        <li>Prose with many removals becomes a strikethrough soup.</li>
+        <li>Familiar from Google Docs Suggesting mode.</li>
+      </ul>
+    </div>
+    <div class="opt">
+      <h4>C — Diff (git-style ±)</h4>
+      <ul>
+        <li>Line-prefix markup: <code>−</code> / <code>+</code> / context.</li>
+        <li>Engineer-familiar; precise for prose; perfect for code-like content.</li>
+        <li>Heavy mono font + chunky vertical lists feel out of place for a research brief — Arturo is reading <em>analysis</em>, not <em>code</em>.</li>
+        <li>Best for AuditTrailViewer (a future surface where calculations are versioned), <strong>not</strong> for the brief-vs-brief use case.</li>
+        <li>Would need extra UI to navigate the hunks (jumps).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>My read</h2>
+<p style="color:var(--ink);max-width:1500px;">A wins on the actual user task: Arturo is post-mortem-ing a trade and his mental model is "before / after". A 2-col layout matches that frame. The inline highlight legend (added / removed / changed) inside each column gives him the granularity without forcing him to translate <code>−</code>/<code>+</code> to "as-of vs now". B is more compact but loses the spatial anchor. C reads like a git diff — fine for engineers reviewing calculations (which is where I'd reuse this pattern, in a future AuditTrailViewer surface) but heavyweight for a research brief.</p>
+
+<div class="comparison" style="background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent);">
+  <h3 style="color: var(--accent);">→ Recommendation: Option A — side-by-side (default), with toggle to overlay</h3>
+  <p style="color: var(--ink); margin: 0;">Default view = side-by-side; toggle bar at top of the page (`Side-by-side` / `Overlay`) lets the user switch when columns get cramped (mobile / tablet auto-collapses to overlay). Drop the diff option for now — it's not the right shape for prose. A future <code>AuditTrailViewer</code> surface (slice R5) for calculation-trail comparison may justify a dedicated diff view, but that's a separate decision (own mock when slice R5 lands). Inline highlight tokens: <code>added</code>=success-tinted, <code>removed</code>=destructive-tinted strikethrough, <code>changed</code>=warn-tinted. Implementation lands in slice R5 (<code>research-brief-synthesis</code>) on the <code>/research/[symbol]?as_of=&lt;ts&gt;</code> route.</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-j3-3-as-of-comparison.html</code>
+  <br><br>
+  <strong>Note:</strong> the toggle bar follows the canonical pattern of segmented buttons (radio-button-as-bar). Worth promoting to a small primitive <code>ToggleGroup.svelte</code> if it shows up in ≥2 surfaces — for now, inline composition in the as-of comparison page is fine.
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>

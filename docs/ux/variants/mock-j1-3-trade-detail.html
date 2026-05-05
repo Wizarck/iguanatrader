@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · J1-3 — Trade detail: drawer vs route</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --r-pill: 9999px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1600px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: var(--mute); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 1100px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+
+  /* Frame chrome */
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__title {
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .surface-frame__header {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .url-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--destructive); display: inline-block; }
+  .url-dot.amber { background: var(--warn-bg); }
+  .url-dot.green { background: var(--success); }
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 0;
+    position: relative;
+    min-height: 760px;
+  }
+
+  /* App shell mock */
+  .app-shell { display: grid; grid-template-columns: 200px 1fr; height: 100%; min-height: 760px; }
+  .sidebar { background: var(--surface-2); padding: 12px 8px; border-right: 1px solid var(--border); }
+  .sb-brand { display: flex; align-items: center; gap: 8px; padding: 8px 8px 16px; font-weight: 600; font-size: 14px; color: var(--ink); border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .sb-brand__mark { width: 22px; height: 22px; background: var(--accent); border-radius: var(--r-1); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-fg); font-weight: 700; font-size: 12px; font-family: var(--font-mono); }
+  .sb-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r-2); color: var(--mute); font-size: 13px; cursor: pointer; }
+  .sb-row.active { background: var(--bg); color: var(--accent); }
+  .sb-row [data-lucide] { width: 16px; height: 16px; stroke: currentColor; }
+
+  .main { padding: 16px 20px; overflow: auto; }
+  .page-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .page-h h1 { font-size: 20px; margin: 0; }
+  .page-h .ctas { display: flex; gap: 6px; }
+
+  /* Filter bar */
+  .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 12px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--bg); color: var(--mute); font-family: var(--font-mono); }
+  .chip.active { color: var(--accent); border-color: var(--accent); background: oklch(72% 0.14 195 / 0.10); }
+  .chip [data-lucide] { width: 11px; height: 11px; }
+
+  /* Trades table */
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table thead th { background: var(--surface); color: var(--mute); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .table tbody td { padding: 9px 12px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+  .table tbody tr { cursor: pointer; }
+  .table tbody tr:hover { background: var(--surface); }
+  .table tbody tr.selected { background: var(--surface-2); border-left: 2px solid var(--accent); }
+  .pnl-pos { color: var(--success); }
+  .pnl-neg { color: var(--destructive); }
+  .badge-side { display: inline-block; padding: 1px 6px; border-radius: var(--r-1); font-size: 11px; font-weight: 500; font-family: var(--font-mono); }
+  .badge-side.buy { background: oklch(72% 0.16 145 / 0.18); color: var(--success); }
+  .badge-side.sell { background: oklch(64% 0.20 25 / 0.18); color: var(--destructive); }
+  .badge-override { background: var(--warn-bg); color: var(--accent-fg); padding: 1px 6px; border-radius: var(--r-1); font-size: 11px; }
+
+  /* Drawer overlay */
+  .drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: oklch(0% 0 0 / 0.55);
+    z-index: 1;
+  }
+  .drawer {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 540px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 24px oklch(0% 0 0 / 0.4);
+    z-index: 2;
+    overflow-y: auto;
+    padding: 20px 24px;
+  }
+  .drawer__head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .drawer__head h2 { margin: 0; font-size: 16px; color: var(--ink); }
+  .drawer__close { background: transparent; border: 1px solid var(--border); border-radius: var(--r-2); padding: 4px 8px; color: var(--mute); cursor: pointer; font-family: var(--font-mono); font-size: 11px; display: inline-flex; align-items: center; gap: 4px; }
+  .drawer__close [data-lucide] { width: 12px; height: 12px; }
+
+  /* Detail content (shared between drawer and route) */
+  .detail-section { margin-top: 20px; }
+  .detail-section h3 { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; font-weight: 500; }
+  .kv-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13px; }
+  .kv-grid dt { color: var(--mute); font-family: var(--font-mono); font-size: 12px; }
+  .kv-grid dd { margin: 0; color: var(--ink); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .legs { display: flex; flex-direction: column; gap: 6px; }
+  .leg-row { display: flex; gap: 12px; padding: 6px 8px; background: var(--bg); border-radius: var(--r-1); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 12px; align-items: center; }
+  .leg-row .leg-time { color: var(--mute); }
+  .leg-row .leg-side { padding: 0 6px; }
+  .leg-row .leg-px { color: var(--ink); }
+  .leg-row .leg-qty { color: var(--mute); }
+  .leg-row .leg-status { margin-left: auto; color: var(--success); font-size: 11px; }
+  .citation { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--r-1); border: 1px solid var(--accent); color: var(--accent); font-size: 12px; background: oklch(72% 0.14 195 / 0.10); cursor: pointer; }
+  .citation [data-lucide] { width: 12px; height: 12px; }
+  .audit-list { font-size: 12px; color: var(--mute); font-family: var(--font-mono); padding-left: 16px; }
+  .audit-list li { margin-bottom: 3px; }
+  .risk-eval { padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-1); font-size: 12px; color: var(--mute); font-family: var(--font-mono); }
+  .risk-eval .row { display: flex; justify-content: space-between; gap: 12px; }
+  .risk-eval .row + .row { margin-top: 3px; }
+
+  /* Route variant: full page */
+  .crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mute); margin-bottom: 12px; font-family: var(--font-mono); }
+  .crumbs a { color: var(--accent); text-decoration: none; }
+  .crumbs [data-lucide] { width: 12px; height: 12px; }
+  .route-detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-3); padding: 24px; }
+
+  /* Compare block */
+  .comparison { background: var(--surface); border-radius: var(--r-3); padding: 20px; margin-top: 32px; max-width: 1300px; }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .opt { border: 1px solid var(--border); border-radius: var(--r-2); padding: 14px; }
+  .opt h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); font-weight: 500; }
+  .opt ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--mute); }
+  .opt ul li { margin-bottom: 4px; }
+  .opt.recommended { border-color: var(--accent); background: oklch(72% 0.14 195 / 0.06); }
+  .opt.recommended h4::after { content: ' ← my read'; color: var(--mute); font-size: 12px; font-weight: 400; }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · Trade detail surface</h1>
+<div class="meta">
+  <strong>Decision:</strong> J1-3 — drawer vs <code>/trades/[id]</code> dedicated route vs hybrid (drawer + URL state)
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked · <strong>Icons:</strong> Lucide
+</div>
+
+<p>Same trade (<code>tx_a3f2b1c</code> · AAPL BUY 100 @ 178.42) shown two ways. Both surfaces carry identical content (proposal link + risk eval snapshot + order legs + fills + research brief link + audit log) — the difference is <em>where the user lives</em> while reading it.</p>
+
+<div class="grid-2">
+
+  <!-- ============ A: DRAWER + URL state (modal-route) ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">OPTION A — Drawer overlay (with URL state)</div>
+    <div class="surface-frame__header">
+      <span class="url-dot"></span><span class="url-dot amber"></span><span class="url-dot green"></span>
+      &nbsp;<code style="background:transparent;color:var(--mute);">/trades?range=last-90d&amp;symbol=AAPL&amp;detail=tx_a3f2b1c</code>
+    </div>
+    <div class="surface-frame__body">
+      <div class="app-shell">
+        <aside class="sidebar">
+          <div class="sb-brand"><span class="sb-brand__mark">i</span>iguana</div>
+          <div class="sb-row"><i data-lucide="briefcase"></i>Portfolio</div>
+          <div class="sb-row"><i data-lucide="bell"></i>Approvals</div>
+          <div class="sb-row active"><i data-lucide="clock"></i>Trades</div>
+          <div class="sb-row"><i data-lucide="gauge"></i>Risk</div>
+          <div class="sb-row"><i data-lucide="settings"></i>Settings</div>
+        </aside>
+        <main class="main">
+          <div class="page-h"><h1>Trades</h1><div class="ctas"><span class="chip"><i data-lucide="download"></i>Export CSV</span></div></div>
+
+          <div class="filter-bar">
+            <span class="chip active">last-90d <i data-lucide="x"></i></span>
+            <span class="chip active">AAPL <i data-lucide="x"></i></span>
+            <span class="chip">+ Strategy</span>
+            <span class="chip">+ State</span>
+            <span class="chip">+ Override marker</span>
+          </div>
+
+          <table class="table">
+            <thead><tr><th>Time (UTC)</th><th>Sym</th><th>Side</th><th>Qty</th><th>Fill</th><th>P&amp;L</th><th>Hold</th><th>Strat</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>2026-04-22T13:31</td><td>AAPL</td><td><span class="badge-side buy">BUY</span></td><td>100</td><td>175.18</td><td class="pnl-pos">+318</td><td>13d</td><td>DonchianATR</td><td></td></tr>
+              <tr class="selected"><td>2026-04-30T14:02</td><td>AAPL</td><td><span class="badge-side buy">BUY</span></td><td>100</td><td>178.42</td><td class="pnl-neg">−47</td><td>5d</td><td>DonchianATR</td><td></td></tr>
+              <tr><td>2026-05-01T15:11</td><td>AAPL</td><td><span class="badge-side sell">SELL</span></td><td>50</td><td>177.94</td><td class="pnl-neg">−24</td><td>1d</td><td>DonchianATR</td><td><span class="badge-override">override</span></td></tr>
+              <tr><td>2026-05-03T13:44</td><td>AAPL</td><td><span class="badge-side buy">BUY</span></td><td>200</td><td>180.10</td><td class="pnl-pos">+412</td><td>2d</td><td>DonchianATR</td><td></td></tr>
+            </tbody>
+          </table>
+        </main>
+      </div>
+
+      <!-- Drawer overlay -->
+      <div class="drawer-backdrop"></div>
+      <div class="drawer">
+        <div class="drawer__head">
+          <h2>Trade · <span style="font-family:var(--font-mono);color:var(--mute);font-size:13px;">tx_a3f2b1c</span></h2>
+          <button class="drawer__close"><i data-lucide="x"></i>Esc</button>
+        </div>
+
+        <div class="detail-section">
+          <h3>Summary</h3>
+          <dl class="kv-grid">
+            <dt>symbol</dt><dd>AAPL</dd>
+            <dt>side</dt><dd><span class="badge-side buy">BUY</span></dd>
+            <dt>qty / fill px</dt><dd>100 @ 178.42</dd>
+            <dt>opened</dt><dd>2026-04-30T14:02:13.481Z (5d ago)</dd>
+            <dt>strategy</dt><dd>DonchianATR v1.2.0</dd>
+            <dt>P&amp;L (unrealised)</dt><dd class="pnl-neg">−47.00</dd>
+          </dl>
+        </div>
+
+        <div class="detail-section">
+          <h3>Linked artefacts</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <span class="citation"><i data-lucide="file-text"></i>proposal_4b22</span>
+            <span class="citation"><i data-lucide="book-open"></i>research_brief AAPL v17</span>
+            <span class="citation"><i data-lucide="shield-check"></i>risk_eval re_88a1</span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Risk evaluation snapshot</h3>
+          <div class="risk-eval">
+            <div class="row"><span>per_trade_cap</span><span class="pnl-pos">0.42% / 2.00% allow</span></div>
+            <div class="row"><span>daily_cap</span><span class="pnl-pos">1.10% / 5.00% allow</span></div>
+            <div class="row"><span>weekly_cap</span><span class="pnl-pos">3.20% / 15.00% allow</span></div>
+            <div class="row"><span>drawdown_state</span><span style="color:var(--ink);">nominal</span></div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Order legs &amp; fills</h3>
+          <div class="legs">
+            <div class="leg-row"><span class="leg-time">14:02:08</span><span class="leg-side">BUY</span><span class="leg-qty">100</span><span class="leg-px">@ MKT</span><span class="leg-status">submitted</span></div>
+            <div class="leg-row"><span class="leg-time">14:02:11</span><span class="leg-side">BUY</span><span class="leg-qty">60</span><span class="leg-px">@ 178.42</span><span class="leg-status">filled</span></div>
+            <div class="leg-row"><span class="leg-time">14:02:13</span><span class="leg-side">BUY</span><span class="leg-qty">40</span><span class="leg-px">@ 178.42</span><span class="leg-status">filled</span></div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Audit trail (last 5)</h3>
+          <ul class="audit-list">
+            <li>14:01:58 · approval.granted · channel=telegram · latency_ms=2841</li>
+            <li>14:02:01 · trading.proposal.submitted · broker=ibkr_paper</li>
+            <li>14:02:11 · trading.order.partial_fill · qty=60</li>
+            <li>14:02:13 · trading.order.filled · qty=40</li>
+            <li>14:02:13 · trading.position.opened · pos_id=pos_99c4</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ B: Dedicated /trades/[id] route ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">OPTION B — Dedicated route /trades/[id]</div>
+    <div class="surface-frame__header">
+      <span class="url-dot"></span><span class="url-dot amber"></span><span class="url-dot green"></span>
+      &nbsp;<code style="background:transparent;color:var(--mute);">/trades/tx_a3f2b1c</code>
+    </div>
+    <div class="surface-frame__body">
+      <div class="app-shell">
+        <aside class="sidebar">
+          <div class="sb-brand"><span class="sb-brand__mark">i</span>iguana</div>
+          <div class="sb-row"><i data-lucide="briefcase"></i>Portfolio</div>
+          <div class="sb-row"><i data-lucide="bell"></i>Approvals</div>
+          <div class="sb-row active"><i data-lucide="clock"></i>Trades</div>
+          <div class="sb-row"><i data-lucide="gauge"></i>Risk</div>
+          <div class="sb-row"><i data-lucide="settings"></i>Settings</div>
+        </aside>
+        <main class="main">
+          <div class="crumbs"><a href="#">Trades</a> <i data-lucide="chevron-right"></i> <span>tx_a3f2b1c</span></div>
+          <div class="page-h"><h1>Trade · <span style="color:var(--mute);font-family:var(--font-mono);font-size:14px;">tx_a3f2b1c</span></h1>
+            <div class="ctas">
+              <span class="chip"><i data-lucide="arrow-left"></i>Back</span>
+              <span class="chip"><i data-lucide="copy"></i>Copy link</span>
+            </div>
+          </div>
+
+          <div class="route-detail-card">
+            <div class="detail-section" style="margin-top:0;">
+              <h3>Summary</h3>
+              <dl class="kv-grid">
+                <dt>symbol</dt><dd>AAPL</dd>
+                <dt>side</dt><dd><span class="badge-side buy">BUY</span></dd>
+                <dt>qty / fill px</dt><dd>100 @ 178.42</dd>
+                <dt>opened</dt><dd>2026-04-30T14:02:13.481Z (5d ago)</dd>
+                <dt>strategy</dt><dd>DonchianATR v1.2.0</dd>
+                <dt>P&amp;L (unrealised)</dt><dd class="pnl-neg">−47.00</dd>
+              </dl>
+            </div>
+
+            <div class="detail-section">
+              <h3>Linked artefacts</h3>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <span class="citation"><i data-lucide="file-text"></i>proposal_4b22</span>
+                <span class="citation"><i data-lucide="book-open"></i>research_brief AAPL v17</span>
+                <span class="citation"><i data-lucide="shield-check"></i>risk_eval re_88a1</span>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <h3>Risk evaluation snapshot</h3>
+              <div class="risk-eval">
+                <div class="row"><span>per_trade_cap</span><span class="pnl-pos">0.42% / 2.00% allow</span></div>
+                <div class="row"><span>daily_cap</span><span class="pnl-pos">1.10% / 5.00% allow</span></div>
+                <div class="row"><span>weekly_cap</span><span class="pnl-pos">3.20% / 15.00% allow</span></div>
+                <div class="row"><span>drawdown_state</span><span style="color:var(--ink);">nominal</span></div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <h3>Order legs &amp; fills</h3>
+              <div class="legs">
+                <div class="leg-row"><span class="leg-time">14:02:08</span><span class="leg-side">BUY</span><span class="leg-qty">100</span><span class="leg-px">@ MKT</span><span class="leg-status">submitted</span></div>
+                <div class="leg-row"><span class="leg-time">14:02:11</span><span class="leg-side">BUY</span><span class="leg-qty">60</span><span class="leg-px">@ 178.42</span><span class="leg-status">filled</span></div>
+                <div class="leg-row"><span class="leg-time">14:02:13</span><span class="leg-side">BUY</span><span class="leg-qty">40</span><span class="leg-px">@ 178.42</span><span class="leg-status">filled</span></div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <h3>Audit trail (last 5)</h3>
+              <ul class="audit-list">
+                <li>14:01:58 · approval.granted · channel=telegram · latency_ms=2841</li>
+                <li>14:02:01 · trading.proposal.submitted · broker=ibkr_paper</li>
+                <li>14:02:11 · trading.order.partial_fill · qty=60</li>
+                <li>14:02:13 · trading.order.filled · qty=40</li>
+                <li>14:02:13 · trading.position.opened · pos_id=pos_99c4</li>
+              </ul>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h2>Three options compared</h2>
+
+<div class="comparison">
+  <div class="comparison-grid">
+    <div class="opt">
+      <h4>Pure drawer (no URL state)</h4>
+      <ul>
+        <li>Closes → instantly back on filtered table; <strong>filter context preserved</strong>.</li>
+        <li><strong>NOT deep-linkable</strong>: can't share a link to a specific trade; reload kills the drawer.</li>
+        <li>Browser back button doesn't close the drawer (UX surprise).</li>
+        <li>Implementation: simplest. Drawer is local state in <code>+page.svelte</code>.</li>
+      </ul>
+    </div>
+    <div class="opt recommended">
+      <h4>Drawer + URL query (modal-route)</h4>
+      <ul>
+        <li>Drawer opens · URL becomes <code>/trades?...&amp;detail=tx_a3f2b1c</code>.</li>
+        <li><strong>Deep-linkable</strong> (paste URL → opens drawer over current filters); <strong>filter context preserved</strong>; <strong>back button closes drawer</strong>.</li>
+        <li>Pattern used by Linear / Notion / GitHub Issues — familiar to the user.</li>
+        <li>Implementation: SvelteKit <code>$page.url.searchParams.get('detail')</code> drives drawer state; <code>goto</code> with <code>{ keepFocus: true }</code> avoids scroll jump.</li>
+        <li>Cost: ~10 extra LOC in <code>+page.svelte</code> vs pure drawer.</li>
+      </ul>
+    </div>
+    <div class="opt">
+      <h4>Dedicated <code>/trades/[id]</code> route</h4>
+      <ul>
+        <li>Full page on its own.</li>
+        <li>Deep-linkable + sharable; back button works natively; URL is canonical.</li>
+        <li><strong>Filter state lost</strong>: clicking a row leaves <code>/trades?range=last-90d&amp;symbol=AAPL</code>; pressing Back returns but causes a full page nav (felt as "I left and came back").</li>
+        <li>Workaround: persist filters in <code>localStorage</code> + restore on <code>/trades</code> mount → adds bug surface (stale localStorage, multi-tab races).</li>
+        <li>Implementation: extra route file <code>/trades/[id]/+page.svelte</code> + <code>+page.server.ts</code>.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>My read after seeing it rendered</h2>
+<p style="color:var(--ink);max-width:1200px;">The drawer wins on filter-context preservation; the route wins on deep-linkability. The hybrid (drawer + URL query) gets <em>both</em> at ~10 LOC cost. Refresh the page on the URL with <code>?detail=tx_a3f2b1c</code> and the drawer re-mounts; close the drawer and the URL drops <code>detail</code> while keeping <code>range=last-90d&amp;symbol=AAPL</code>. The back button works as the user expects (one Back closes drawer, second Back exits filters).</p>
+
+<div class="comparison" style="background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent);">
+  <h3 style="color: var(--accent);">→ Recommendation: Option A — drawer + URL query (modal-route hybrid)</h3>
+  <p style="color: var(--ink); margin: 0;">Updates the J1 §3 contract: clicking a row pushes <code>?detail=&lt;id&gt;</code> via SvelteKit <code>goto({ keepFocus: true })</code>. The drawer reads that param. Closing the drawer (Esc, X button, click backdrop) drops the param. Implementation lands in slice T4. The <code>/trades/[id]</code> route is NOT created — same content via drawer + deep-link query is cheaper and superior.</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-j1-3-trade-detail.html</code>
+  <br><br>
+  <strong>Note:</strong> the drawer width (540px) is tight on the mock to keep the table visible behind it; production values are <code>min(540px, 100vw - 64px)</code> so phone-tablet just slides in full-width.
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>

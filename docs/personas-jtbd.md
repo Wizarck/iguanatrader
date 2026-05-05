@@ -118,20 +118,26 @@ JTBD frame: **"When [situation], I want to [motivation], so I can [expected outc
 
 ## RBAC Matrix (MVP + v2 baseline)
 
-Two roles, by design. KISS over preemptive splits. v3 may introduce finer roles (Risk Officer, Auditor) only if real demand emerges; until then, two roles cover MVP single-user and v2 multi-tenant SaaS without code rewrites.
+Refined 2026-05-05 (Arturo): the model is **2-level, single-seat-per-tenant**. v3 SaaS may introduce multi-user-per-tenant + finer roles (Risk Officer, Auditor) only if real demand emerges.
 
-| Role | Holder MVP | Capabilities | v2 SaaS expansion |
-|---|---|---|---|
-| **admin** | Arturo | Full access: manage tenant config, strategies, risk policy, kill-switch, deploy, reload config, view + export everything, override risk-rejected proposals, manage authorized senders. Operates the system end to end. | Per-tenant admin; one per tenant. Platform-level superadmin (cross-tenant) is internal-only and not exposed via UI. |
-| **user** | (not used in MVP) | Approve / reject trade proposals, view portfolio + trades + costs + risk dashboard, export own data — read-only for config and risk policy. | Default tenant member; tenant admins may invite users. |
+| Level | Role | Holder MVP | v2 SaaS | Capabilities |
+|---|---|---|---|---|
+| **Platform** | `god_admin` (cross-tenant) | Arturo (running his own instance) | iguanatrader operator | Manages platform config: pricing tiers, broker allowlist, plan-level feature flags, tenant onboarding/offboarding, billing pipeline. **Can impersonate any tenant user for support/debugging** — impersonation surfaces a banner on the dashboard and writes an audit row. NO regular UI surface exposed to tenant users. |
+| **Tenant** | `tenant_user` (1 per tenant) | Arturo | One per tenant (single-seat) | Functionally admin of their own tenant. Full operational autonomy: launch research refreshes, override risk-rejected proposals, force-exit / force-create, kill-switch, edit strategies, edit risk policy, toggle feature flags (Hindsight), manage authorized senders, export everything. Cannot edit platform config. |
+
+### What changed from earlier draft
+
+- The previous matrix had a `user` role meaning "secondary tenant member, read-only". **That role no longer exists** in v2 — v2 is single-seat-per-tenant; the tenant user IS the admin of their tenant. v3 may reintroduce a multi-user model under "Solo / Team / Pro" tiers (see [PRD §Phase 3 Expansion](prd.md)).
+- `god_admin` is platform-level only. It surfaces as an internal CLI / hidden ops dashboard; tenant users never see god-admin operations except the impersonation banner if active.
 
 ### Authorization enforcement (architectural)
 
-- **Single user MVP** = Arturo is `admin`; no `user` accounts exist yet. Auth claim `role: admin` in JWT.
-- **`tenant_id` in JWT claim** propagated via `contextvars.ContextVar` to all queries and structlog (NFR-SC1). `role` claim propagated alongside.
-- **`authorized_phones` + `authorized_telegram_ids`** whitelist in encrypted config (NFR-S3, NFR-S4) — sender authentication for messaging channels. Whitelist is per-tenant; `admin` may add/remove entries; `user` may not.
-- **Permission middleware on `/api/v1/...`**: route-level `requires_role` decorator (admin or user). Mutating endpoints (`POST/PATCH/DELETE` on config/risk/strategies) are admin-only; read endpoints + approval actions are user-or-admin.
-- **No fine-grained RBAC** in MVP. v3 may introduce additional roles only after evidence of real demand; until then, `admin / user` covers all production use cases.
+- **Single user MVP** = Arturo is `tenant_user` (and also operates god-admin functions out-of-band via CLI). Auth claim `role: tenant_user` in JWT.
+- **`tenant_id` in JWT claim** propagated via `contextvars.ContextVar` to all queries and structlog (NFR-SC1). `role` and (when impersonating) `impersonating_god_admin: <god_id>` claims propagated alongside.
+- **`authorized_phones` + `authorized_telegram_ids`** whitelist in encrypted config (NFR-S3, NFR-S4) — sender authentication for messaging channels. Whitelist is per-tenant; `tenant_user` manages it.
+- **Permission middleware on `/api/v1/...`**: route-level `requires_role` decorator. All operational mutating endpoints accept `tenant_user`. Platform mutating endpoints (`/api/v1/platform/...` — tenant CRUD, pricing tiers, broker allowlist) accept `god_admin` only and are NOT exposed in the SvelteKit dashboard (separate ops tooling).
+- **No hard quotas in MVP/v2**. Anti-abuse via **rate-limits** only (e.g. `slowapi 5/min` on `/auth/login`, `/research/refresh`). Cost observability (NFR-O2) writes per-action cost to the ledger; v2 SaaS analyses patterns and decides if a billing tier with quotas is justified.
+- **No fine-grained RBAC** in MVP/v2. v3 may introduce finer roles only after evidence of real demand.
 
 ---
 
@@ -155,7 +161,7 @@ Listed for traceability only. **NOT** developed for MVP.
 |---|---|---|
 | Beta tester (paying friend) | v2 | Variant of Arturo's JTBDs, less Python-fluent — needs onboarding wizard. |
 | SaaS subscriber individual | v3 | Plug-and-play: register → connect IBKR → pick preset strategies → approve trades. |
-| SaaS team (admin + non-admin user) | v3 | Maps directly to `admin` + `user` RBAC roles already defined; v3 only adds invite + tenant-management UI. |
+| SaaS team (multi-seat per tenant) | v3 | Reintroduces a `tenant_member` role (read-only or limited) under a "Team / Pro" pricing tier. Requires re-opening the RBAC matrix. |
 | Compliance auditor | v3+ | Read-only access to trade book + risk overrides + cost ledger; if needed, may justify a third role split from `user`. |
 
 These personas trigger v2/v3 architectural milestones documented in [`docs/backlog.md`](backlog.md). No code changes in MVP justified by these personas.

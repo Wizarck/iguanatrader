@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · J1-4 — YAML editor lib</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+    /* Editor color tokens (syntax highlighting) */
+    --syn-key: oklch(72% 0.14 195);            /* accent — YAML keys */
+    --syn-string: oklch(72% 0.16 145);         /* success — strings */
+    --syn-num: oklch(78% 0.14 80);             /* warn-bg — numbers */
+    --syn-bool: oklch(64% 0.20 25);            /* destructive — booleans */
+    --syn-comment: oklch(50% 0.012 250);       /* dim — comments */
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1700px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 1100px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__title {
+    background: var(--surface-2);
+    color: var(--mute);
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .surface-frame__title.recommended { background: var(--accent); color: var(--accent-fg); }
+  .bundle-pill {
+    margin-left: auto;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 1px 8px;
+    border-radius: var(--r-1);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .surface-frame__title.recommended .bundle-pill { background: var(--surface); color: var(--accent); }
+
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 14px;
+    min-height: 480px;
+  }
+
+  /* Modal-like card simulating "Edit YAML" surface */
+  .yaml-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    overflow: hidden;
+  }
+  .yaml-modal__head {
+    padding: 8px 12px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--mute);
+    font-family: var(--font-mono);
+  }
+  .yaml-modal__head .filename { color: var(--ink); }
+  .yaml-modal__head .badge-mod { background: var(--warn-bg); color: var(--accent-fg); font-size: 9px; padding: 1px 5px; border-radius: var(--r-1); margin-left: auto; }
+
+  /* ============ A: MONACO simulation ============ */
+  .monaco-shell { display: flex; flex-direction: column; }
+  .monaco-toolbar {
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--mute);
+    font-family: var(--font-mono);
+  }
+  .monaco-toolbar .tab {
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1);
+    background: var(--bg);
+  }
+  .monaco-toolbar .tab.active { background: var(--surface); color: var(--ink); }
+  .monaco-toolbar .ico { padding: 2px 4px; cursor: pointer; }
+  .monaco-toolbar .ico [data-lucide] { width: 12px; height: 12px; }
+
+  .monaco-editor {
+    display: flex;
+    background: var(--bg);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .monaco-gutter {
+    padding: 8px 8px;
+    background: var(--surface-2);
+    color: var(--mute);
+    text-align: right;
+    border-right: 1px solid var(--border);
+    user-select: none;
+  }
+  .monaco-content {
+    padding: 8px 12px;
+    flex: 1;
+    overflow: auto;
+  }
+  .monaco-line { display: block; white-space: pre; }
+  .monaco-minimap {
+    width: 50px;
+    background: var(--surface-2);
+    border-left: 1px solid var(--border);
+    padding: 6px 4px;
+    font-family: var(--font-mono);
+    font-size: 4px;
+    line-height: 4px;
+    color: var(--mute);
+    overflow: hidden;
+  }
+  .monaco-statusbar {
+    display: flex;
+    gap: 12px;
+    padding: 3px 12px;
+    background: var(--surface-2);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--mute);
+    font-family: var(--font-mono);
+  }
+  .monaco-statusbar .ok { color: var(--success); }
+
+  /* ============ B: CODEMIRROR simulation ============ */
+  .cm-shell { display: flex; }
+  .cm-gutter {
+    padding: 8px 8px;
+    background: var(--surface);
+    color: var(--mute);
+    text-align: right;
+    border-right: 1px solid var(--border);
+    user-select: none;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .cm-content {
+    padding: 8px 12px;
+    flex: 1;
+    background: var(--bg);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow: auto;
+  }
+  .cm-line { display: block; white-space: pre; }
+  .cm-indent-guide {
+    border-left: 1px solid var(--border);
+    margin-left: 4px;
+    padding-left: 7px;
+    display: inline-block;
+  }
+
+  /* ============ C: TEXTAREA simulation ============ */
+  .textarea-mock {
+    width: 100%;
+    height: 320px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 10px;
+    border: none;
+    resize: none;
+    outline: none;
+  }
+  .ta-error-row {
+    background: oklch(64% 0.20 25 / 0.12);
+    border-top: 1px solid var(--destructive);
+    padding: 6px 10px;
+    color: var(--destructive);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ta-error-row [data-lucide] { width: 12px; height: 12px; }
+
+  /* Syntax highlight classes (shared) */
+  .yk { color: var(--syn-key); }
+  .ys { color: var(--syn-string); }
+  .yn { color: var(--syn-num); }
+  .yb { color: var(--syn-bool); }
+  .yc { color: var(--syn-comment); }
+
+  /* Comparison */
+  .comparison { background: var(--surface); border-radius: var(--r-3); padding: 20px; margin-top: 24px; max-width: 1500px; }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  .comparison-table th, .comparison-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .comparison-table th { color: var(--mute); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .comparison-table td { color: var(--ink); }
+  .comparison-table .col-a, .comparison-table .col-c { color: var(--mute); }
+  .comparison-table .col-b { color: var(--accent); font-weight: 500; }
+  .comparison-table tr.head th { background: var(--surface-2); }
+  .ok { color: var(--success); }
+  .no { color: var(--destructive); }
+  .meh { color: var(--warn-bg); }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · YAML editor library</h1>
+<div class="meta">
+  <strong>Decision:</strong> J1-4 — Monaco / CodeMirror 6 / plain textarea
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked · <strong>Surface:</strong> "Edit YAML" modal in [j1.md](../j1.md) §3 Step 4
+  &nbsp;·&nbsp;
+  <strong>Sample:</strong> typical DonchianATR per-symbol config (~18 lines)
+</div>
+
+<p>The same DonchianATR YAML rendered in three editor environments. Each frame simulates the editor's actual visual chrome (syntax highlighting, gutter, indent guides, error surface) with the locked dark tokens.</p>
+
+<div class="grid-3">
+
+  <!-- ============ A: MONACO ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">A — Monaco
+      <span class="bundle-pill">~600 KB gz</span>
+    </div>
+    <div class="surface-frame__body">
+      <div class="yaml-modal">
+        <div class="yaml-modal__head">
+          <i data-lucide="file-code"></i>
+          <span class="filename">strategies/DonchianATR/SPY.yaml</span>
+          <span class="badge-mod">modified</span>
+        </div>
+        <div class="monaco-shell">
+          <div class="monaco-toolbar">
+            <span class="tab active">SPY.yaml</span>
+            <span style="margin-left:auto;display:inline-flex;gap:6px;">
+              <span class="ico" title="cmd palette"><i data-lucide="command"></i></span>
+              <span class="ico" title="search"><i data-lucide="search"></i></span>
+              <span class="ico" title="format"><i data-lucide="align-left"></i></span>
+              <span class="ico" title="minimap"><i data-lucide="map"></i></span>
+            </span>
+          </div>
+          <div class="monaco-editor">
+            <div class="monaco-gutter">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18</div>
+            <div class="monaco-content">
+              <span class="monaco-line"><span class="yc"># DonchianATR per-symbol config</span></span>
+              <span class="monaco-line"><span class="yk">symbol</span>: <span class="ys">SPY</span></span>
+              <span class="monaco-line"><span class="yk">enabled</span>: <span class="yb">true</span></span>
+              <span class="monaco-line"><span class="yk">params</span>:</span>
+              <span class="monaco-line">  <span class="yk">donchian_period</span>: <span class="yn">20</span></span>
+              <span class="monaco-line">  <span class="yk">atr_period</span>: <span class="yn">14</span></span>
+              <span class="monaco-line">  <span class="yk">atr_multiplier</span>: <span class="yn">2.0</span></span>
+              <span class="monaco-line">  <span class="yk">position_sizing</span>: <span class="ys">kelly_fractional</span></span>
+              <span class="monaco-line">  <span class="yk">fractional_kelly</span>: <span class="yn">0.25</span></span>
+              <span class="monaco-line"><span class="yk">risk</span>:</span>
+              <span class="monaco-line">  <span class="yk">per_trade_cap_pct</span>: <span class="yn">2.0</span></span>
+              <span class="monaco-line">  <span class="yk">trail_stop_atr_mult</span>: <span class="yn">2.5</span></span>
+              <span class="monaco-line"><span class="yk">hours</span>:</span>
+              <span class="monaco-line">  <span class="yk">start</span>: <span class="ys">"09:30"</span></span>
+              <span class="monaco-line">  <span class="yk">end</span>: <span class="ys">"15:55"</span></span>
+              <span class="monaco-line">  <span class="yk">timezone</span>: <span class="ys">America/New_York</span></span>
+              <span class="monaco-line"><span class="yk">backtest</span>:</span>
+              <span class="monaco-line">  <span class="yk">enabled</span>: <span class="yb">true</span></span>
+            </div>
+            <div class="monaco-minimap">
+              ▮▮▮<br>▮▮▮▮<br>▮▮<br>▮▮▮▮▮<br>▮▮▮▮<br>▮▮▮▮<br>▮▮▮▮▮<br>▮▮▮▮▮▮<br>▮▮▮▮▮▮<br>▮▮▮<br>▮▮▮▮▮▮<br>▮▮▮▮▮▮<br>▮▮▮<br>▮▮▮▮<br>▮▮▮▮<br>▮▮▮▮▮▮<br>▮▮▮▮<br>▮▮▮▮
+            </div>
+          </div>
+          <div class="monaco-statusbar">
+            <span>YAML</span>
+            <span>UTF-8</span>
+            <span>Ln 5, Col 22</span>
+            <span class="ok">✓ no problems</span>
+            <span style="margin-left:auto;">Spaces: 2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ B: CODEMIRROR 6 ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title recommended">B — CodeMirror 6 minimal
+      <span class="bundle-pill">~70 KB gz</span>
+    </div>
+    <div class="surface-frame__body">
+      <div class="yaml-modal">
+        <div class="yaml-modal__head">
+          <i data-lucide="file-code"></i>
+          <span class="filename">strategies/DonchianATR/SPY.yaml</span>
+          <span class="badge-mod">modified</span>
+        </div>
+        <div class="cm-shell">
+          <div class="cm-gutter">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18</div>
+          <div class="cm-content">
+            <span class="cm-line"><span class="yc"># DonchianATR per-symbol config</span></span>
+            <span class="cm-line"><span class="yk">symbol</span>: <span class="ys">SPY</span></span>
+            <span class="cm-line"><span class="yk">enabled</span>: <span class="yb">true</span></span>
+            <span class="cm-line"><span class="yk">params</span>:</span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">donchian_period</span>: <span class="yn">20</span></span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">atr_period</span>: <span class="yn">14</span></span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">atr_multiplier</span>: <span class="yn">2.0</span></span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">position_sizing</span>: <span class="ys">kelly_fractional</span></span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">fractional_kelly</span>: <span class="yn">0.25</span></span>
+            <span class="cm-line"><span class="yk">risk</span>:</span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">per_trade_cap_pct</span>: <span class="yn">2.0</span></span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">trail_stop_atr_mult</span>: <span class="yn">2.5</span></span>
+            <span class="cm-line"><span class="yk">hours</span>:</span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">start</span>: <span class="ys">"09:30"</span></span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">end</span>: <span class="ys">"15:55"</span></span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">timezone</span>: <span class="ys">America/New_York</span></span>
+            <span class="cm-line"><span class="yk">backtest</span>:</span>
+            <span class="cm-line"><span class="cm-indent-guide"></span><span class="yk">enabled</span>: <span class="yb">true</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ C: TEXTAREA ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">C — Plain textarea
+      <span class="bundle-pill">0 KB</span>
+    </div>
+    <div class="surface-frame__body">
+      <div class="yaml-modal">
+        <div class="yaml-modal__head">
+          <i data-lucide="file-code"></i>
+          <span class="filename">strategies/DonchianATR/SPY.yaml</span>
+          <span class="badge-mod">modified</span>
+        </div>
+        <textarea class="textarea-mock" spellcheck="false"># DonchianATR per-symbol config
+symbol: SPY
+enabled: true
+params:
+  donchian_period: 20
+  atr_period: 14
+  atr_multiplier: 2.0
+  position_sizing: kelly_fractional
+  fractional_kelly: 0.25
+risk:
+  per_trade_cap_pct: 2.0
+  trail_stop_atr_mult: 2.5
+hours:
+  start: "09:30"
+  end: "15:55"
+  timezone: America/New_York
+backtest:
+  enabled: true
+</textarea>
+        <div class="ta-error-row">
+          <i data-lucide="alert-triangle"></i>
+          <span>line 7 · expected number for <code>atr_multiplier</code>, got string (server-side validation)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h2>Trade-offs</h2>
+
+<div class="comparison">
+  <table class="comparison-table">
+    <thead>
+      <tr class="head">
+        <th>Dimension</th>
+        <th class="col-a">A · Monaco</th>
+        <th class="col-b">B · CodeMirror 6 minimal</th>
+        <th class="col-c">C · textarea</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Bundle (gzipped)</td><td class="col-a">~600 KB (YAML-only build)</td><td class="col-b">~70 KB</td><td class="col-c">0</td></tr>
+      <tr><td>Syntax highlighting</td><td>full</td><td>full (lang-yaml)</td><td><span class="no">none</span></td></tr>
+      <tr><td>Line numbers</td><td>yes</td><td>yes</td><td><span class="no">no</span></td></tr>
+      <tr><td>Indent guides</td><td>yes</td><td>yes</td><td><span class="no">no</span> (YAML-fragile)</td></tr>
+      <tr><td>Inline error squiggles</td><td>yes (browser-side)</td><td>yes (browser-side via lint extension)</td><td><span class="no">no</span> (server-only, post-submit)</td></tr>
+      <tr><td>Multi-cursor / find &amp; replace</td><td>yes</td><td>basic find</td><td><span class="no">no</span></td></tr>
+      <tr><td>IntelliSense / schema completion</td><td>yes (with monaco-yaml)</td><td>yes (lighter, with @codemirror/lang-yaml)</td><td><span class="no">no</span></td></tr>
+      <tr><td>Lazy-load possible</td><td>yes (must, given size)</td><td>yes (small even cold)</td><td>n/a</td></tr>
+      <tr><td>Mobile UX</td><td><span class="meh">poor</span> (toolbar takes vertical space)</td><td>OK (spartan UI)</td><td>OK</td></tr>
+      <tr><td>Pain editing 18 lines of YAML</td><td>none</td><td>none</td><td><span class="no">high</span> (indent breaks)</td></tr>
+      <tr><td>Industry trend 2026</td><td>used by VS Code Web only</td><td><span class="ok">consensus winner</span> (Linear, Sourcegraph, Replit, GitHub)</td><td>only for ≤10-line configs</td></tr>
+      <tr><td>Bundle cost vs MVP perf budget</td><td>NFR-P7 (&lt;500ms LCP localhost): tight even lazy-loaded</td><td>fits comfortably within budget</td><td>0 cost</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>My read</h2>
+<p style="color:var(--ink);max-width:1500px;">YAML indentation is load-bearing — break it and the strategy fails to parse. A textarea offers ZERO indent assistance; for an 18-line file that's measurable friction every single edit. Monaco gives the same value as CodeMirror 6 but at 8.5× the bundle. CodeMirror 6 is the consensus pick for "I need a code editor in my SaaS app" in 2026 — used by Linear, Sourcegraph (post-Monaco migration), Replit, GitHub. <code>@codemirror/lang-yaml</code> is maintained, ESM-native, theme-ready (the syntax tokens above can be derived from our locked DESIGN.md tokens — accent for keys, success for strings, warn-bg for numbers, destructive for booleans, mute for comments).</p>
+
+<div class="comparison" style="background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent); margin-top: 16px;">
+  <h3 style="color: var(--accent);">→ Recommendation: B — CodeMirror 6 minimal build</h3>
+  <p style="color: var(--ink); margin: 0;">Stack: <code>codemirror</code> + <code>@codemirror/lang-yaml</code> + <code>@codemirror/theme-one-dark</code> overridden with our locked OKLCH tokens (custom theme exports a <code>iguanaDarkTheme</code> for the dark ones — light derivation lands in slice W1). Bundle ≈70 KB gzipped, lazy-loaded when the "Edit YAML" modal opens (deferred dynamic import). YAML schema validation: client-side basic via the language module + server-side definitive (always — never trust the client). Errors surface inline (squiggles + status row). Implementation lands in slice T4 inside the strategy edit modal. Ship as a small wrapper component <code>YAMLEditor.svelte</code> (props: <code>value</code>, <code>onChange</code>, <code>readonly</code>, <code>schema</code>) so future YAML surfaces (risk policy editor, methodology config) reuse it.</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-j1-4-yaml-editor.html</code>
+  <br><br>
+  <strong>Note:</strong> the Monaco panel above shows the typical out-of-the-box chrome (toolbar + minimap + statusbar). All of those can be hidden via <code>options</code>, but doing so removes ~20% of what makes Monaco "Monaco" — at which point you're paying 600 KB to look like CodeMirror.
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>

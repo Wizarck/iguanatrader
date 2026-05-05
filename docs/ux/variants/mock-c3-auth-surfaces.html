@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · C3 auth + error surfaces</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --accent-hover: oklch(76% 0.14 195);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1400px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: var(--mute); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 800px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  /* Layout: 2-up surface previews */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__header {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .url-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--destructive); display: inline-block; }
+  .url-dot.amber { background: var(--warn-bg); }
+  .url-dot.green { background: var(--success); }
+  .surface-frame__body {
+    flex: 1;
+    min-height: 480px;
+    background: var(--bg);
+    padding: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Login form */
+  .login-card {
+    width: 360px;
+    padding: 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .brand__mark {
+    width: 32px; height: 32px;
+    background: var(--accent);
+    border-radius: var(--r-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-fg);
+    font-weight: 700;
+    font-size: 18px;
+    font-family: var(--font-mono);
+  }
+  .brand__name { font-size: 18px; font-weight: 600; color: var(--ink); }
+  .brand__name span { color: var(--mute); font-weight: 400; }
+
+  .form-heading { font-size: 20px; font-weight: 600; margin: 0 0 4px; color: var(--ink); }
+  .form-sub { font-size: 13px; color: var(--mute); margin: 0 0 20px; }
+
+  .field { margin-bottom: 14px; }
+  .field__label { display: block; font-size: 12px; font-weight: 500; color: var(--mute); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .input {
+    width: 100%;
+    height: 40px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 0 12px;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+  }
+  .input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+  .input--error { border-color: var(--destructive); }
+  .field__error { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--destructive); margin-top: 6px; font-family: var(--font-mono); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 44px; width: 100%;
+    padding: 0 16px;
+    border-radius: var(--r-2);
+    font-family: var(--font-sans); font-size: 14px; font-weight: 500;
+    border: 1px solid var(--accent);
+    background: var(--accent); color: var(--accent-fg);
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn [data-lucide] { width: 16px; height: 16px; }
+
+  .login-footer {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--mute);
+    font-family: var(--font-mono);
+    text-align: center;
+  }
+  .login-help {
+    background: var(--surface-2);
+    border-radius: var(--r-2);
+    padding: 10px 12px;
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--mute);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .login-help [data-lucide] { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+  .login-help code { background: var(--bg); padding: 1px 5px; font-size: 11px; }
+
+  .rate-limit-banner {
+    background: oklch(64% 0.20 25 / 0.15);
+    border: 1px solid var(--destructive);
+    border-radius: var(--r-2);
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--destructive);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rate-limit-banner [data-lucide] { width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* Error pages */
+  .error-card { width: 480px; padding: 40px; text-align: center; }
+  .error-glyph {
+    width: 72px; height: 72px;
+    margin: 0 auto 16px;
+    background: var(--surface-2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent);
+  }
+  .error-glyph.danger { color: var(--destructive); background: oklch(64% 0.20 25 / 0.12); }
+  .error-glyph [data-lucide] { width: 32px; height: 32px; }
+  .error-code { font-family: var(--font-mono); font-size: 12px; color: var(--mute); letter-spacing: 0.1em; }
+  .error-title { font-size: 22px; font-weight: 600; margin: 8px 0 6px; }
+  .error-body { color: var(--mute); font-size: 14px; margin: 0 0 20px; line-height: 1.6; }
+  .corr-id-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 8px 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    text-align: left;
+  }
+  .corr-id-row .label { color: var(--mute); }
+  .corr-id-row .copy {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--mute);
+    padding: 2px 8px;
+    border-radius: var(--r-1);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .corr-id-row .copy [data-lucide] { width: 11px; height: 11px; }
+  .error-actions { display: flex; gap: 8px; justify-content: center; margin-top: 20px; }
+  .btn--ghost {
+    background: transparent; color: var(--mute); border-color: var(--border);
+    width: auto; padding: 0 14px; height: 36px;
+  }
+  .btn--ghost:hover { color: var(--ink); border-color: var(--mute); background: var(--surface); }
+  .btn--secondary {
+    background: var(--surface-2); color: var(--ink); border-color: var(--border);
+    width: auto; padding: 0 14px; height: 36px;
+  }
+
+  /* Comparison block */
+  .comparison {
+    background: var(--surface);
+    border-radius: var(--r-3);
+    padding: 20px;
+    margin-top: 32px;
+    max-width: 900px;
+  }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .opt {
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 14px;
+  }
+  .opt h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); font-weight: 500; }
+  .opt ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--mute); }
+  .opt ul li { margin-bottom: 4px; }
+  .opt.recommended { border-color: var(--accent); background: oklch(72% 0.14 195 / 0.06); }
+  .opt.recommended h4::after { content: ' ← my read'; color: var(--mute); font-size: 12px; font-weight: 400; }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · Auth + error surfaces</h1>
+<div class="meta">
+  <strong>Decision:</strong> C3 — login & <code>+error.svelte</code>: own journey doc (J0 / sub-J1) or folded into J1 §0?
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked (DESIGN.md §1) · <strong>Icons:</strong> Lucide
+</div>
+
+<p>Two surfaces below render at fixed desktop scale (Arturo's Windows 11 host). Frame chrome is mock-only — production runs at the browser's actual URL. After looking at them, decide whether they are <em>thick enough</em> to deserve their own journey doc, or <em>thin enough</em> to fold into J1's Walkthrough §0.</p>
+
+<div class="grid-2">
+
+  <!-- ============ LOGIN ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__header">
+      <span class="url-dot"></span><span class="url-dot amber"></span><span class="url-dot green"></span>
+      &nbsp;<code style="background:transparent;color:var(--mute);">https://localhost:8443/login</code>
+    </div>
+    <div class="surface-frame__body">
+      <form class="login-card" onsubmit="event.preventDefault();">
+
+        <div class="brand">
+          <span class="brand__mark">i</span>
+          <span class="brand__name">iguana<span>trader</span></span>
+        </div>
+
+        <h2 class="form-heading">Sign in</h2>
+        <p class="form-sub">Single-user MVP. Cookie session valid for 7 days of activity.</p>
+
+        <div class="rate-limit-banner">
+          <i data-lucide="alert-triangle"></i>
+          5 attempts / minute limit reached. Wait 47s before retrying.
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="email">Email</label>
+          <input id="email" class="input input--error" type="email" value="arturo6ramirez@gmail.com" />
+          <div class="field__error">
+            <i data-lucide="x-circle"></i>
+            Invalid credentials.
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="pwd">Password</label>
+          <input id="pwd" class="input" type="password" value="••••••••••" />
+        </div>
+
+        <button type="submit" class="btn">
+          <i data-lucide="log-in"></i>
+          Sign in
+        </button>
+
+        <div class="login-help">
+          <i data-lucide="info"></i>
+          <span>Forgot your password? Reset via CLI:<br><code>iguana admin reset-password</code></span>
+        </div>
+
+        <div class="login-footer">
+          iguanatrader v0.1.0 · build a5bdc83 · localhost
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ ERROR (404) ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__header">
+      <span class="url-dot"></span><span class="url-dot amber"></span><span class="url-dot green"></span>
+      &nbsp;<code style="background:transparent;color:var(--mute);">https://localhost:8443/portfolio/unknown</code>
+    </div>
+    <div class="surface-frame__body">
+      <div class="error-card">
+        <div class="error-glyph">
+          <i data-lucide="search-x"></i>
+        </div>
+        <div class="error-code">HTTP 404 · NOT FOUND</div>
+        <h2 class="error-title">We couldn't find that page</h2>
+        <p class="error-body">The route <code>/portfolio/unknown</code> isn't part of the dashboard. If you arrived here from a stale link, head back to your portfolio.</p>
+        <div class="error-actions">
+          <button class="btn btn--ghost"><i data-lucide="arrow-left"></i>Go back</button>
+          <button class="btn btn--secondary"><i data-lucide="home"></i>Portfolio</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="grid-2">
+
+  <!-- ============ ERROR (500) ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__header">
+      <span class="url-dot"></span><span class="url-dot amber"></span><span class="url-dot green"></span>
+      &nbsp;<code style="background:transparent;color:var(--mute);">https://localhost:8443/risk</code>
+    </div>
+    <div class="surface-frame__body">
+      <div class="error-card">
+        <div class="error-glyph danger">
+          <i data-lucide="octagon-alert"></i>
+        </div>
+        <div class="error-code">HTTP 500 · INTERNAL ERROR</div>
+        <h2 class="error-title">Something broke on our side</h2>
+        <p class="error-body">The risk dashboard couldn't load. The error has been logged. If it persists, copy the correlation ID below and check <code>docker logs iguanatrader-api</code>.</p>
+        <div class="corr-id-row">
+          <span class="label">correlation_id</span>
+          <code style="background:transparent;color:var(--ink);padding:0;">req-7f3a2b1c-4e9d-4a51</code>
+          <button class="copy"><i data-lucide="copy"></i>copy</button>
+        </div>
+        <div class="error-actions">
+          <button class="btn btn--ghost"><i data-lucide="rotate-ccw"></i>Retry</button>
+          <button class="btn btn--secondary"><i data-lucide="home"></i>Portfolio</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ERROR (401 expired) ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__header">
+      <span class="url-dot"></span><span class="url-dot amber"></span><span class="url-dot green"></span>
+      &nbsp;<code style="background:transparent;color:var(--mute);">https://localhost:8443/approvals</code>
+    </div>
+    <div class="surface-frame__body">
+      <div class="error-card">
+        <div class="error-glyph">
+          <i data-lucide="lock"></i>
+        </div>
+        <div class="error-code">HTTP 401 · SESSION EXPIRED</div>
+        <h2 class="error-title">Your session ended</h2>
+        <p class="error-body">7 days of inactivity, or the JWT cookie was revoked. Sign in again to resume — your filter selections will be restored.</p>
+        <div class="error-actions">
+          <button class="btn btn--secondary" style="background:var(--accent);color:var(--accent-fg);border-color:var(--accent);"><i data-lucide="log-in"></i>Sign in again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h2>The structural decision</h2>
+
+<div class="comparison">
+  <h3>Where do these surfaces live in the docs?</h3>
+
+  <div class="comparison-grid">
+    <div class="opt">
+      <h4>Option A — Fold into J1 §0</h4>
+      <ul>
+        <li>Status quo. j1.md already has Step 0 (login) at lines 37-46.</li>
+        <li><code>+error.svelte</code> would land as a §0.5 sub-section.</li>
+        <li>Pro: doc count stays at 4. Login is sub-second; not a "journey".</li>
+        <li>Con: J1 doc grows; mixes the gate (login/error) with the destination (dashboard).</li>
+        <li>Con: slice 4 (auth-jwt-cookie) cites <code>j1.md</code> for a surface that's structurally not J1's responsibility.</li>
+      </ul>
+    </div>
+    <div class="opt recommended">
+      <h4>Option B — Promote to J0 (Auth + global error surfaces)</h4>
+      <ul>
+        <li>New file <code>docs/ux/j0.md</code>; covers <code>/login</code>, <code>/+error.svelte</code> (404/500/401), and the rate-limit banner edge case.</li>
+        <li>j1.md drops Step 0; gains a 1-line "see J0 for the gate".</li>
+        <li>Pro: slice 4 cites <code>j0.md</code> cleanly; slice W1 (dashboard skeleton) cites <code>j1.md</code>; concerns separated.</li>
+        <li>Pro: future RBAC/2FA/MFA additions for v3 land in J0 without bloating J1.</li>
+        <li>Pro: error surfaces are not "post-login" — they're cross-cutting; pinning them to J1 is a category mistake.</li>
+        <li>Con: doc count: 4 → 5. Marginal.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="footnote">
+  <strong>Notes:</strong> all surfaces use locked tokens (DESIGN.md §1) and Lucide icons. Brand mark "i" is a placeholder until logo/iconography lands as a separate decision (out of scope for C3).
+  <br><br>
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-c3-auth-surfaces.html</code>
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>
