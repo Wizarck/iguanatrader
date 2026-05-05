@@ -478,6 +478,96 @@ The re-raise is critical. Starlette's exception middleware re-dispatches the re-
 
 ---
 
+## 40. Bitemporal `recorded_to` is the only mutation allowed on `research_facts`
+
+**Surfaced**: 2026-05-06 (slice R1, group 5).
+
+**Note**: numbered #40 (not #31 as proposed in `openspec/changes/research-bitemporal-schema/tasks.md`) to leave #31–#39 free for sibling Wave-2 slices T1 + K1 which also append gotchas in their own worktrees. Renumbering at merge-time is mechanical.
+
+**Symptom**: A migration / ORM mutation that touches any column on `research_facts` other than `recorded_to`'s NULL → non-NULL transition trips one of two errors:
+
+- L1 (ORM): `iguanatrader.persistence.errors.AppendOnlyViolationError`.
+- L2 (raw SQL): SQLite `OperationalError` ("append-only: only recorded_to NULL→ts supersession permitted on research_facts") or Postgres equivalent.
+
+**Root cause**: `ResearchFact` declares `__tablename_is_append_only__ = True` (slice-3 listener catches ORM mutations) AND migration `0003_research_tables` emits a per-row BEFORE UPDATE trigger whose `WHEN` clause permits the UPDATE only when:
+
+```sql
+OLD.recorded_to IS NULL
+AND NEW.recorded_to IS NOT NULL
+AND <every other column unchanged>
+```
+
+Anything else aborts.
+
+**Workaround**: Use `ResearchRepository.supersede_fact(old_id, at)` exclusively for the supersession path. Do NOT issue raw SQL UPDATEs against `research_facts` from any other call site — even apparently-trivial ones (e.g. correcting a typo in `metadata`) are blocked. Schema corrections that need to mutate other columns require a NEW row insert + supersede the old; the migration's append-only invariant is intentional per ADR-014.
+
+**Status**: contract documented 2026-05-06; tests `test_provenance_enforcement.py::test_orm_update_on_research_fact_blocked_by_l1` + `::test_supersede_recorded_to_permitted_by_narrow_trigger_exception` cover both branches.
+
+---
+
+## 41. `data/research_cache/` provisioned on first write — NOT at deploy
+
+**Surfaced**: 2026-05-06 (slice R1, group 3).
+
+**Symptom**: An operator searching the repo / deploy script for the path `data/research_cache/` finds nothing — the directory tree does not exist in `apps/api/scripts/`, in any Makefile target, in the Alembic migration, or in `docs/runbook.md`.
+
+**Root cause**: `ResearchRepository._persist_payload_to_filesystem(...)` calls `path.parent.mkdir(parents=True, exist_ok=True)` on first write. R1 ships ZERO writes to the directory; R2's first ingest provisions it lazily. Putting the `mkdir` in deploy scripts would create empty directories that look "ready" but are unowned by any module — better to leave provisioning at the layer that knows the canonical path scheme.
+
+**Workaround**: None needed for adapters going through `ResearchRepository.insert_fact(...)` — the repository's `_persist_payload_to_filesystem` does the right thing transparently. If you find yourself wanting to create the tree manually, you're probably bypassing the repository — see gotcha #40.
+
+**Status**: documented 2026-05-06; behaviour intentional, no change planned.
+
+---
+
+## 42. Hybrid payload threshold is strict `<` 16384, NOT `<=`
+
+**Surfaced**: 2026-05-06 (slice R1, group 3).
+
+**Symptom**: A payload of EXACTLY 16384 bytes appears to satisfy `len(p) <= 16384` but is rejected by the CHECK constraint when stored inline.
+
+**Root cause**: The CHECK constraint on `research_facts` reads:
+
+```sql
+CHECK (raw_payload_size_bytes IS NULL
+       OR raw_payload_size_bytes < 16384
+       OR raw_payload_path IS NOT NULL)
+```
+
+— strict `<`. The `with_payload(...)` factory in `iguanatrader.contexts.research.ports` matches the constraint exactly:
+
+```python
+if size < PAYLOAD_INLINE_THRESHOLD:  # PAYLOAD_INLINE_THRESHOLD = 16384
+    # inline
+else:
+    # filesystem
+```
+
+A 16384-byte payload goes filesystem; a 16383-byte payload stays inline. The boundary chose `<` rather than `<=` because the two sides need to disagree at exactly one value to keep the CHECK + dispatch unambiguous.
+
+**Workaround**: Use the `PAYLOAD_INLINE_THRESHOLD` constant from `iguanatrader.contexts.research.ports` when writing tests or hand-built adapters. Do NOT hard-code `16384` with `<=` — the CHECK will surface as `MissingProvenanceError` at insert.
+
+**Status**: documented 2026-05-06; constant + factory + CHECK aligned by construction.
+
+---
+
+## 43. Alembic helper modules MUST live OUTSIDE `migrations/versions/`
+
+**Surfaced**: 2026-05-06 (slice R1, group 5).
+
+**Symptom**: Alembic's revision discovery (`alembic upgrade head`) errors out with `Can't load revision '_<helper-module>'`: a helper Python module placed under `migrations/versions/` is treated as a candidate revision because Alembic walks the directory and tries to import every `*.py`. Modules without a `revision = "..."` global are loaded but raise during revision-graph linking. Even with a leading underscore, Alembic still tries.
+
+**Root cause**: Alembic's `ScriptDirectory.iter_revisions()` does NOT filter by filename pattern — it imports every `*.py` it finds and inspects the module for `revision`. Helper modules with shared SQL string constants (e.g. trigger DDL referenced by both the migration and a test fixture) need to live elsewhere.
+
+**Workaround**: Keep helper modules in `apps/api/src/iguanatrader/migrations/<helper>.py` (parallel to `versions/`, NOT inside it). Slice R1 ships `migrations/_research_trigger_helpers.py` for the L2 trigger DDL the migration emits + the test conftest re-emits against the in-memory schema. Migration files import via:
+
+```python
+from iguanatrader.migrations._research_trigger_helpers import SQLITE_TRIGGER_SQL
+```
+
+**Status**: documented 2026-05-06; convention applies to every future migration that needs to share DDL/SQL with non-migration callers (tests, ops scripts, etc.).
+
+---
+
 ## Format for new entries
 
 ```markdown

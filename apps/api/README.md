@@ -215,11 +215,71 @@ pnpm typegen:from-running-api
 
 This curls `http://127.0.0.1:8000/openapi.json` and runs `openapi-typescript` against it — same pipeline CI runs, just sourced from a manually-running uvicorn instead of one CI booted itself. Useful when iterating on a new DTO without pushing every commit.
 
+## Research bounded-context (R1)
+
+Slice R1 (`research-bitemporal-schema`) lands the Research & Intelligence fabric: 7 tables under `apps/api/src/iguanatrader/contexts/research/`, the `SourcePort` Protocol that Wave 3 source adapters (R2 EDGAR/FRED, R3 news/catalysts, R4 OpenBB sidecar) implement, the `ResearchRepository` writer, and DTO/route stubs that R5 (`research-brief-synthesis`) replaces in-place.
+
+### `SourcePort` contract (Wave 3 adapter authors — read this first)
+
+Every source adapter exposes a `fetch(symbol, since)` method returning an iterable of `ResearchFactDraft`:
+
+```python
+from collections.abc import Iterable
+from datetime import datetime
+from iguanatrader.contexts.research import ResearchFactDraft, SourcePort
+
+
+class SECEdgarSource(SourcePort):
+    def fetch(self, symbol: str, since: datetime | None) -> Iterable[ResearchFactDraft]:
+        for raw_filing_bytes in _walk_edgar(symbol, since):
+            draft = ResearchFactDraft(
+                source_id="sec_edgar",
+                symbol_universe_id=...,
+                fact_kind="fundamental.eps",
+                effective_from=...,
+                recorded_from=...,
+                source_url=...,            # MANDATORY — exact provenance URL
+                retrieval_method="api",   # MANDATORY — one of api/scrape/manual/llm
+                retrieved_at=...,         # MANDATORY — UTC ISO 8601
+                value_numeric=...,        # at least one value_* field MUST be set
+            ).with_payload(raw_filing_bytes)
+            yield draft
+```
+
+The `with_payload(raw_bytes)` factory is the canonical way to attach the raw payload — it computes the storage tier deterministically (size-based dispatch, see below) so adapters never set `raw_payload_*` columns manually.
+
+### Hybrid payload storage — `with_payload` dispatch
+
+Per ADR-014 §7b.3 + design D3 of slice R1:
+
+- Payloads strictly less than 16384 bytes are stored inline in `raw_payload_inline` (JSONB on Postgres v1.5; cross-dialect JSON on SQLite MVP). `with_payload(b'<small>')` populates the column; the JSON parse falls back to a `{"_raw": "..."}` envelope on non-JSON bytes.
+- Payloads of 16384 bytes or more are written to filesystem under `data/research_cache/<source_id>/<yyyy-mm>/<sha256>.json` (relative to the working directory; `ResearchRepository(payload_root=...)` lets tests override the root). The directory is created on first write — DO NOT pre-create in deploy scripts.
+
+The CHECK constraint `(raw_payload_inline IS NULL) <> (raw_payload_path IS NULL)` enforces exactly-one-set; the consistency CHECKs add `sha256` mandatory-when-filesystem and `size_bytes >= 16384 → path NOT NULL`.
+
+### Provenance enforcement (DO NOT bypass the repository)
+
+Adapters MUST insert via `ResearchRepository.insert_fact(draft)`. Direct SQL inserts bypass:
+
+- The driver `IntegrityError` → `MissingProvenanceError` lifting that produces the canonical RFC 7807 422 with `type=urn:iguanatrader:error:missing-provenance`.
+- The hybrid-storage filesystem write (the path column would be set but the file would never land).
+- The slice-3 `tenant_id_var` stamping (defence-in-depth against cross-tenant leak).
+
+The L1 ORM listener + L2 BEFORE UPDATE/DELETE triggers enforce append-only on `research_facts`, `research_briefs`, `corporate_events`, `analyst_ratings`. The single permitted UPDATE is `ResearchRepository.supersede_fact(old_id, at)` which sets `recorded_to: NULL → :ts` via raw SQL through the trigger's narrow exception. Don't roll your own — the trigger pattern-matches the exact UPDATE form.
+
+### Files
+
+- `apps/api/src/iguanatrader/contexts/research/{models,ports,repository,events,errors}.py` — bounded-context surface.
+- `apps/api/src/iguanatrader/api/dtos/research.py` — Pydantic v2 response models (consumed unchanged by R5).
+- `apps/api/src/iguanatrader/api/routes/research.py` — four endpoints, each currently raising 501 until R5 ships.
+- `apps/api/src/iguanatrader/migrations/versions/0003_research_tables.py` — schema migration.
+
 ## See also
 
-- [`docs/architecture-decisions.md`](../../docs/architecture-decisions.md) — system-wide ADRs, including auth (D-Auth-1, D-Auth-2).
-- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#30 — slice 4 + slice 5 footguns.
+- [`docs/architecture-decisions.md`](../../docs/architecture-decisions.md) — system-wide ADRs, including auth (D-Auth-1, D-Auth-2) + ADR-014 bitemporal research facts.
+- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#30 — slice 4 + slice 5 footguns; #40–#42 — slice R1 footguns.
 - [`docs/runbooks/auth-secret-rotation.md`](../../docs/runbooks/auth-secret-rotation.md) — JWT secret rotation procedure.
 - [`docs/runbooks/api-foundation-typegen.md`](../../docs/runbooks/api-foundation-typegen.md) — recovery playbook when the openapi-types CI workflow fails.
 - [`openspec/changes/auth-jwt-cookie/`](../../openspec/changes/auth-jwt-cookie/) — slice 4 design + spec contract.
 - [`openspec/changes/api-foundation-rfc7807/`](../../openspec/changes/api-foundation-rfc7807/) — slice 5 design + spec contract.
+- [`openspec/changes/research-bitemporal-schema/`](../../openspec/changes/research-bitemporal-schema/) — slice R1 design + spec contract.
