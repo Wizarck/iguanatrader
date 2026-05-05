@@ -26,6 +26,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@iguanatrader/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
       '@sveltejs/adapter-node':
         specifier: ^5.2.0
         version: 5.5.4(@sveltejs/kit@2.59.1(@sveltejs/vite-plugin-svelte@4.0.4(svelte@5.55.5)(vite@5.4.21(@types/node@22.19.17)))(svelte@5.55.5)(typescript@5.9.3)(vite@5.4.21(@types/node@22.19.17)))
@@ -57,6 +60,8 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.17)
+
+  packages/shared-types: {}
 
 packages:
 
