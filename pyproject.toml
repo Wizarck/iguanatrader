@@ -188,7 +188,13 @@ exclude = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 asyncio_mode = "auto"
-addopts = "-q --strict-markers"
+# Slice-O1 carry-forward (D9 item e): the slice-5 task 8.3 left
+# `--cov-fail-under=80` as a TODO. Slice O1 wires it; CI's pytest
+# invocation honours the option once the test job moves past
+# `--collect-only` (slice-5 placeholder). Until then the option is
+# inert (only fires when coverage data is collected). Local devs can
+# already opt in via `pytest --cov apps/api/src/iguanatrader`.
+addopts = "-q --strict-markers --cov-fail-under=80"
 testpaths = ["apps/api/tests", "tests"]
 # Same rationale as [tool.mypy].mypy_path — make `iguanatrader.*` importable
 # from tests without an installed wheel.

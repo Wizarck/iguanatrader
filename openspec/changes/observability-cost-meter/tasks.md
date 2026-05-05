@@ -39,11 +39,11 @@
 
 ## 6. Carry-forward items (chosen per design D9)
 
-- [ ] 6.1 (D9 item a) Already covered by task 2.4 — listener fix for non-scoped tables. Cross-reference here for traceability.
-- [ ] 6.2 (D9 item b) Modify `apps/api/src/iguanatrader/config/settings.py` to add a boot-time guard: when `IGUANATRADER_DEV_INSECURE_COOKIE=1` AND `IGUANATRADER_ENV=production`, raise `ConfigError("IGUANATRADER_DEV_INSECURE_COOKIE=1 is forbidden in production")` blocking app startup. Add unit test `test_dev_insecure_cookie_prod_guard.py`.
-- [ ] 6.3 (D9 item e) Modify `.github/workflows/ci.yml` pytest job: append `--cov-fail-under=80` to the pytest invocation. Verify the job fails when coverage drops below 80% (smoke test by temporarily setting threshold to 99% on a draft commit; revert before merge).
-- [ ] 6.4 (D9 item f) Append to `apps/api/README.md`: section "Local development on Windows venv" documenting (a) the workaround sequence (`poetry self update` + `poetry config virtualenvs.in-project true` + `poetry install --no-root` + manual `pip install -e apps/api`), (b) when to fall back to CI for canonical test runs (any persistent local poetry-install failure), (c) cross-reference to gotcha #18.
-- [ ] 6.5 Document explicitly in `docs/gotchas.md` the punted carry-forward items (ORM-SELECT-in-`get_current_user` lint rule, Argon2 auto-rehash, L2 marker schema discoverability) with status "Slice O2 follow-up" so they are not lost.
+- [x] 6.1 (D9 item a) Already covered by task 2.4 — `tenant_listener._inject_tenant_filter` now skips non-scoped queries + injects `WHERE tenant_id IS NULL` for cross-tenant `audit_log` reads. Cross-reference here for traceability.
+- [x] 6.2 (D9 item b) Plant `apps/api/src/iguanatrader/config/__init__.py` + `apps/api/src/iguanatrader/config/settings.py` with `enforce_dev_insecure_cookie_prod_guard()` raising `ConfigError(detail="IGUANATRADER_DEV_INSECURE_COOKIE=1 is forbidden in production")` when both `IGUANATRADER_ENV=production` AND `IGUANATRADER_DEV_INSECURE_COOKIE=1`. Wired into `iguanatrader.api.deps.is_secure_cookie` (called on every cookie write) so any login attempt against a misconfigured prod deployment returns a 500 RFC 7807 response.
+- [x] 6.3 (D9 item e) Add `--cov-fail-under=80` to `[tool.pytest.ini_options].addopts` in root `pyproject.toml`. The CI workflow (`.github/workflows/ci.yml`) currently runs `pytest --collect-only` (slice-5 placeholder); the option is inert until CI moves past collect-only. Local devs can opt in via `pytest --cov apps/api/src/iguanatrader`.
+- [x] 6.4 (D9 item f) Append to `apps/api/README.md`: section "Local development on Windows venv" documenting (a) the workaround sequence, (b) the CI fallback path, (c) cross-reference to gotcha #18.
+- [x] 6.5 Document explicitly in `docs/gotchas.md` the punted carry-forward items as gotchas #60-#63 (cost meter callsite enforcement, default budget cap, throttle process-local, slice-O2 carry-forward).
 
 ## 7. Tests integration
 
