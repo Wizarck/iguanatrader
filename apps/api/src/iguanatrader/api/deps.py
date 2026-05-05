@@ -87,7 +87,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-def _is_secure_cookie() -> bool:
+def is_secure_cookie() -> bool:
     """Return ``True`` iff the cookie should carry the ``Secure`` flag.
 
     Default ``True``. Dev-only override
@@ -183,7 +183,7 @@ async def get_current_user(
             new_token,
             max_age=max_age_remaining,
             httponly=True,
-            secure=_is_secure_cookie(),
+            secure=is_secure_cookie(),
             samesite="strict",
             path="/",
         )
@@ -228,5 +228,6 @@ __all__ = [
     "COOKIE_NAME",
     "get_current_user",
     "get_db",
+    "is_secure_cookie",
     "requires_role",
 ]
