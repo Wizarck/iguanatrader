@@ -34,7 +34,7 @@ export const actions: Actions = {
     if (!email || !password) {
       return fail(400, {
         alert_variant: 'destructive' as const,
-        message: 'Email and password are required.'
+        message: 'Email and password are required.',
       });
     }
 
@@ -45,12 +45,12 @@ export const actions: Actions = {
       response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       });
     } catch {
       return fail(502, {
         alert_variant: 'destructive' as const,
-        message: 'Backend unreachable. Try again shortly.'
+        message: 'Backend unreachable. Try again shortly.',
       });
     }
 
@@ -62,7 +62,7 @@ export const actions: Actions = {
     if (response.status === 401) {
       return fail(401, {
         alert_variant: 'destructive' as const,
-        message: 'Invalid email or password.'
+        message: 'Invalid email or password.',
       });
     }
 
@@ -71,7 +71,7 @@ export const actions: Actions = {
       return fail(429, {
         alert_variant: 'destructive' as const,
         message: `Rate limit reached. Wait ${retryAfter}s before retrying.`,
-        retry_after: retryAfter
+        retry_after: retryAfter,
       });
     }
 
@@ -86,15 +86,15 @@ export const actions: Actions = {
       return fail(503, {
         alert_variant: 'warn' as const,
         message: 'Service not bootstrapped',
-        detail
+        detail,
       });
     }
 
     return fail(response.status, {
       alert_variant: 'destructive' as const,
-      message: `Unexpected error (${response.status}). Try again.`
+      message: `Unexpected error (${response.status}). Try again.`,
     });
-  }
+  },
 };
 
 /**
@@ -112,9 +112,7 @@ function propagateSetCookie(response: Response, cookies: Cookies): void {
   // `Headers.getSetCookie()` (Node 18.14+); SvelteKit's adapter-node
   // exposes that, but for slice 4 the FastAPI side only sets one
   // cookie per response.
-  const sessionMatch = rawCookieHeader.match(
-    new RegExp(`${COOKIE_NAME}=([^;]+)`)
-  );
+  const sessionMatch = rawCookieHeader.match(new RegExp(`${COOKIE_NAME}=([^;]+)`));
   if (!sessionMatch) return;
 
   const value = sessionMatch[1];
@@ -127,7 +125,7 @@ function propagateSetCookie(response: Response, cookies: Cookies): void {
     httpOnly: true,
     secure: isSecure,
     sameSite: 'strict',
-    maxAge
+    maxAge,
   });
 }
 

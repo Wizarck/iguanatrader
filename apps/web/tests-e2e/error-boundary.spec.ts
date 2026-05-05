@@ -66,18 +66,15 @@ export const load: PageServerLoad = () => {
 const PLACEHOLDER_PAGE = `<p>placeholder — load function always errors</p>
 `;
 
-async function login(
-  page: import('@playwright/test').Page,
-  redirectTo = '/'
-): Promise<void> {
+async function login(page: import('@playwright/test').Page, redirectTo = '/'): Promise<void> {
   await page.goto(`/login?redirect_to=${encodeURIComponent(redirectTo)}`);
   await page.getByLabel('Email').fill(VALID_EMAIL);
   await page.getByLabel('Password').fill(VALID_PASSWORD);
   await Promise.all([
     page.waitForURL(`**${redirectTo === '/' ? '/' : redirectTo}`, {
-      timeout: 10_000
+      timeout: 10_000,
     }),
-    page.getByRole('button', { name: /sign in/i }).click()
+    page.getByRole('button', { name: /sign in/i }).click(),
   ]);
 }
 
@@ -97,17 +94,13 @@ test.describe('+error.svelte global boundary', () => {
     rmSync(FIXTURE_500_DIR, { recursive: true, force: true });
   });
 
-  test('404 renders Problem with action hint (recoverable variant)', async ({
-    page
-  }) => {
+  test('404 renders Problem with action hint (recoverable variant)', async ({ page }) => {
     await login(page, '/');
     await page.goto('/_error_404_fixture');
 
     const alert = page.getByRole('alert');
     await expect(alert).toBeVisible();
-    await expect(
-      alert.getByRole('heading', { name: /not found/i })
-    ).toBeVisible();
+    await expect(alert.getByRole('heading', { name: /not found/i })).toBeVisible();
     await expect(alert).toContainText(/Status 404/i);
     await expect(alert).toContainText(/Trade ID 999/);
     await expect(alert).toContainText(/urn:iguanatrader:error:not-found/);
@@ -116,32 +109,28 @@ test.describe('+error.svelte global boundary', () => {
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/07-error-boundary-404.png',
-      fullPage: true
+      fullPage: true,
     });
   });
 
   test('500 renders Problem with correlation ID + copy button (unrecoverable)', async ({
-    page
+    page,
   }) => {
     await login(page, '/');
     await page.goto('/_error_500_fixture');
 
     const alert = page.getByRole('alert');
     await expect(alert).toBeVisible();
-    await expect(
-      alert.getByRole('heading', { name: /internal error/i })
-    ).toBeVisible();
+    await expect(alert.getByRole('heading', { name: /internal error/i })).toBeVisible();
     await expect(alert).toContainText(/Status 500/i);
     await expect(alert).toContainText('req-fixture-abc-123');
-    await expect(
-      alert.getByRole('button', { name: /copy correlation id/i })
-    ).toBeVisible();
+    await expect(alert.getByRole('button', { name: /copy correlation id/i })).toBeVisible();
     // Unrecoverable: "Try again" link.
     await expect(alert.getByRole('link', { name: /try again/i })).toBeVisible();
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/08-error-boundary-500.png',
-      fullPage: true
+      fullPage: true,
     });
   });
 });

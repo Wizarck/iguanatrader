@@ -88,9 +88,9 @@
     gap: 12px;
   }
 
-  .topbar__kill-switch {
-    /* Reserved slot for K1's KillSwitchButton. Empty in W1. */
-  }
+  /* Reserved slot for K1's KillSwitchButton. Empty in W1, hidden until
+     K1 fills it (otherwise the slot would render as an empty zero-width
+     div but still consume the gap). */
   .topbar__kill-switch:empty {
     display: none;
   }

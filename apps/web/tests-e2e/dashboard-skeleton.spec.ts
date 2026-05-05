@@ -25,28 +25,23 @@ const DOMAIN_ORDER = [
   { href: '/approvals', label: 'Approvals' },
   { href: '/risk', label: 'Risk' },
   { href: '/costs', label: 'Costs' },
-  { href: '/settings', label: 'Settings' }
+  { href: '/settings', label: 'Settings' },
 ] as const;
 
-async function login(
-  page: import('@playwright/test').Page,
-  redirectTo = '/'
-): Promise<void> {
+async function login(page: import('@playwright/test').Page, redirectTo = '/'): Promise<void> {
   await page.goto(`/login?redirect_to=${encodeURIComponent(redirectTo)}`);
   await page.getByLabel('Email').fill(VALID_EMAIL);
   await page.getByLabel('Password').fill(VALID_PASSWORD);
   await Promise.all([
     page.waitForURL(`**${redirectTo === '/' ? '/' : redirectTo}`, {
-      timeout: 10_000
+      timeout: 10_000,
     }),
-    page.getByRole('button', { name: /sign in/i }).click()
+    page.getByRole('button', { name: /sign in/i }).click(),
   ]);
 }
 
 test.describe('dashboard skeleton', () => {
-  test('authenticated shell renders Sidebar + TopBar + 8 stubs', async ({
-    page
-  }) => {
+  test('authenticated shell renders Sidebar + TopBar + 8 stubs', async ({ page }) => {
     await login(page, '/');
 
     // Sidebar landmark.
@@ -60,15 +55,11 @@ test.describe('dashboard skeleton', () => {
     const expectedLabels = DOMAIN_ORDER.map((d) => d.label);
     await expect(links).toHaveCount(expectedLabels.length);
     for (let i = 0; i < expectedLabels.length; i += 1) {
-      await expect(links.nth(i)).toHaveAccessibleName(
-        new RegExp(expectedLabels[i], 'i')
-      );
+      await expect(links.nth(i)).toHaveAccessibleName(new RegExp(expectedLabels[i], 'i'));
     }
 
     // TopBar landmark.
-    const topbar = page.getByRole('banner').or(
-      page.locator('header[aria-label="Top bar"]')
-    );
+    const topbar = page.getByRole('banner').or(page.locator('header[aria-label="Top bar"]'));
     await expect(topbar.first()).toBeVisible();
 
     // Email visible in TopBar.
@@ -76,9 +67,7 @@ test.describe('dashboard skeleton', () => {
 
     // ConnectionIndicator visible (status role + Live label initially —
     // no streams active).
-    await expect(
-      page.getByRole('status', { name: /sse connection/i })
-    ).toBeVisible();
+    await expect(page.getByRole('status', { name: /sse connection/i })).toBeVisible();
 
     // KillSwitchSlot exists but is empty (W1 contract — K1 fills).
     const killSlot = page.locator('[data-slot="kill-switch"]');
@@ -87,13 +76,11 @@ test.describe('dashboard skeleton', () => {
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/05-dashboard-empty-shell.png',
-      fullPage: true
+      fullPage: true,
     });
   });
 
-  test('each of 8 domain stubs renders loading… with aria-busy', async ({
-    page
-  }) => {
+  test('each of 8 domain stubs renders loading… with aria-busy', async ({ page }) => {
     await login(page, '/');
 
     for (const { href, label } of DOMAIN_ORDER) {
@@ -101,7 +88,7 @@ test.describe('dashboard skeleton', () => {
       // The stub renders `<section aria-busy="true">` containing
       // `<h1>{label}</h1>` + `<p>loading…</p>`.
       await expect(
-        page.getByRole('heading', { name: new RegExp(`^${label}$`, 'i') })
+        page.getByRole('heading', { name: new RegExp(`^${label}$`, 'i') }),
       ).toBeVisible();
       await expect(page.getByText(/loading…/i)).toBeVisible();
       const busySection = page.locator('section[aria-busy="true"]').first();
@@ -113,7 +100,7 @@ test.describe('dashboard skeleton', () => {
     await login(page, '/');
 
     const toggle = page.getByRole('button', {
-      name: /(collapse|expand) sidebar/i
+      name: /(collapse|expand) sidebar/i,
     });
     // Initial: expanded.
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -123,13 +110,13 @@ test.describe('dashboard skeleton', () => {
     // Reload — collapsed state should hydrate from localStorage.
     await page.reload();
     const toggleAfter = page.getByRole('button', {
-      name: /(collapse|expand) sidebar/i
+      name: /(collapse|expand) sidebar/i,
     });
     await expect(toggleAfter).toHaveAttribute('aria-expanded', 'false');
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/06-dashboard-sidebar-collapsed.png',
-      fullPage: true
+      fullPage: true,
     });
   });
 });

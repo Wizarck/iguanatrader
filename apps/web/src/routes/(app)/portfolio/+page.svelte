@@ -1,13 +1,11 @@
 <script lang="ts" module>
-  /**
-   * Route metadata — consumed by the dynamic Sidebar
-   * (`apps/web/src/lib/components/nav/Sidebar.svelte` via
-   * `import.meta.glob('/src/routes/(app)/*/+page.svelte', { eager: true })`).
-   *
-   * Slice T4 (`trading-routes-and-daemon`) replaces the body of this
-   * page with the J1 dashboard summary. The `meta` export STAYS — the
-   * sidebar entry should not move when content lands.
-   */
+  // Route metadata — consumed by the dynamic Sidebar
+  // (apps/web/src/lib/components/nav/Sidebar.svelte) via the
+  // import.meta.glob anti-collision pattern (slice W1 design D2).
+  //
+  // Slice T4 (trading-routes-and-daemon) replaces the body of this
+  // page with the J1 dashboard summary. The meta export STAYS — the
+  // sidebar entry should not move when content lands.
   export const meta = {
     label: 'Portfolio',
     icon: 'briefcase',

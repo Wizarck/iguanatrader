@@ -50,18 +50,15 @@ const FALLBACK_FIXTURE_CONTENTS = `<section aria-busy="true">
 </section>
 `;
 
-async function login(
-  page: import('@playwright/test').Page,
-  redirectTo = '/'
-): Promise<void> {
+async function login(page: import('@playwright/test').Page, redirectTo = '/'): Promise<void> {
   await page.goto(`/login?redirect_to=${encodeURIComponent(redirectTo)}`);
   await page.getByLabel('Email').fill(VALID_EMAIL);
   await page.getByLabel('Password').fill(VALID_PASSWORD);
   await Promise.all([
     page.waitForURL(`**${redirectTo === '/' ? '/' : redirectTo}`, {
-      timeout: 10_000
+      timeout: 10_000,
     }),
-    page.getByRole('button', { name: /sign in/i }).click()
+    page.getByRole('button', { name: /sign in/i }).click(),
   ]);
 }
 
@@ -78,9 +75,7 @@ test.describe('sidebar dynamic enumeration', () => {
     rmSync(FALLBACK_ROUTE_DIR, { recursive: true, force: true });
   });
 
-  test('Sidebar enumerates a fixture route with meta.order=999 at the end', async ({
-    page
-  }) => {
+  test('Sidebar enumerates a fixture route with meta.order=999 at the end', async ({ page }) => {
     await login(page, '/');
 
     const sidebar = page.getByRole('navigation', { name: /primary/i });
@@ -92,16 +87,12 @@ test.describe('sidebar dynamic enumeration', () => {
     await expect(last).toHaveAccessibleName(/TestX/i);
   });
 
-  test('Sidebar uses fallback meta for routes without meta export', async ({
-    page
-  }) => {
+  test('Sidebar uses fallback meta for routes without meta export', async ({ page }) => {
     await login(page, '/');
 
     const sidebar = page.getByRole('navigation', { name: /primary/i });
     // Fallback route has order 100, so it sorts after all 8 domain
     // stubs (max 80) but before the meta=999 fixture.
-    await expect(
-      sidebar.getByRole('link', { name: /Foobar/i })
-    ).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: /Foobar/i })).toBeVisible();
   });
 });

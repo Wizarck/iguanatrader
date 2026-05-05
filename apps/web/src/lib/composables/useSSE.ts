@@ -76,7 +76,7 @@ export function useSSE(name: string, opts: SSEOptions = {}): SSEHandle {
     if (closed) return;
 
     source = new EventSource(streamUrl(name), {
-      withCredentials: true
+      withCredentials: true,
     });
 
     source.onopen = () => {

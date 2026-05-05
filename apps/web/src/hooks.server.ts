@@ -27,7 +27,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   const sessionCookie = event.cookies.get(COOKIE_NAME);
   const meResponse = sessionCookie
     ? await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-        headers: { Cookie: `${COOKIE_NAME}=${sessionCookie}` }
+        headers: { Cookie: `${COOKIE_NAME}=${sessionCookie}` },
       }).catch(() => null)
     : null;
 

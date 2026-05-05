@@ -42,9 +42,7 @@ export function isProblem(value: unknown): value is Problem {
   if (!value || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
   return (
-    typeof obj.type === 'string' &&
-    typeof obj.title === 'string' &&
-    typeof obj.status === 'number'
+    typeof obj.type === 'string' && typeof obj.title === 'string' && typeof obj.status === 'number'
   );
 }
 
@@ -60,7 +58,7 @@ function resolveUrl(url: string): string {
 
 export async function useFetch<TResponse>(
   url: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
 ): Promise<TResponse | Problem> {
   const resolvedUrl = resolveUrl(url);
 
@@ -70,28 +68,20 @@ export async function useFetch<TResponse>(
   }
   // Only set Content-Type on non-GET requests with a body.
   const method = (init.method ?? 'GET').toUpperCase();
-  if (
-    method !== 'GET' &&
-    method !== 'HEAD' &&
-    init.body != null &&
-    !headers.has('Content-Type')
-  ) {
+  if (method !== 'GET' && method !== 'HEAD' && init.body != null && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
   const response = await fetch(resolvedUrl, {
     ...init,
     headers,
-    credentials: init.credentials ?? 'include'
+    credentials: init.credentials ?? 'include',
   });
 
   const contentType = response.headers.get('content-type') ?? '';
 
   // Problem branch — 4xx/5xx with problem+json.
-  if (
-    !response.ok &&
-    contentType.toLowerCase().includes('application/problem+json')
-  ) {
+  if (!response.ok && contentType.toLowerCase().includes('application/problem+json')) {
     return (await response.json()) as Problem;
   }
 
@@ -100,7 +90,7 @@ export async function useFetch<TResponse>(
     const text = await response.text().catch(() => '');
     throw new Error(
       `useFetch: ${method} ${resolvedUrl} failed with ${response.status}` +
-        (text ? `: ${text.slice(0, 200)}` : '')
+        (text ? `: ${text.slice(0, 200)}` : ''),
     );
   }
 
@@ -116,7 +106,5 @@ export async function useFetch<TResponse>(
 
   // Caller expected JSON but the server returned something else; treat
   // as a transport error so the surrounding try/catch surfaces it.
-  throw new Error(
-    `useFetch: ${method} ${resolvedUrl} returned non-JSON body (${contentType})`
-  );
+  throw new Error(`useFetch: ${method} ${resolvedUrl} returned non-JSON body (${contentType})`);
 }

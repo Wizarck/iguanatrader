@@ -14,7 +14,7 @@ export type StreamState = 'open' | 'reconnecting' | 'closed';
 const PRIORITY: Record<StreamState, number> = {
   closed: 2,
   reconnecting: 1,
-  open: 0
+  open: 0,
 };
 
 class ConnectionStore {

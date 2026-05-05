@@ -31,10 +31,7 @@ class NavStore {
       $effect.root(() => {
         $effect(() => {
           try {
-            window.localStorage.setItem(
-              STORAGE_KEY,
-              String(this.collapsed)
-            );
+            window.localStorage.setItem(STORAGE_KEY, String(this.collapsed));
           } catch {
             // Ignore quota / disabled storage.
           }
