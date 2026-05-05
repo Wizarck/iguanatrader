@@ -1,0 +1,69 @@
+## 1. Setup + dependencies
+
+- [ ] 1.1 Verify `hypothesis = ">=6.100,<7.0"` is present in root `pyproject.toml` dev deps (already added by slice 2 for property tests). No new runtime deps required for K1.
+- [ ] 1.2 Verify Alembic migration sequencing: `0001_*` (slice 1), `0002_*` (slice 3 persistence), `0003_*` (T1 trading) — K1 adds `0004_risk_tables.py`. Reconcile if T1's actual filename diverges before merging K1.
+- [ ] 1.3 Confirm `sqlalchemy` JSON / JSONB column type is available in the existing slice-3 base models (already true for `state_snapshot` / `confirmation_chain` columns).
+- [ ] 1.4 Add new `IguanaError` subclasses to `apps/api/src/iguanatrader/shared/errors.py`: `RiskCapBreachedError(IguanaError)` (status=400, type=`urn:iguanatrader:error:risk-cap-breached`), `KillSwitchActiveError(IguanaError)` (status=409, type=`urn:iguanatrader:error:risk-kill-switch-active`), `OverrideAuditMissingError(ValidationError)` (status=400, type=`urn:iguanatrader:error:risk-override-audit-missing`). Re-export from `shared/__init__.py`.
+
+## 2. Models + migration
+
+- [ ] 2.1 Create `apps/api/src/iguanatrader/contexts/risk/__init__.py` exporting public API: `RiskService`, `RiskEngine` (the `evaluate` callable bound under a class facade if needed), `Decision`, `RiskCaps`, `RiskState`, `Protection`, the 5 event payload classes.
+- [ ] 2.2 Create `apps/api/src/iguanatrader/contexts/risk/models.py` with frozen Pydantic v2 models: `RiskCaps` (per_trade_pct, daily_loss_pct, weekly_loss_pct, max_open_positions, max_drawdown_pct — defaults 2%/5%/15%/10/15%), `RiskState` (capital, day_to_date_loss_pct, week_to_date_loss_pct, open_positions_count, peak_to_trough_drawdown_pct), `Decision` (outcome, cap_type_breached, current_pct, clip_quantity, state_snapshot), `Confirmation` + `ConfirmationChain` (first/second confirmation typed payloads).
+- [ ] 2.3 Create `apps/api/src/iguanatrader/contexts/risk/ports.py` with `RiskRepositoryPort(Protocol)` declaring the methods `service.py` calls (`save_evaluation`, `save_override`, `load_kill_switch_state`, `append_kill_switch_event`, `update_kill_switch_cache`).
+- [ ] 2.4 Create SQLAlchemy ORM models for `risk_evaluations`, `risk_overrides`, `kill_switch_state`, `kill_switch_events` in `apps/api/src/iguanatrader/persistence/models/risk.py` (or under the contexts/risk package if the project's convention places ORM with bounded contexts — defer to slice-3 layout). Re-export via `persistence/models/__init__.py`.
+- [ ] 2.5 Write Alembic migration `apps/api/src/iguanatrader/migrations/versions/0004_risk_tables.py` creating the four tables per `docs/data-model.md §3.3`. Include all CHECK constraints (`outcome IN (...)`, `cap_type_breached IN (...)`, `length(reason_text) >= 20`, `transition IN (...)`, `source IN (..., 'cli')`). Add indexes per data-model spec.
+- [ ] 2.6 Migration adds `'cli'` to the `kill_switch_events.source` CHECK list (data-model §3.3 currently omits it; documented as K1 spec deviation in design.md D7's open question).
+
+## 3. Pure-functional engine + 5 protections
+
+- [ ] 3.1 Create `apps/api/src/iguanatrader/contexts/risk/protections/__init__.py` (empty package marker; docstring documents the contract: each module exports `evaluate(proposal, state, caps) -> Decision`).
+- [ ] 3.2 Create `apps/api/src/iguanatrader/contexts/risk/protections/per_trade.py` with `evaluate(proposal, state, caps) -> Decision`. Computes `proposal.notional_value / state.capital`; returns reject Decision with `cap_type_breached="per_trade"` if strictly greater than `caps.per_trade_pct`, else allow.
+- [ ] 3.3 Create `apps/api/src/iguanatrader/contexts/risk/protections/daily.py`: rejects all proposals when `state.day_to_date_loss_pct >= caps.daily_loss_pct`.
+- [ ] 3.4 Create `apps/api/src/iguanatrader/contexts/risk/protections/weekly.py`: rejects when `state.week_to_date_loss_pct >= caps.weekly_loss_pct`.
+- [ ] 3.5 Create `apps/api/src/iguanatrader/contexts/risk/protections/max_open.py`: rejects when `state.open_positions_count >= caps.max_open_positions` (assumes the proposal opens a new position; clip semantics deferred — engine returns reject for MVP).
+- [ ] 3.6 Create `apps/api/src/iguanatrader/contexts/risk/protections/max_drawdown.py`: rejects when `state.peak_to_trough_drawdown_pct >= caps.max_drawdown_pct`.
+- [ ] 3.7 Create `apps/api/src/iguanatrader/contexts/risk/engine.py` with `evaluate(proposal, state, caps) -> Decision`. Composes the 5 protections in fixed order (per_trade → daily → weekly → max_open → max_drawdown); returns the first non-allow Decision; if all pass, returns `Decision(outcome="allow", state_snapshot=state.model_dump())`. NO imports of datetime/time/sqlalchemy/requests/httpx — purity enforced by `test_engine_purity.py`.
+
+## 4. Service + repository
+
+- [ ] 4.1 Create `apps/api/src/iguanatrader/contexts/risk/repository.py` implementing `RiskRepositoryPort` over SQLAlchemy. Tenant scoping via slice-3's `tenant_id_var`; all writes use the project session factory.
+- [ ] 4.2 Create `apps/api/src/iguanatrader/contexts/risk/service.py::RiskService` with methods: `evaluate_proposal(proposal) -> RiskEvaluation` (loads state from repository, calls `engine.evaluate`, persists to `risk_evaluations`, publishes `risk.proposal.{accepted|rejected}` event), `record_override(proposal_id, user_id, reason_text, confirmation_chain) -> RiskOverride` (validates audit fields, raises `OverrideAuditMissingError` if invalid, persists, publishes `risk.proposal.override_required`), `activate_kill_switch(source, actor_user_id, reason)`, `deactivate_kill_switch(source, actor_user_id, reason)`. Kill-switch gate runs BEFORE engine call: if cached `kill_switch_state.is_active`, raise `KillSwitchActiveError` immediately.
+- [ ] 4.3 Service-layer auto-activation of kill-switch on first daily/weekly/max_drawdown breach of the day: when `engine.evaluate` returns `cap_type_breached ∈ {daily, weekly, max_drawdown}` AND no existing `kill_switch_events` row for today, append event with `source="automatic_cap_breach"` + update cache + publish `risk.kill_switch.activated`.
+- [ ] 4.4 Create `apps/api/src/iguanatrader/contexts/risk/events.py` with Pydantic event payloads: `RiskProposalAccepted`, `RiskProposalRejected`, `RiskProposalOverrideRequired`, `RiskKillSwitchActivated`, `RiskKillSwitchDeactivated`. Channel name constants: `RISK_PROPOSAL_ACCEPTED = "risk.proposal.accepted"`, etc.
+
+## 5. API routes + SSE + DTOs
+
+- [ ] 5.1 Create `apps/api/src/iguanatrader/api/dtos/risk.py` with Pydantic v2 DTOs: `RiskStateResponse` (caps + utilisation + kill_switch flag), `OverrideRequest` (proposal_id, reason_text ≥20 char Field validator, confirmation_chain), `OverrideResponse`, `RiskEventPayload` (SSE event envelope).
+- [ ] 5.2 Create `apps/api/src/iguanatrader/api/routes/risk.py` exporting `router: APIRouter`. Endpoints: `GET /risk/state` (returns `RiskStateResponse`; auth-required via slice-4 dependency), `POST /risk/override` (admin-only; calls `RiskService.record_override`; raises `OverrideAuditMissingError` on validation failure → global handler renders RFC 7807). The dynamic-discovery loop from slice 5 picks this module up automatically.
+- [ ] 5.3 Create `apps/api/src/iguanatrader/api/sse/risk.py` exporting `router: APIRouter` with `GET /risk/events` returning `StreamingResponse` of MessageBus-subscribed `risk.*` events serialised as SSE. Mounted under `/api/v1/stream` by slice-5's discovery loop.
+
+## 6. CLI ops commands
+
+- [ ] 6.1 Create `apps/api/src/iguanatrader/cli/ops.py` exporting `app: typer.Typer` (auto-discovered by slice-5's `cli/main.py`). Commands: `halt --reason "..."` (calls `RiskService.activate_kill_switch(source="cli", reason=...)`), `resume --reason "..."` (deactivate), `override --proposal-id <uuid> --reason "..." --user <email>` (looks up user, calls `RiskService.record_override`).
+- [ ] 6.2 Each CLI command requires `--reason` to be ≥20 chars; Typer-level validation rejects shorter values with a clear error before reaching the service. Lazy imports: heavy modules (SQLAlchemy session factory) imported inside command bodies, not at module load (gotcha #29).
+
+## 7. Tests — integration + Hypothesis property test (CRITICAL CI gate)
+
+- [ ] 7.1 Create `apps/api/tests/unit/contexts/risk/test_protections.py` — unit tests for each of the 5 protection callables in isolation. Edge cases: exactly at cap (allow vs reject boundary), zero-capital state (reject), empty proposal (engine raises ValidationError before reaching protections).
+- [ ] 7.2 Create `apps/api/tests/unit/contexts/risk/test_engine_purity.py` — AST-introspects `contexts/risk/engine.py` source via `ast.parse` + walks for forbidden imports (`datetime`, `time`, `sqlalchemy`, `requests`, `httpx`) and forbidden call patterns (`.now()`, `.utcnow()`, `.commit()`, `.execute()`). Fails build on impurity regression.
+- [ ] 7.3 Create `apps/api/tests/property/test_risk_caps_invariant.py` — **CI-BLOCKING** Hypothesis test (NFR-R6). `@given(proposal=proposal_strategy(), state=state_strategy(), caps=caps_strategy())` with `@settings(max_examples=200, deadline=None)`. For every "allow" decision, assert post-trade utilisation ≤ each cap. Marked `@pytest.mark.property` + `@pytest.mark.ci_blocking`. Hypothesis strategies generate `Decimal` values + edge cases (zero, negative, very large).
+- [ ] 7.4 Create `apps/api/tests/integration/test_risk_engine_flow.py` — pytest-asyncio + httpx ASGITransport client. Tests: happy path proposal accepted → `risk_evaluations` row INSERTed with `outcome="allow"` + `risk.proposal.accepted` event published. Reject path: per-trade breach → `outcome="reject"` + event. Override path: `POST /risk/override` with valid 20+ char reason persists `risk_overrides` row.
+- [ ] 7.5 Create `apps/api/tests/integration/test_kill_switch_latency.py` — NFR-R5 assertion. `t_activate = time.monotonic(); RiskService.activate_kill_switch(source="cli", ...); proposal_decision = service.evaluate_proposal(p); assert time.monotonic() - t_activate < 2.0`. Verifies the cached `kill_switch_state.is_active` is read in the hot path before the engine.
+- [ ] 7.6 Create `apps/api/tests/integration/test_override_audit.py` — verifies `OverrideAuditMissingError` raised on (a) reason <20 chars, (b) missing user, (c) missing confirmation_chain. Renders RFC 7807 via global handler. Also verifies CHECK constraint at the DB level rejects junk INSERTs that bypass service-layer validation.
+- [ ] 7.7 Create `apps/api/tests/integration/test_risk_routes.py` — `GET /api/v1/risk/state` returns 200 + DTO shape; `POST /api/v1/risk/override` with valid body returns 201 + persists; with invalid body returns 400 + RFC 7807 Problem with `errors` array.
+
+## 8. Documentation
+
+- [ ] 8.1 Append to `docs/gotchas.md`: gotcha #31 — RiskEngine purity is enforced by `test_engine_purity.py`; do NOT import `datetime`/`time` inside `engine.py` even for "convenience". Use `service.py` for all I/O. Gotcha #32 — kill-switch cache row + event log MUST be written in the same transaction; partial writes leave the cache stale. Gotcha #33 — override `reason_text` 20-char floor is satisfiable with `"a" * 20`; weekly review humans flag junk reasons (no automated semantic check in MVP).
+- [ ] 8.2 Update `apps/api/README.md`: document `iguanatrader ops halt|resume|override` CLI surface; document the `risk` bounded context's public API in `contexts/risk/__init__.py`; document the property test as a CI-blocking gate (cannot be skipped without `ai-self-review-required` failure).
+- [ ] 8.3 Add `docs/runbooks/risk-kill-switch.md` — operator playbook: how to activate (cli/dashboard/channel), how to confirm activation propagated (`SELECT * FROM kill_switch_state WHERE tenant_id=...`), how to read the event log for "who/why/when," how to recover the cache from the event log if drift detected.
+
+## 9. Pre-merge verification
+
+- [ ] 9.1 `mypy --strict apps/api/src/iguanatrader/contexts/risk/ apps/api/src/iguanatrader/api/routes/risk.py apps/api/src/iguanatrader/api/sse/risk.py apps/api/src/iguanatrader/cli/ops.py` clean.
+- [ ] 9.2 `pytest apps/api/tests/property/test_risk_caps_invariant.py` exits 0 with 200 examples completed (NFR-R6 CI-blocking gate verified locally before push).
+- [ ] 9.3 `pytest apps/api/tests/unit/contexts/risk/ apps/api/tests/integration/test_risk_engine_flow.py apps/api/tests/integration/test_kill_switch_latency.py apps/api/tests/integration/test_override_audit.py apps/api/tests/integration/test_risk_routes.py` all green.
+- [ ] 9.4 Coverage on `contexts/risk/{engine,service,repository,events}.py + protections/*.py + api/routes/risk.py + api/sse/risk.py + cli/ops.py` ≥ 80% (or higher; engine + protections should hit 100%).
+- [ ] 9.5 `pre-commit run --from-ref origin/main --to-ref HEAD` passes.
+- [ ] 9.6 Manual smoke: `iguanatrader ops halt --reason "test halt for slice K1 verification"` → `kill_switch_events` row appended + cache updated + structlog event emitted; `iguanatrader ops resume --reason "test resume for slice K1 verification"` → second event row + cache `is_active=False`.
+- [ ] 9.7 PR description includes "AI-reviewer signoff" subsection per release-management.md §4.5; populate self-review findings + L1 detection result; PR template's "T1 already merged?" gate confirmed YES (or follow-up `0004b_risk_fk.py` migration scoped if NO).
