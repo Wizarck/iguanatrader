@@ -1,9 +1,9 @@
 <script lang="ts">
-  // Root layout — slice W1 will move tokens.css here. Until then,
-  // each page renders its own inline style block (per the slice 4
-  // design.md note: "renders inline `<style>` block with the locked
-  // OKLCH tokens (W1 will plant `tokens.css` later — until then,
-  // inline)").
+  // Root layout — slice W1 plants the global stylesheet (Tailwind 4.x +
+  // OKLCH tokens in `src/app.css`). All routes inherit dark theme via
+  // `<html data-theme="dark">` declared in `src/app.html`.
+  import '../app.css';
+
   let { children } = $props();
 </script>
 
