@@ -38,10 +38,10 @@
 
 ## 5. Frontend — login surface
 
-- [ ] 5.1 Create `apps/web/src/routes/(auth)/login/+page.svelte`: form with email Input + password Input + submit Button + footer + login-help card; renders inline `<style>` block with the locked OKLCH tokens (W1 will plant `tokens.css` later — until then, inline). Tracks the rate-limit countdown via `setInterval` when `form?.retry_after` is present.
-- [ ] 5.2 Create `apps/web/src/routes/(auth)/login/+page.server.ts` with form action: validate `redirect_to` against the allow-list (single leading `/`, no `//`, no `://`, no `\`); proxy POST to FastAPI `/api/v1/auth/login`; on 200 → propagate `Set-Cookie` to the response, return `redirect(302, redirect_to)`; on 401 → return `fail(401, { message: "Invalid credentials" })`; on 429 → return `fail(429, { message: "...", retry_after: <seconds> })`; on 503 → return `fail(503, { message: "Not bootstrapped", detail: "..." })`.
-- [ ] 5.3 Create `apps/web/src/hooks.server.ts`: on every request to a path matching the `(app)` route group, fetch `/api/v1/auth/me`; if 401 → 302 to `/login?redirect_to=<encoded path+search>`. Stash the user in `event.locals.user` for downstream loaders.
-- [ ] 5.4 Add a Playwright e2e (or SvelteKit's built-in `vitest` + `@testing-library/svelte` if Playwright is too heavy at MVP) covering: cold visit to `/portfolio` → 302 to `/login?redirect_to=%2Fportfolio` → submit form with valid credentials → land on `/portfolio` (stub page).
+- [x] 5.1 Create `apps/web/src/routes/(auth)/login/+page.svelte`: form with email Input + password Input + submit Button + footer + login-help card; renders inline `<style>` block with the locked OKLCH tokens (W1 will plant `tokens.css` later — until then, inline). Tracks the rate-limit countdown via `setInterval` when `form?.retry_after` is present.
+- [x] 5.2 Create `apps/web/src/routes/(auth)/login/+page.server.ts` with form action: validate `redirect_to` against the allow-list (single leading `/`, no `//`, no `://`, no `\`); proxy POST to FastAPI `/api/v1/auth/login`; on 200 → propagate `Set-Cookie` to the response, return `redirect(302, redirect_to)`; on 401 → return `fail(401, { message: "Invalid credentials" })`; on 429 → return `fail(429, { message: "...", retry_after: <seconds> })`; on 503 → return `fail(503, { message: "Not bootstrapped", detail: "..." })`.
+- [x] 5.3 Create `apps/web/src/hooks.server.ts`: on every request to a path matching the `(app)` route group, fetch `/api/v1/auth/me`; if 401 → 302 to `/login?redirect_to=<encoded path+search>`. Stash the user in `event.locals.user` for downstream loaders.
+- [x] 5.4 Add a Playwright e2e (or SvelteKit's built-in `vitest` + `@testing-library/svelte` if Playwright is too heavy at MVP) covering: cold visit to `/portfolio` → 302 to `/login?redirect_to=%2Fportfolio` → submit form with valid credentials → land on `/portfolio` (stub page).
 
 ## 6. Documentation + gotchas
 
