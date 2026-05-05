@@ -336,7 +336,7 @@ Multiple fills per order possible (partial fills). Pure append-only.
 | `realized_pnl_today` | NUMERIC(18,8) | NOT NULL DEFAULT 0 | |
 | `unrealized_pnl` | NUMERIC(18,8) | NOT NULL DEFAULT 0 | |
 | `currency` | CHAR(3) | NOT NULL DEFAULT 'USD' | |
-| `snapshot_kind` | TEXT | NOT NULL CHECK (snapshot_kind IN ('tick','minute','hourly','daily','event')) | |
+| `snapshot_kind` | TEXT | NOT NULL CHECK (snapshot_kind IN ('tick','minute','hourly','daily','event')) | NOTE: §7.2 supersedes — authoritative enum is `('event','minute','daily')`; slice-T1 migration uses §7.2 set |
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
 
 Indexes: `ix_equity_snapshots_tenant_id_mode_created_at`.

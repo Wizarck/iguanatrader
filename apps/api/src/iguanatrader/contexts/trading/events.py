@@ -1,0 +1,214 @@
+"""Inter-context event contract for the trading bounded context.
+
+This module is the wire-format contract between the trading bounded
+context and risk (K1) / approval (P1) / observability (O1). Subscribers
+in those contexts MUST treat field types as frozen; additions go in
+``metadata: dict``. Genuine structural changes require a deliberate
+cross-context PR.
+
+Per design D3: each event class:
+
+* Subclasses :class:`iguanatrader.shared.messagebus.Event`.
+* Declares a :attr:`event_name` :class:`ClassVar` matching the structlog
+  ``<context>.<entity>.<action>`` convention (NFR-O8).
+* Carries ``tenant_id: UUID`` explicitly (do NOT rely on
+  ``tenant_id_var`` propagating across worker boundaries).
+* Carries the entity primary key — used as ``idempotency_key`` via
+  :meth:`__post_init__`.
+* Has a ``metadata: dict[str, Any]`` extension slot.
+
+Dataclass kwarg-only declaration: every subclass uses ``kw_only=True``
+so non-default fields can follow the parent's already-defaulted
+``idempotency_key`` without tripping the field-ordering rule. Callers
+construct events as ``ProposalCreated(tenant_id=..., proposal_id=...)``.
+
+The :class:`KillSwitchTripped` event is OWNED by the risk bounded
+context (slice K1 ``risk-engine-protections``) and not redeclared
+here — :class:`TradingService` subscribes by importing the class from
+``iguanatrader.contexts.risk.events`` once K1 lands.
+
+Cross-context import boundary: the ruff ``no-cross-context-deep-imports``
+rule (slice-2 contract) excludes ``events.py`` paths from the ban —
+events are the documented inter-context wire format per
+``docs/data-model.md §6``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Any, ClassVar
+from uuid import UUID
+
+from iguanatrader.shared.messagebus import Event
+
+
+@dataclass(kw_only=True)
+class ProposalCreated(Event):
+    """Emitted by ``TradingService.propose`` when a strategy returns a
+    non-``None`` proposal that has been persisted.
+
+    Subscribers: K1 ``RiskService`` (runs the risk engine), O1 cost
+    meter / structlog narrator.
+    """
+
+    event_name: ClassVar[str] = "trading.proposal.created"
+
+    tenant_id: UUID
+    proposal_id: UUID
+    symbol: str
+    strategy_kind: str
+    strategy_version: int
+    correlation_id: UUID
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.proposal_id)
+
+
+@dataclass(kw_only=True)
+class ProposalRiskEvaluated(Event):
+    """Emitted by K1 ``RiskService`` after evaluating a proposal.
+
+    Subscribers: T1 ``TradingService.enqueue_approval_handler``, O1.
+    """
+
+    event_name: ClassVar[str] = "trading.proposal.risk_evaluated"
+
+    tenant_id: UUID
+    proposal_id: UUID
+    outcome: str
+    cap_type_breached: str | None = None
+    clip_quantity: Decimal | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.proposal_id)
+
+
+@dataclass(kw_only=True)
+class ApprovalRequested(Event):
+    """Emitted by T1 ``TradingService`` after a permissive risk evaluation.
+
+    Subscribers: P1 ``ApprovalService`` (dispatches Telegram/Hermes
+    request), O1.
+    """
+
+    event_name: ClassVar[str] = "trading.approval.requested"
+
+    tenant_id: UUID
+    proposal_id: UUID
+    decision: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.proposal_id)
+
+
+@dataclass(kw_only=True)
+class ProposalApproved(Event):
+    """Emitted by P1 ``ApprovalService`` when the human approves.
+
+    Subscribers: T1 ``TradingService.execute_on_approval_handler``, O1.
+    """
+
+    event_name: ClassVar[str] = "trading.proposal.approved"
+
+    tenant_id: UUID
+    proposal_id: UUID
+    approved_by_user_id: UUID | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.proposal_id)
+
+
+@dataclass(kw_only=True)
+class ProposalRejected(Event):
+    """Emitted by P1 ``ApprovalService`` when the human rejects (or times out).
+
+    Subscribers: T1, O1.
+    """
+
+    event_name: ClassVar[str] = "trading.proposal.rejected"
+
+    tenant_id: UUID
+    proposal_id: UUID
+    reason: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.proposal_id)
+
+
+@dataclass(kw_only=True)
+class OrderPlaced(Event):
+    """Emitted by T1 ``TradingService`` after ``BrokerPort.place_order``.
+
+    Subscribers: T2 reconciliation worker, O1.
+    """
+
+    event_name: ClassVar[str] = "trading.order.placed"
+
+    tenant_id: UUID
+    order_id: UUID
+    broker_order_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.order_id)
+
+
+@dataclass(kw_only=True)
+class OrderFilled(Event):
+    """Emitted by T1 ``TradingService`` after recording a broker fill.
+
+    Subscribers: T1 ``TradingService.update_equity`` (T4 wires), O1.
+    """
+
+    event_name: ClassVar[str] = "trading.order.filled"
+
+    tenant_id: UUID
+    order_id: UUID
+    fill_id: UUID
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.fill_id)
+
+
+@dataclass(kw_only=True)
+class EquityUpdated(Event):
+    """Emitted by T1 ``TradingService.update_equity`` after persisting a snapshot.
+
+    Subscribers: slice W1's ``/sse/equity`` SSE consumer, O1.
+    """
+
+    event_name: ClassVar[str] = "trading.equity.updated"
+
+    tenant_id: UUID
+    equity_snapshot_id: UUID
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.equity_snapshot_id)
+
+
+__all__ = [
+    "ApprovalRequested",
+    "EquityUpdated",
+    "OrderFilled",
+    "OrderPlaced",
+    "ProposalApproved",
+    "ProposalCreated",
+    "ProposalRejected",
+    "ProposalRiskEvaluated",
+]

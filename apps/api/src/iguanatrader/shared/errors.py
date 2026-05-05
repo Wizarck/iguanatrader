@@ -188,6 +188,31 @@ class BootstrapNotReadyError(IguanaError):
     default_status: ClassVar[int] = 503
 
 
+# Added 2026-05-05 by slice T1 (trading-models-interfaces) per design D6
+# to express stub-only routes that are part of the public OpenAPI
+# surface but whose bodies are scheduled for a later slice (T4 owns the
+# trading routes' real bodies). Mirrors the slice-5 D9 precedent of
+# rectifying a status-code-canonicalisation gap with one new IguanaError
+# subclass; will no longer be raised once T4 ships the real route
+# bodies.
+class NotImplementedFeatureError(IguanaError):
+    """Endpoint or feature is intentionally unimplemented (HTTP 501).
+
+    Raised by the trading route stubs in
+    :mod:`iguanatrader.api.routes.trades` (and siblings) so consumers
+    see a uniform RFC 7807 Problem with type
+    ``urn:iguanatrader:error:not-implemented`` until slice T4 lands the
+    real bodies. The handler attaches the canonical urn-form ``type``
+    URI; the ``detail`` field SHOULD name the slice that will land the
+    implementation, e.g. ``"... will be wired in slice T4
+    (trading-routes-and-daemon)."``
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:not-implemented"
+    default_title: ClassVar[str] = "Feature Not Implemented"
+    default_status: ClassVar[int] = 501
+
+
 __all__ = [
     "AuthError",
     "BootstrapNotReadyError",
@@ -198,6 +223,7 @@ __all__ = [
     "IntegrationError",
     "InternalError",
     "NotFoundError",
+    "NotImplementedFeatureError",
     "RateLimitError",
     "ValidationError",
 ]

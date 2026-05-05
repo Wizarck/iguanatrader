@@ -476,6 +476,34 @@ The re-raise is critical. Starlette's exception middleware re-dispatches the re-
 
 **Status**: workaround in place 2026-05-05; the re-raise pattern is the documented contract for any future broad-catch handler.
 
+## 31. Trading routes return 501 + RFC 7807 until slice T4 lands
+
+**Surfaced**: 2026-05-05 (slice T1 `trading-models-interfaces`, group 5).
+
+**Symptom**: A frontend client calling `GET /api/v1/trades`, `GET /api/v1/portfolio`, `GET /api/v1/strategies`, or `GET /api/v1/proposals` (and their nested paths) receives an `application/problem+json` 501 response, NOT a real `TradeOut` / `PortfolioSummaryOut` / etc. payload. Operators reading the response see `detail: "GET /api/v1/trades will be wired in slice T4 (trading-routes-and-daemon)."`.
+
+**Root cause**: Slice T1 plants the bounded-context skeleton — models, ports, events, DTOs, route stubs — but does NOT ship the route bodies. The bodies land in slice T4 (`trading-routes-and-daemon`). The 501 stub pattern is intentional: it makes the OpenAPI schema complete (so the slice-5 typegen pipeline emits the TypeScript counterparts on first push) and gives the frontend a stable URL surface to wire against, even before the bodies exist.
+
+**Workaround**: Frontend (slice W1 `dashboard-svelte-skeleton`) MUST check the `Problem.type` URI: when it equals `urn:iguanatrader:error:not-implemented`, render a "coming soon" placeholder rather than treating the response as a real error. Backend operators can `GET /openapi.json` to confirm the stubs are registered (the four route prefixes appear with their declared `response_model` types). Once slice T4 lands the bodies, the 501 stops appearing — same URLs, real responses.
+
+**Tests**: `apps/api/tests/integration/test_trading_route_stubs.py` parameterises every stub endpoint and asserts the canonical 501 + Problem body. Regression-safe — if T4 lands the bodies the test must be updated to assert real success responses.
+
+**Status**: ⚠️ active until slice T4 ships. Slice T4 will replace bodies + update this gotcha to "resolved YYYY-MM-DD".
+
+## 32. Cross-slice FK `trade_proposals.research_brief_id → research_briefs.id` enforces R1-before-T1 merge order
+
+**Surfaced**: 2026-05-05 (slice T1, group 2.3 + design D5).
+
+**Symptom**: Running `alembic upgrade head` on a fresh DB after pulling slice-T1 alone (without slice R1's migration) fails with a `RevisionError` or "revision `0002_research_tables` not found in the script directory". CI's `test_trading_migration.py` flags the missing R1 migration and the slice-T1 PR cannot merge.
+
+**Root cause**: T1's migration `0003_trading_tables.py` declares `down_revision = '0002_research_tables'`, anchoring the linear chain at R1's revision. The cross-slice FK `trade_proposals.research_brief_id → research_briefs(id) ON DELETE RESTRICT` (FR74 audit-trail invariant) requires the FK target table to exist at upgrade time. Slicing principle (one bounded context per slice) prohibits combining R1 + T1 into one slice; slicing tolerates the merge-order constraint.
+
+**Workaround**: Sequence the merges. R1 (`research-bitemporal-schema`) must merge into `main` BEFORE T1's PR. The slice-T1 branch rebases onto post-R1 `main`; once R1's `0002_research_tables.py` is on the branch, `alembic upgrade head` succeeds. The slice-T1 PR description includes a `[ ] R1 (research-bitemporal-schema) merged into main before this PR is merged` checkbox.
+
+**Tests**: `test_trading_migration.py::test_r1_migration_required_for_upgrade` exercises the gate explicitly — when R1's migration file is absent the test asserts the chain walk raises; when present, the upgrade/downgrade cycle test runs. CI fails the PR until R1 is rebased in.
+
+**Status**: ⚠️ active until R1 merges + T1 PR is rebased. Documented as a one-time merge-order constraint; once both slices are on `main` the FK is enforced normally.
+
 ---
 
 ## 40. Bitemporal `recorded_to` is the only mutation allowed on `research_facts`
