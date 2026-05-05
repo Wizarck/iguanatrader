@@ -42,8 +42,12 @@ def upgrade() -> None:
     op.execute("UPDATE users SET role = 'tenant_user' WHERE role = 'admin'")
     op.execute("UPDATE users SET role = 'god_admin' WHERE role = 'user'")
 
+    # batch_alter_table re-applies the naming convention prefix to any
+    # constraint name passed in; pass the bare ``role_allowed`` so the
+    # final name resolves to ``ck_users_role_allowed`` (matching the
+    # slice-3 migration's ``op.f("ck_users_role_allowed")``).
     with op.batch_alter_table("users") as batch_op:
-        batch_op.drop_constraint("ck_users_role_allowed", type_="check")
+        batch_op.drop_constraint("role_allowed", type_="check")
         batch_op.create_check_constraint(
             "role_allowed",
             "role IN ('tenant_user','god_admin')",
@@ -55,7 +59,7 @@ def downgrade() -> None:
     op.execute("UPDATE users SET role = 'user' WHERE role = 'god_admin'")
 
     with op.batch_alter_table("users") as batch_op:
-        batch_op.drop_constraint("ck_users_role_allowed", type_="check")
+        batch_op.drop_constraint("role_allowed", type_="check")
         batch_op.create_check_constraint(
             "role_allowed",
             "role IN ('admin','user')",
