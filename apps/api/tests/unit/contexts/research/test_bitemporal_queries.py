@@ -14,7 +14,7 @@ bitemporal timestamps":
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -24,8 +24,6 @@ from iguanatrader.contexts.research.ports import ResearchFactDraft
 from iguanatrader.contexts.research.repository import ResearchRepository
 from iguanatrader.shared.contextvars import with_tenant_context
 from sqlalchemy.ext.asyncio import AsyncSession
-
-UTC = timezone.utc
 
 # Times anchoring the dual-axis fixtures. T1 < T1_5 < T2 < T2_5.
 T1 = datetime(2024, 4, 25, 10, 0, 0, tzinfo=UTC)
@@ -188,9 +186,7 @@ async def test_supersession_flow_returns_correct_row_per_knowledge_time(
 
         results_at_t1_5 = await repository.as_of("AAPL", T1_5)
         results_at_t2_5 = await repository.as_of("AAPL", T2_5)
-        results_just_before_t2 = await repository.as_of(
-            "AAPL", T2 - timedelta(microseconds=1)
-        )
+        results_just_before_t2 = await repository.as_of("AAPL", T2 - timedelta(microseconds=1))
 
     assert len(results_at_t1_5) == 1
     assert results_at_t1_5[0].value_numeric == Decimal("1.000000000000")

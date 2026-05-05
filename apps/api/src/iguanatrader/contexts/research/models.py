@@ -9,7 +9,7 @@ Per data-model §3.7 + ADR-014 + design D1-D5:
 * :class:`WatchlistConfig` — per-tenant, mutable. Drives ingestion schedule +
   methodology selection.
 * :class:`ResearchFact` — per-tenant, append-only, BITEMPORAL. The cornerstone.
-  Four timestamp columns (effective × recorded) + provenance NOT NULL set +
+  Four timestamp columns (effective x recorded) + provenance NOT NULL set +
   hybrid-payload XOR + value-polymorphism CHECK. Updates blocked at L1
   (slice-3 ORM listener) and L2 (per-table BEFORE UPDATE/DELETE triggers
   emitted by migration ``0003_research_tables``); the only permitted UPDATE
@@ -227,8 +227,7 @@ class WatchlistConfig(Base):
             name="tier_allowed",
         ),
         CheckConstraint(
-            "methodology IN ('three_pillar','canslim','magic_formula',"
-            "'qarp','multi_factor')",
+            "methodology IN ('three_pillar','canslim','magic_formula'," "'qarp','multi_factor')",
             name="methodology_allowed",
         ),
         CheckConstraint(
@@ -350,8 +349,7 @@ class ResearchFact(Base):
         ),
         # At least one value field set.
         CheckConstraint(
-            "value_numeric IS NOT NULL OR value_text IS NOT NULL "
-            "OR value_jsonb IS NOT NULL",
+            "value_numeric IS NOT NULL OR value_text IS NOT NULL " "OR value_jsonb IS NOT NULL",
             name="at_least_one_value",
         ),
         # Hybrid-payload CHECK constraints (per design D3).
@@ -476,8 +474,7 @@ class ResearchBrief(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint(
-            "methodology IN ('three_pillar','canslim','magic_formula',"
-            "'qarp','multi_factor')",
+            "methodology IN ('three_pillar','canslim','magic_formula'," "'qarp','multi_factor')",
             name="methodology_allowed",
         ),
         CheckConstraint(
@@ -629,8 +626,7 @@ class AnalystRating(Base):
             "published_at",
         ),
         CheckConstraint(
-            "rating IN ('strong_buy','buy','hold','sell',"
-            "'strong_sell','withdrawn')",
+            "rating IN ('strong_buy','buy','hold','sell'," "'strong_sell','withdrawn')",
             name="rating_allowed",
         ),
         CheckConstraint(

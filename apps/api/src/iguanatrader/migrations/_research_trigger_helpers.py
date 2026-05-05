@@ -81,8 +81,7 @@ def _full_lock_delete(table: str) -> str:
 
 def _research_facts_update_trigger() -> str:
     other_columns_changed = " OR ".join(
-        f"OLD.{col} IS NOT NEW.{col}"
-        for col in _RESEARCH_FACTS_NON_RECORDED_TO_COLUMNS
+        f"OLD.{col} IS NOT NEW.{col}" for col in _RESEARCH_FACTS_NON_RECORDED_TO_COLUMNS
     )
     return (
         "CREATE TRIGGER trg_research_facts_no_update "
@@ -111,7 +110,11 @@ def _research_facts_delete_trigger() -> str:
 #: Order: full-lock triggers for the three "no exception" tables, then
 #: research_facts narrow-exception triggers.
 SQLITE_TRIGGER_SQL: tuple[str, ...] = (
-    *(stmt for table in FULLY_APPEND_ONLY_TABLES for stmt in (_full_lock_update(table), _full_lock_delete(table))),
+    *(
+        stmt
+        for table in FULLY_APPEND_ONLY_TABLES
+        for stmt in (_full_lock_update(table), _full_lock_delete(table))
+    ),
     _research_facts_update_trigger(),
     _research_facts_delete_trigger(),
 )

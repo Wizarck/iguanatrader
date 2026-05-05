@@ -34,13 +34,10 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-
 from iguanatrader.migrations._research_trigger_helpers import (
     FULLY_APPEND_ONLY_TABLES as _FULLY_APPEND_ONLY_TABLES,
 )
-from iguanatrader.migrations._research_trigger_helpers import (
-    SQLITE_TRIGGER_SQL,
-)
+from iguanatrader.migrations._research_trigger_helpers import SQLITE_TRIGGER_SQL
 
 revision: str = "0003"
 down_revision: str | None = "0002"
@@ -52,17 +49,16 @@ depends_on: str | Sequence[str] | None = None
 # Append-only L2 trigger DDL — dialect-aware
 # ---------------------------------------------------------------------------
 # SQLite trigger DDL is centralised in
-# ``_0003_research_tables_helpers.SQLITE_TRIGGER_SQL`` so tests can import
-# the same DDL the migration emits (tests use Base.metadata.create_all
-# rather than running the full Alembic chain).
+# ``iguanatrader.migrations._research_trigger_helpers.SQLITE_TRIGGER_SQL``
+# so tests can import the same DDL the migration emits (tests use
+# Base.metadata.create_all rather than running the full Alembic chain).
 # ---------------------------------------------------------------------------
 
 
 def _emit_postgres_full_lock_triggers(table: str) -> None:
     """Postgres equivalent — RAISE EXCEPTION via plpgsql."""
     fn_name = f"trg_{table}_block_mutation"
-    op.execute(
-        f"""
+    op.execute(f"""
         CREATE OR REPLACE FUNCTION {fn_name}() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
@@ -70,28 +66,22 @@ def _emit_postgres_full_lock_triggers(table: str) -> None:
             RETURN NULL;
         END;
         $$;
-        """
-    )
-    op.execute(
-        f"""
+        """)
+    op.execute(f"""
         CREATE TRIGGER trg_{table}_no_update
         BEFORE UPDATE ON {table}
         FOR EACH ROW EXECUTE FUNCTION {fn_name}();
-        """
-    )
-    op.execute(
-        f"""
+        """)
+    op.execute(f"""
         CREATE TRIGGER trg_{table}_no_delete
         BEFORE DELETE ON {table}
         FOR EACH ROW EXECUTE FUNCTION {fn_name}();
-        """
-    )
+        """)
 
 
 def _emit_postgres_research_facts_triggers() -> None:
     """Postgres counterpart — narrow recorded_to exception via plpgsql."""
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION trg_research_facts_guard_update() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
@@ -126,32 +116,25 @@ def _emit_postgres_research_facts_triggers() -> None:
             RAISE EXCEPTION 'append-only: only recorded_to NULL->ts supersession permitted on research_facts';
         END;
         $$;
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE TRIGGER trg_research_facts_no_update
         BEFORE UPDATE ON research_facts
         FOR EACH ROW EXECUTE FUNCTION trg_research_facts_guard_update();
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE OR REPLACE FUNCTION trg_research_facts_block_delete() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
             RAISE EXCEPTION 'append-only: DELETE on research_facts forbidden';
         END;
         $$;
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE TRIGGER trg_research_facts_no_delete
         BEFORE DELETE ON research_facts
         FOR EACH ROW EXECUTE FUNCTION trg_research_facts_block_delete();
-        """
-    )
+        """)
 
 
 # ---------------------------------------------------------------------------
@@ -294,8 +277,7 @@ def upgrade() -> None:
             name=op.f("ck_watchlist_configs_tier_allowed"),
         ),
         sa.CheckConstraint(
-            "methodology IN ('three_pillar','canslim','magic_formula',"
-            "'qarp','multi_factor')",
+            "methodology IN ('three_pillar','canslim','magic_formula'," "'qarp','multi_factor')",
             name=op.f("ck_watchlist_configs_methodology_allowed"),
         ),
         sa.CheckConstraint(
@@ -378,8 +360,7 @@ def upgrade() -> None:
             name=op.f("ck_research_facts_recorded_temporal_sanity"),
         ),
         sa.CheckConstraint(
-            "value_numeric IS NOT NULL OR value_text IS NOT NULL "
-            "OR value_jsonb IS NOT NULL",
+            "value_numeric IS NOT NULL OR value_text IS NOT NULL " "OR value_jsonb IS NOT NULL",
             name=op.f("ck_research_facts_at_least_one_value"),
         ),
         sa.CheckConstraint(
@@ -495,8 +476,7 @@ def upgrade() -> None:
             name=op.f("ck_research_briefs_version_positive"),
         ),
         sa.CheckConstraint(
-            "methodology IN ('three_pillar','canslim','magic_formula',"
-            "'qarp','multi_factor')",
+            "methodology IN ('three_pillar','canslim','magic_formula'," "'qarp','multi_factor')",
             name=op.f("ck_research_briefs_methodology_allowed"),
         ),
         sa.CheckConstraint(
@@ -632,8 +612,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.CheckConstraint(
-            "rating IN ('strong_buy','buy','hold','sell',"
-            "'strong_sell','withdrawn')",
+            "rating IN ('strong_buy','buy','hold','sell'," "'strong_sell','withdrawn')",
             name=op.f("ck_analyst_ratings_rating_allowed"),
         ),
         sa.CheckConstraint(

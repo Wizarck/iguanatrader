@@ -16,7 +16,7 @@ we assert the lifted class, not the underlying driver class.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -34,8 +34,6 @@ from iguanatrader.shared.contextvars import with_tenant_context
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-UTC = timezone.utc
 
 T1 = datetime(2024, 4, 25, 10, 0, 0, tzinfo=UTC)
 
@@ -398,9 +396,7 @@ async def test_orm_update_on_research_fact_blocked_by_l1(
     tenant_id = seeded_world["tenant_id"]
 
     async with with_tenant_context(tenant_id):
-        await repository.insert_fact(
-            _valid_draft(source_id="sec_edgar", universe_id=universe_id)
-        )
+        await repository.insert_fact(_valid_draft(source_id="sec_edgar", universe_id=universe_id))
         await with_session.commit()
 
         loaded = (await with_session.execute(select(ResearchFact))).scalar_one()
@@ -458,9 +454,7 @@ async def test_supersede_recorded_to_permitted_by_narrow_trigger_exception(
         # Re-read directly via raw SQL to confirm the update landed.
         row = (
             await with_session.execute(
-                text(
-                    "SELECT recorded_to FROM research_facts WHERE id = :id"
-                ),
+                text("SELECT recorded_to FROM research_facts WHERE id = :id"),
                 {"id": str(inserted.id)},
             )
         ).first()
