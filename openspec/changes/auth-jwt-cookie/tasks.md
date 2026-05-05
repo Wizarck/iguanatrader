@@ -1,8 +1,11 @@
 ## 1. Backend setup
 
-- [ ] 1.1 Add runtime deps to `apps/api/pyproject.toml`: `pyjwt[crypto]>=2.8`, `argon2-cffi>=23.1`, `slowapi>=0.1.9`. Lock via the `regenerate-lock.yml` workflow.
-- [ ] 1.2 Add dev dep `httpx>=0.27` (FastAPI test client) if not already present from slice 3.
-- [ ] 1.3 Add module-level Argon2 parameter constants to a new file `apps/api/src/iguanatrader/api/__init__.py` (or reuse existing scaffolding from slice 3): `ARGON2_TIME_COST=3`, `ARGON2_MEMORY_KIB=65536`, `ARGON2_PARALLELISM=4`, `ARGON2_HASH_LEN=32`, `ARGON2_SALT_LEN=16`. Each is overridable via env var (`IGUANATRADER_ARGON2_*`).
+- [ ] 1.1 Add auth-specific runtime deps to root `pyproject.toml`: `pyjwt[crypto]>=2.8`, `argon2-cffi>=23.1`, `slowapi>=0.1.9`.
+- [ ] 1.2 Add dev dep `httpx>=0.27` (FastAPI test client).
+- [ ] 1.3 Add module-level Argon2 parameter constants to `apps/api/src/iguanatrader/api/__init__.py` (new file): `ARGON2_TIME_COST=3`, `ARGON2_MEMORY_KIB=65536`, `ARGON2_PARALLELISM=4`, `ARGON2_HASH_LEN=32`, `ARGON2_SALT_LEN=16`. Each is overridable via env var (`IGUANATRADER_ARGON2_*`).
+- [ ] 1.4 Add **FastAPI foundation runtime deps** to root `pyproject.toml` (slice 4 ships these as a **pre-pattern**; slice 5 `api-foundation-rfc7807` later layers RFC 7807 exception handlers + dynamic-discovery + OpenAPI typegen on top, but does NOT remove): `fastapi>=0.115`, `pydantic>=2.9`, `pydantic[email]` extras, `email-validator>=2.0`, `structlog>=24.4`, `python-multipart>=0.0.9` (FastAPI form-data parsing), `uvicorn[standard]>=0.30` (dev / test ASGI runtime). Document in the slice 4 PR description as "FastAPI foundation pre-pattern; slice 5 follow-up filed."
+- [ ] 1.5 Create minimal FastAPI app factory at `apps/api/src/iguanatrader/api/app.py`: `def create_app() -> FastAPI` returning an app with the slowapi `Limiter` attached to `app.state.limiter` and the `auth_router` registered manually (`app.include_router(auth_router, prefix="/api/v1")`). Slice 5 will refactor router registration to dynamic discovery via `pkgutil.iter_modules`. Wire structlog config import at module top so test fixtures get JSON logs out of the box. Add a `__main__.py` shim so `python -m iguanatrader.api` boots uvicorn for ad-hoc smoke testing (used by 7.6 manual smoke).
+- [ ] 1.6 Lock root `poetry.lock` via the `.github/workflows/regenerate-lock.yml` workflow_dispatch trigger (per gotcha #18 local poetry is broken). Pull the regenerated lock back to the branch before continuing to group 2.
 
 ## 2. Backend — auth primitives
 
