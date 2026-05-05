@@ -36,10 +36,10 @@
 
 ## 5. API routes + SSE + CLI + DTOs
 
-- [ ] 5.1 Create `apps/api/src/iguanatrader/api/dtos/approvals.py` with Pydantic v2 models: `ApprovalRequest`, `ApprovalDecision`, `ApprovalCommandResult`, `IncomingCommandDto` (the dashboard's POST shape). Wired into the OpenAPI schema; typegen pipeline emits TS interfaces in `@iguanatrader/shared-types` on next CI push.
-- [ ] 5.2 Create `apps/api/src/iguanatrader/api/routes/approvals.py` exporting top-level `router: APIRouter`. Endpoints: `GET /approvals` (list pending for caller's tenant), `POST /approvals/{id}/approve`, `POST /approvals/{id}/reject`. Auth via slice-4 `get_current_user` dep. Bodies use the new DTOs. Errors: routes only `raise IguanaError` subclasses; the slice-5 global handler renders RFC 7807. No `_problem_response` helpers.
-- [ ] 5.3 Create `apps/api/src/iguanatrader/api/sse/approvals.py` exporting `router: APIRouter` with `GET /approvals/stream` yielding `StreamingResponse` over `MessageBus` subscriptions to `approval.request.created` + `approval.decision.recorded` events. Tenant-scoped via `contextvars` (only events matching the caller's tenant cross the wire).
-- [ ] 5.4 Create `apps/api/src/iguanatrader/cli/approval.py` exporting top-level `app: typer.Typer` with subcommands `list` (pending requests for tenant), `audit <request_id>` (full chain: request + decision row), `sweep-expired` (manual timeout sweeper, will be cron-scheduled by slice O2). Auto-discovered by the slice-5 CLI scaffold.
+- [x] 5.1 `apps/api/src/iguanatrader/api/dtos/approvals.py` — `ApprovalRequest`, `ApprovalDecision`, `ApprovalCommandResult`, `IncomingCommandDto`, `RejectionRequest`. All Pydantic v2 with `extra="forbid"`; typegen pipeline auto-emits TS interfaces.
+- [x] 5.2 `apps/api/src/iguanatrader/api/routes/approvals.py` — auto-discovered. `GET /approvals`, `POST /approvals/{id}/approve`, `POST /approvals/{id}/reject`. Routes funnel through `command_handler.dispatch` (FR37 uniformity) so the dashboard channel uses the same pipeline as Telegram + Hermes.
+- [x] 5.3 `apps/api/src/iguanatrader/api/sse/approvals.py` — auto-discovered. `GET /api/v1/stream/approvals` subscribes to `ApprovalProposal{Approved,Rejected,TimedOut}` events on the process-wide bus and renders SSE frames. Tenant scoping inherits from the `tenant_id_var` set by `get_current_user`.
+- [x] 5.4 `apps/api/src/iguanatrader/cli/approval.py` — auto-discovered. Subcommands `list`, `audit <request_id>`, `sweep-expired`. Heavy imports lazy per gotcha #29. Plus `contexts/approval/bootstrap.py` — process-wide `MessageBus` singleton + `ApprovalService` factory wired into routes/SSE/CLI.
 
 ## 6. Tests
 
