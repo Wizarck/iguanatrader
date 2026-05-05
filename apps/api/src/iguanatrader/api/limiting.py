@@ -28,6 +28,7 @@ import structlog
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.datastructures import State
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 log = structlog.get_logger("iguanatrader.api.limiting")
@@ -87,10 +88,14 @@ class BufferLoginEmailMiddleware:
         body = await self._read_body(receive)
         email = self._extract_email(scope, body)
 
-        # Stash on scope.state-equivalent so request.state.login_email reads
-        # it inside FastAPI handlers + the slowapi key_func.
-        state = scope.setdefault("state", {})
-        state["login_email"] = email
+        # Stash on scope["state"] so ``request.state.login_email`` reads
+        # it inside FastAPI handlers + the slowapi key_func. Starlette
+        # expects scope["state"] to be a :class:`State` instance — using
+        # a plain dict here breaks attribute access downstream.
+        existing_state = scope.get("state")
+        if not isinstance(existing_state, State):
+            scope["state"] = State()
+        scope["state"].login_email = email
 
         # Replace receive() so the downstream app sees the buffered body
         # exactly once and then http.disconnect. Use a flag closure

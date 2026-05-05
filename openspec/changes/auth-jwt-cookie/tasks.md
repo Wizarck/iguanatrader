@@ -27,14 +27,14 @@
 
 ## 4. Backend — integration + property tests
 
-- [ ] 4.1 Create `apps/api/tests/integration/test_auth_flow.py`: pytest-asyncio fixture `seeded_tenant_user` that inserts a Tenant + User (Argon2id hash of known plaintext). Tests: login success → cookie set → /me → logout → /me 401. Asserts cookie flags (`HttpOnly`, `Secure`, `SameSite=Strict`, `Max-Age=604800`). Asserts cookie domain unset.
-- [ ] 4.2 Add `test_auth_flow.py::test_login_wrong_password_returns_401_uniform_with_not_found` (timing parity probe — soft assertion that durations are within 50ms tolerance).
-- [ ] 4.3 Add `test_auth_flow.py::test_login_rate_limited_after_5_attempts`: hammer 6 calls within 60s; assert 6th returns 429 with `Retry-After`. Use `slowapi`'s in-memory store (no Redis dep for MVP).
-- [ ] 4.4 Add `test_auth_flow.py::test_zero_tenant_bootstrap_returns_503`: drop all Tenant rows, call `/login`, assert 503 + Problem Detail body shape.
-- [ ] 4.5 Add `test_auth_flow.py::test_jwt_rotation_attaches_set_cookie_on_near_expiry_request`: encode a JWT with `exp = now + 25min`; call `/me` with that cookie; assert response has `Set-Cookie` header with a fresh JWT (decoded, has fresh `exp`).
-- [ ] 4.6 Add `test_auth_flow.py::test_7day_ceiling_returns_401_even_with_valid_jwt`: encode JWT whose `login_at` claim is 7d 1min ago; assert 401.
-- [ ] 4.7 Add `test_auth_flow.py::test_role_gating`: create a `tenant_user` and a `god_admin`; create a stub route guarded by `requires_role(Role.god_admin)`; tenant_user gets 403; god_admin gets 200.
-- [ ] 4.8 Create `apps/api/tests/property/test_jwt_round_trip.py` with Hypothesis: `@given(st.uuids(), st.uuids(), st.sampled_from(Role))` → encode → decode → assert payload preserved. 100 examples.
+- [x] 4.1 Create `apps/api/tests/integration/test_auth_flow.py`: pytest-asyncio fixture `seeded_tenant_user` that inserts a Tenant + User (Argon2id hash of known plaintext). Tests: login success → cookie set → /me → logout → /me 401. Asserts cookie flags (`HttpOnly`, `Secure`, `SameSite=Strict`, `Max-Age=604800`). Asserts cookie domain unset.
+- [x] 4.2 Add `test_auth_flow.py::test_login_wrong_password_returns_401_uniform_with_not_found` (timing parity probe — soft assertion that durations are within 50ms tolerance).
+- [x] 4.3 Add `test_auth_flow.py::test_login_rate_limited_after_5_attempts`: hammer 6 calls within 60s; assert 6th returns 429 with `Retry-After`. Use `slowapi`'s in-memory store (no Redis dep for MVP).
+- [x] 4.4 Add `test_auth_flow.py::test_zero_tenant_bootstrap_returns_503`: drop all Tenant rows, call `/login`, assert 503 + Problem Detail body shape.
+- [x] 4.5 Add `test_auth_flow.py::test_jwt_rotation_attaches_set_cookie_on_near_expiry_request`: encode a JWT with `exp = now + 25min`; call `/me` with that cookie; assert response has `Set-Cookie` header with a fresh JWT (decoded, has fresh `exp`).
+- [x] 4.6 Add `test_auth_flow.py::test_7day_ceiling_returns_401_even_with_valid_jwt`: encode JWT whose `login_at` claim is 7d 1min ago; assert 401.
+- [x] 4.7 Add `test_auth_flow.py::test_role_gating`: create a `tenant_user` and a `god_admin`; create a stub route guarded by `requires_role(Role.god_admin)`; tenant_user gets 403; god_admin gets 200.
+- [x] 4.8 Create `apps/api/tests/property/test_jwt_round_trip.py` with Hypothesis: `@given(st.uuids(), st.uuids(), st.sampled_from(Role))` → encode → decode → assert payload preserved. 100 examples.
 
 ## 5. Frontend — login surface
 
