@@ -45,9 +45,9 @@
 
 ## 6. Documentation + gotchas
 
-- [ ] 6.1 Append to `docs/gotchas.md`: gotcha #24 — Argon2id parameter rationale (D4); gotcha #25 — cookie Secure flag dev override (`IGUANATRADER_DEV_INSECURE_COOKIE=1`); gotcha #26 — JWT secret rotation procedure (link to runbook); gotcha #27 — SameSite=Strict blocks cross-site deep links (acceptable internal-tool trade-off); gotcha #28 — `get_current_user` ContextVar bootstrap-vs-isolated boundary (D7).
-- [ ] 6.2 Create `docs/runbooks/auth-secret-rotation.md`: step-by-step "rotate IGUANATRADER_JWT_SECRET" procedure (gen new 32-byte secret, update SOPS-encrypted env, restart API, expect all sessions to invalidate, expect users to redirect to `/login`).
-- [ ] 6.3 Update `apps/api/README.md` (or create) with the "first-run bootstrap" steps: install + `iguanatrader admin bootstrap-tenant` (TBD until slice T4 lands the CLI; for MVP, document the pytest fixture path + a SQL snippet operators can run manually).
+- [x] 6.1 Append to `docs/gotchas.md`: gotcha #24 — Argon2id parameter rationale (D4); gotcha #25 — cookie Secure flag dev override (`IGUANATRADER_DEV_INSECURE_COOKIE=1`); gotcha #26 — JWT secret rotation procedure (link to runbook); gotcha #27 — SameSite=Strict blocks cross-site deep links (acceptable internal-tool trade-off); gotcha #28 — `get_current_user` ContextVar bootstrap-vs-isolated boundary (D7).
+- [x] 6.2 Create `docs/runbooks/auth-secret-rotation.md`: step-by-step "rotate IGUANATRADER_JWT_SECRET" procedure (gen new 32-byte secret, update SOPS-encrypted env, restart API, expect all sessions to invalidate, expect users to redirect to `/login`).
+- [x] 6.3 Update `apps/api/README.md` (or create) with the "first-run bootstrap" steps: install + `iguanatrader admin bootstrap-tenant` (TBD until slice T4 lands the CLI; for MVP, document the pytest fixture path + a SQL snippet operators can run manually).
 
 ## 7. Pre-merge verification
 

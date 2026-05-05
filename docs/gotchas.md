@@ -352,6 +352,66 @@ Per-consumer the right invocation lives somewhere durable (Makefile target, runb
 
 **Status**: documented as design contract 2026-05-01. CI lint rule is a slice O1 follow-up.
 
+## 24. Argon2id parameters are encoded INTO the hash — increasing cost is forward-compatible
+
+**Surfaced**: 2026-05-05 (slice 4, design D4).
+
+**Symptom**: After bumping `IGUANATRADER_ARGON2_MEMORY_KIB` from 65536 to 131072 on a redeploy, you wonder whether existing user hashes will continue to verify. Easy to assume they need a rehash.
+
+**Root cause**: Argon2id encodes its parameters (`t=`, `m=`, `p=`) into the hash string itself (`$argon2id$v=19$m=65536,t=3,p=4$<salt>$<digest>`). The verify call uses the params from the hash, NOT the live `PasswordHasher` instance's params. So old hashes verify with their original cost; new hashes use the bumped cost.
+
+**Workaround**: Free to bump cost upwards at any time — old sessions continue to work, freshly-set passwords inherit the new cost. To force-rotate everyone, invalidate sessions (rotate `IGUANATRADER_JWT_SECRET` per runbook) and rely on the next-login Argon2 verify-then-rehash path (slice 4 doesn't auto-rehash on login; deferred to slice O1 if cost-bump becomes routine).
+
+**Status**: documented 2026-05-05. Auto-rehash on login is a slice O1 follow-up.
+
+## 25. Cookie `Secure` flag is on by default — local HTTP dev needs `IGUANATRADER_DEV_INSECURE_COOKIE=1`
+
+**Surfaced**: 2026-05-05 (slice 4, design D2).
+
+**Symptom**: Running `python -m iguanatrader.api` against `http://127.0.0.1:8000` and POSTing to `/api/v1/auth/login` from a curl-style client returns 200 + Set-Cookie, but the next request omits the cookie. Or: pytest integration tests configured against `http://test` find that the seeded session cookie doesn't travel back.
+
+**Root cause**: `is_secure_cookie()` defaults to `True` (production-safe). RFC 6265 forbids the user-agent from sending a `Secure`-flagged cookie over plain HTTP. The browser/test client silently drops the cookie on the first non-HTTPS request.
+
+**Workaround**: Set `IGUANATRADER_DEV_INSECURE_COOKIE=1` in the local dev environment to flip the flag off. The pytest integration suite uses `base_url="https://test"` instead — Playwright/httpx with ASGITransport doesn't actually do TLS; the HTTPS scheme is purely a hint to the user-agent's cookie policy. NEVER set this in prod.
+
+**Status**: documented 2026-05-05. Boot-time guard that refuses `IGUANATRADER_DEV_INSECURE_COOKIE=1` when `IGUANATRADER_ENV=production` is a slice O1 follow-up.
+
+## 26. JWT secret rotation invalidates ALL sessions (no graceful handoff)
+
+**Surfaced**: 2026-05-05 (slice 4, design D1 + risk).
+
+**Symptom**: Operator rotates `IGUANATRADER_JWT_SECRET` on the host (per runbook), restarts the API, and every existing user is suddenly logged out. No warning, no email, just the next request returns 401.
+
+**Root cause**: Single-secret HS256 means there is no "old + new key" overlap window. Every token in flight that was signed with the old secret fails the signature check immediately on rotation. There is no JWK set, no kid claim, no graceful key-handoff.
+
+**Workaround**: Treat rotation as a planned outage. Procedure: [docs/runbooks/auth-secret-rotation.md](runbooks/auth-secret-rotation.md). The user-facing flow is `auth.session.invalid_signature` log event → 401 from `/me` → `hooks.server.ts` 302 to `/login?redirect_to=<originating>` → re-auth → resume. No data loss; just a forced re-login. v2 SaaS multi-tenant may need a JWK set with overlap window.
+
+**Status**: documented 2026-05-05; runbook lives at `docs/runbooks/auth-secret-rotation.md`.
+
+## 27. `SameSite=Strict` blocks the cookie on cross-site deep-links — accepted internal-tool trade-off
+
+**Surfaced**: 2026-05-05 (slice 4, design D2 + risk).
+
+**Symptom**: User receives a Telegram message with `https://iguanatrader.local/portfolio?strategy=donchian-swing`; clicks → `hooks.server.ts` redirects to `/login` even though they have an active session in another tab.
+
+**Root cause**: `SameSite=Strict` instructs the user-agent to OMIT the cookie on any request whose initiator is not same-origin with the destination. A click from Telegram (third-party origin) → `iguanatrader.local` is "cross-site" by the strict definition, so the cookie is withheld; FastAPI sees no cookie, returns 401, SvelteKit's hook bounces to `/login`.
+
+**Workaround**: Accepted trade-off for the MVP single-user internal tool. The deep-link UX path is: Telegram CTA opens the dashboard root (`/`) → user lands authenticated → re-navigates to the deep link. Documented in `docs/ux/j0.md`. v2 SaaS may revisit (`SameSite=Lax` would allow GET-from-link but break form-action security; the right fix is OAuth-style top-level redirect dance, out of scope for MVP).
+
+**Status**: documented 2026-05-05 as known UX limitation. Revisit at v2 SaaS planning.
+
+## 28. `get_current_user` runs the user lookup with `tenant_id_var` UNSET (bootstrap path)
+
+**Surfaced**: 2026-05-05 (slice 4, design D7).
+
+**Symptom**: A developer adds a database query inside `get_current_user` (e.g., to load a user's role assignments) BEFORE the `tenant_id_var.set(...)` line. The new query returns rows from the wrong tenant, or all tenants, depending on the call site.
+
+**Root cause**: `get_current_user` is the bootstrap dependency that establishes tenant scope for the request. The very first SELECT (lookup user by JWT subject) MUST run with `tenant_id_var` UNSET so the slice-3 `tenant_listener` applies no filter — otherwise we'd need to know the tenant before we can load the user, which is circular. The current implementation has a single SELECT in the bootstrap path; everything after `tenant_id_var.set(user.tenant_id)` is tenant-isolated.
+
+**Workaround**: Don't add queries to the bootstrap path. If you need additional joins (role table, feature flags, etc.), do them AFTER `tenant_id_var.set(...)` and rely on the listener. If the join MUST happen on the bootstrap path (e.g., a `User` join to `Tenant` for an active-tenant check), the developer MUST: (a) document inline why; (b) ensure the join's `WHERE` clause references `tenant_id` explicitly so cross-tenant leakage is impossible regardless of the listener's behaviour. Code comments in `apps/api/src/iguanatrader/api/deps.py::get_current_user` document the boundary.
+
+**Status**: documented 2026-05-05. Linter rule that flags ORM SELECT inside `get_current_user` is a slice O1 follow-up.
+
 ---
 
 ## Format for new entries
