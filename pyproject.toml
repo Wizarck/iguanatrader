@@ -193,6 +193,7 @@ pythonpath = ["apps/api/src"]
 markers = [
     "integration: integration tests (may hit DB / network)",
     "property: hypothesis property-based tests",
+    "ci_blocking: must pass for CI to accept the build (NFR-R6 + future gates)",
 ]
 filterwarnings = [
     "error",

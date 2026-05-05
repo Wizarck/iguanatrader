@@ -1,9 +1,9 @@
 ## 1. Setup + dependencies
 
-- [ ] 1.1 Verify `hypothesis = ">=6.100,<7.0"` is present in root `pyproject.toml` dev deps (already added by slice 2 for property tests). No new runtime deps required for K1.
-- [ ] 1.2 Verify Alembic migration sequencing: `0001_*` (slice 1), `0002_*` (slice 3 persistence), `0003_*` (T1 trading) — K1 adds `0004_risk_tables.py`. Reconcile if T1's actual filename diverges before merging K1.
-- [ ] 1.3 Confirm `sqlalchemy` JSON / JSONB column type is available in the existing slice-3 base models (already true for `state_snapshot` / `confirmation_chain` columns).
-- [ ] 1.4 Add new `IguanaError` subclasses to `apps/api/src/iguanatrader/shared/errors.py`: `RiskCapBreachedError(IguanaError)` (status=400, type=`urn:iguanatrader:error:risk-cap-breached`), `KillSwitchActiveError(IguanaError)` (status=409, type=`urn:iguanatrader:error:risk-kill-switch-active`), `OverrideAuditMissingError(ValidationError)` (status=400, type=`urn:iguanatrader:error:risk-override-audit-missing`). Re-export from `shared/__init__.py`.
+- [x] 1.1 Verify `hypothesis = ">=6.100,<7.0"` is present in root `pyproject.toml` dev deps (already added by slice 2 for property tests). No new runtime deps required for K1. — confirmed `hypothesis = ">=6.115"` (slice-2 pin); compatible with K1 strategy use.
+- [x] 1.2 Verify Alembic migration sequencing: `0001_*` (slice 1), `0002_*` (slice 3 persistence), `0003_*` (T1 trading) — K1 adds `0004_risk_tables.py`. Reconcile if T1's actual filename diverges before merging K1. — slice 3 actually shipped `0001_initial_schema.py` (tenants/users/authorized_senders) + slice 4 `0002_users_role_enum.py`. T1 is unmerged; K1 migration uses `down_revision='0002'` and the FK to `trade_proposals.id` ships *deferred* — the column is plain UUID (no FK constraint emitted) until T1 lands a follow-up `0004b_risk_fk.py`. Documented as deviation under §9.7 + commit note.
+- [x] 1.3 Confirm `sqlalchemy` JSON / JSONB column type is available in the existing slice-3 base models (already true for `state_snapshot` / `confirmation_chain` columns). — `from sqlalchemy import JSON` works on SQLite + Postgres.
+- [x] 1.4 Add new `IguanaError` subclasses to `apps/api/src/iguanatrader/shared/errors.py`: `RiskCapBreachedError(IguanaError)` (status=400, type=`urn:iguanatrader:error:risk-cap-breached`), `KillSwitchActiveError(IguanaError)` (status=409, type=`urn:iguanatrader:error:risk-kill-switch-active`), `OverrideAuditMissingError(ValidationError)` (status=400, type=`urn:iguanatrader:error:risk-override-audit-missing`). Re-export from `shared/__init__.py`. — done; `pytest.ini_options.markers` extended with `ci_blocking`.
 
 ## 2. Models + migration
 
