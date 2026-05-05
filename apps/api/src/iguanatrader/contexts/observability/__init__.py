@@ -38,3 +38,11 @@ events declared in :mod:`.events`, and the DTOs in
 """
 
 from __future__ import annotations
+
+# Eager import of the ORM models so :data:`iguanatrader.persistence.base.Base`
+# registry sees them when the slice-3 tenant listener walks
+# ``Base.registry.mappers``. Without this import, the listener cannot
+# inject the audit_log NULL-tenant filter (per design D8) because the
+# mapper is unknown until the model module is imported by some caller.
+# Side-effect import; the symbols are re-exported below for callers.
+from iguanatrader.contexts.observability import models as _models  # noqa: F401
