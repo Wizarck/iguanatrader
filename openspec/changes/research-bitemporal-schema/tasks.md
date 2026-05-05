@@ -1,8 +1,8 @@
 ## 1. Setup + dependencies
 
-- [ ] 1.1 Verify R1 prerequisites are merged on main: slice 5 `api-foundation-rfc7807` archived (check `openspec/changes/archive/2026-05-05-api-foundation-rfc7807/` exists), slice 3 `persistence-tenant-enforcement` archived. If either is missing, halt and surface as `❓ blocked-by-spec`.
-- [ ] 1.2 Confirm no new external runtime deps required — this slice consumes only SQLAlchemy 2.x, Alembic, Pydantic v2, structlog, all already in root `pyproject.toml` since slice 1. If a candidate dep emerges during implementation, document in `proposal.md` Impact section + halt for human review.
-- [ ] 1.3 Confirm migration number `0002` is the next available slot (check `apps/api/src/iguanatrader/migrations/versions/` — slice 3 shipped `0001`; nothing else expected in main). If a `0002_*.py` already exists from a parallel slice, halt — Wave 2 ordering must be coordinated.
+- [x] 1.1 Verify R1 prerequisites are merged on main: slice 5 `api-foundation-rfc7807` archived (check `openspec/changes/archive/2026-05-05-api-foundation-rfc7807/` exists), slice 3 `persistence-tenant-enforcement` archived. If either is missing, halt and surface as `❓ blocked-by-spec`. **DONE** — both archives present.
+- [x] 1.2 Confirm no new external runtime deps required — this slice consumes only SQLAlchemy 2.x, Alembic, Pydantic v2, structlog, all already in root `pyproject.toml` since slice 1. If a candidate dep emerges during implementation, document in `proposal.md` Impact section + halt for human review. **DONE** — no new deps.
+- [x] 1.3 Confirm migration number `0002` is the next available slot (check `apps/api/src/iguanatrader/migrations/versions/` — slice 3 shipped `0001`; nothing else expected in main). If a `0002_*.py` already exists from a parallel slice, halt — Wave 2 ordering must be coordinated. **DEVIATION** — slice 4 already shipped `0002_users_role_enum.py` post-tasks-authoring; this slice uses `0003_research_tables.py` with `down_revision='0002'`. Documented in this tasks file + commit body.
 
 ## 2. ORM models + Alembic migration
 
