@@ -1,10 +1,13 @@
 r"""Auth routes — ``POST /login``, ``POST /logout``, ``GET /me``.
 
-The router is mounted at ``/api/v1/auth`` via the manual
-``app.include_router(...)`` call in :mod:`iguanatrader.api.app` (slice 5
-``api-foundation-rfc7807`` will refactor that to dynamic discovery).
+The router is mounted at ``/api/v1/auth`` via the dynamic-discovery
+loop in :mod:`iguanatrader.api.routes` (slice 5
+``api-foundation-rfc7807``). Slice 4 used a manual
+``app.include_router(...)`` call; slice 5 picks the router up
+automatically because this module exports a top-level
+``router: APIRouter``.
 
-Design references (from ``openspec/changes/auth-jwt-cookie/design.md``):
+Design references (from slice 4 ``openspec/changes/auth-jwt-cookie/design.md``):
 
 * D2 — cookie config (HttpOnly + Secure + SameSite=Strict + 7d Max-Age,
   cookie name ``iguana_session``).
@@ -14,14 +17,17 @@ Design references (from ``openspec/changes/auth-jwt-cookie/design.md``):
   email-not-found branch keeps timing constant (defeats user enumeration).
 * D5 — slowapi 5/min keyed by ``(ip, email)`` — the actual ``key_func``
   + body-buffering middleware live in :mod:`iguanatrader.api.app`.
-* D6 — zero-tenant bootstrap returns 503 with RFC 7807 Problem Detail.
+* D6 — zero-tenant bootstrap returns 503 RFC 7807. Slice 5 design D9
+  canonicalises the type URI to ``urn:iguanatrader:error:not-bootstrapped``
+  via the new :class:`BootstrapNotReadyError` (was URL-form in slice 4).
 * D9 — ``redirect_to`` allow-list at the SvelteKit form-action level;
   FastAPI also applies a defensive check (single leading ``/``, no ``//``,
   no ``://``, no ``\``) — anything that fails falls back to ``/``.
 
 Hard rules per AGENTS.md §4:
 
-* ``application/problem+json`` for every error response.
+* ``application/problem+json`` for every error response (now via the
+  global :class:`IguanaError` handler — routes ``raise``, the handler renders).
 * structlog event names: ``auth.<entity>.<action>``.
 * Email NEVER logged in plaintext — :func:`hash_email_for_log` digests it.
 """
@@ -29,7 +35,6 @@ Hard rules per AGENTS.md §4:
 from __future__ import annotations
 
 import time
-from typing import Any
 
 import structlog
 import structlog.contextvars
@@ -56,6 +61,7 @@ from iguanatrader.api.deps import (
 from iguanatrader.api.dtos.auth import LoginRequest, LoginResponse, MeResponse
 from iguanatrader.api.limiting import limiter
 from iguanatrader.persistence import User
+from iguanatrader.shared.errors import AuthError, BootstrapNotReadyError
 
 log = structlog.get_logger("iguanatrader.api.routes.auth")
 
@@ -64,36 +70,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 #: Fixed dummy Argon2id hash used when the supplied email has no matching
 #: ``User`` row. The verify against this hash keeps the response time
 #: constant regardless of whether the email exists, defeating user
-#: enumeration via timing side-channel (per design D4).
+#: enumeration via timing side-channel (per slice 4 design D4).
 #:
 #: Computed once at import time (not at every request) — ``hash_password``
 #: with a randomly-generated plaintext yields a real Argon2id encoded
 #: string with the project's configured params. The plaintext is
 #: discarded; only the hash is retained.
 _DUMMY_PASSWORD_HASH: str = hash_password("not-a-real-user-password-placeholder")
-
-
-def _problem_response(
-    status: int,
-    type_uri: str,
-    title: str,
-    detail: str,
-    extra: dict[str, Any] | None = None,
-) -> JSONResponse:
-    """Return an ``application/problem+json`` response with the given fields."""
-    body: dict[str, Any] = {
-        "type": type_uri,
-        "title": title,
-        "status": status,
-        "detail": detail,
-    }
-    if extra:
-        body.update(extra)
-    return JSONResponse(
-        status_code=status,
-        content=body,
-        media_type="application/problem+json",
-    )
 
 
 def _validate_redirect_to(value: str | None) -> str:
@@ -128,17 +111,18 @@ async def login(
 
     Flow (per spec ``web-authentication`` Requirement 1):
 
-    1. Zero-tenant guard → 503.
+    1. Zero-tenant guard → ``raise BootstrapNotReadyError`` → 503.
     2. Lookup user by email (with ``tenant_id_var`` UNSET — bootstrap path
        — slice-3 listener applies no filter).
     3. Verify password (or against dummy hash if user absent — timing parity).
-    4. On any failure: 401 uniform Problem Detail, emit ``auth.login.failure``.
+    4. On any failure: ``raise AuthError`` → 401 uniform Problem Detail,
+       emit ``auth.login.failure``.
     5. On success: encode JWT, set cookie, return ``LoginResponse``,
        emit ``auth.login.success``.
     """
     email_hash = hash_email_for_log(body.email)
 
-    # 1. Zero-tenant bootstrap guard (D6). Raw SQL via text() — gotcha #23
+    # 1. Zero-tenant bootstrap guard. Raw SQL via text() — gotcha #23
     #    documents the bypass; the slice-3 listener raises on every ORM
     #    SELECT when tenant_id_var is unset (even queries against
     #    non-tenant-scoped tables like ``tenants``). Slice-O1 follow-up
@@ -148,10 +132,7 @@ async def login(
     tenant_count = int(tenant_count_row.n) if tenant_count_row is not None else 0
     if tenant_count == 0:
         log.info("auth.login.bootstrap_required", email_hash=email_hash)
-        return _problem_response(
-            status=503,
-            type_uri="https://iguanatrader.local/problems/not-bootstrapped",
-            title="iguanatrader has no tenants yet",
+        raise BootstrapNotReadyError(
             detail=(
                 "Run `iguanatrader admin bootstrap-tenant <slug>` to create "
                 "the first tenant + admin user."
@@ -174,12 +155,7 @@ async def login(
             email_hash=email_hash,
             reason="email_not_found",
         )
-        return _problem_response(
-            status=401,
-            type_uri="urn:iguanatrader:error:auth",
-            title="Authentication Required",
-            detail="Invalid email or password.",
-        )
+        raise AuthError(detail="Invalid email or password.")
 
     if not verify_password(plaintext, user.password_hash):
         log.info(
@@ -188,12 +164,7 @@ async def login(
             reason="wrong_password",
             user_id=str(user.id),
         )
-        return _problem_response(
-            status=401,
-            type_uri="urn:iguanatrader:error:auth",
-            title="Authentication Required",
-            detail="Invalid email or password.",
-        )
+        raise AuthError(detail="Invalid email or password.")
 
     # 5. Success — encode JWT + set cookie + return LoginResponse.
     now = int(time.time())

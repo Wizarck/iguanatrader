@@ -12,16 +12,20 @@ apps/api/
 ├── Makefile.includes       # Make targets glued into the root Makefile
 ├── scripts/                # Operator-facing scripts (slice 4: none; T4 lands bootstrap-tenant)
 ├── src/iguanatrader/
-│   ├── api/                # FastAPI surface — slice 4 onward
+│   ├── api/                # FastAPI surface
 │   │   ├── __init__.py     # Argon2 parameter constants
 │   │   ├── __main__.py     # `python -m iguanatrader.api` smoke uvicorn
-│   │   ├── app.py          # create_app() factory + slowapi wiring
+│   │   ├── app.py          # create_app() factory + dynamic discovery (slice 5)
 │   │   ├── auth.py         # Argon2id + JWT primitives + Role enum
 │   │   ├── deps.py         # get_current_user + requires_role + get_db
-│   │   ├── dtos/           # Pydantic v2 request/response models
+│   │   ├── dtos/           # Pydantic v2 DTOs (auth, common.Problem)
+│   │   ├── errors.py       # Global IguanaError + Exception handler chain
 │   │   ├── limiting.py     # slowapi Limiter + body-buffer middleware
-│   │   └── routes/         # APIRouter modules (manually included by app.py;
-│   │                       #   slice 5 dynamic-discovers via pkgutil)
+│   │   ├── routes/         # APIRouter modules — auto-discovered (slice 5)
+│   │   └── sse/            # SSE APIRouter modules — auto-discovered
+│   ├── cli/                # Typer auto-discovery scaffold (slice 5; empty)
+│   │   ├── __main__.py     # `python -m iguanatrader.cli` shim
+│   │   └── main.py         # cli_app + _register_subcommands
 │   ├── persistence/        # SQLAlchemy 2.x async + Alembic + listeners
 │   ├── shared/             # Kernel: errors, time, contextvars, money, etc.
 │   └── migrations/versions/ # Alembic migration files
@@ -167,9 +171,55 @@ poetry run pytest apps/api/tests/ \
 | `IGUANATRADER_API_HOST` | `127.0.0.1` | uvicorn bind host (smoke entry only) |
 | `IGUANATRADER_API_PORT` | `8000` | uvicorn bind port (smoke entry only) |
 
+## CLI — operator entrypoint
+
+Slice 5 (`api-foundation-rfc7807`) plants a Typer auto-discovery scaffold; slice 5 itself ships ZERO subcommands. List what's available:
+
+```sh
+poetry run python -m iguanatrader.cli --help
+# or once `poetry install` is done:
+poetry run iguanatrader --help
+```
+
+**Adding a new subcommand**: drop a file `apps/api/src/iguanatrader/cli/<name>.py` exporting a top-level `app: typer.Typer` instance. The discovery loop in `cli/main.py::_register_subcommands` picks it up automatically — no edit to `cli/main.py` is required. Module name `_` is converted to CLI surface `-` (e.g. `bootstrap_tenant.py` → `iguanatrader bootstrap-tenant`). See gotcha #29 — heavy deps MUST be lazy-imported inside command bodies, never at module scope.
+
+## Routes — adding a new family
+
+The same anti-collision pattern applies to HTTP routes (slice 5):
+
+```python
+# apps/api/src/iguanatrader/api/routes/research.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/research", tags=["research"])
+
+
+@router.get("/{symbol}")
+async def get_research(symbol: str) -> dict[str, str]:
+    return {"symbol": symbol}
+```
+
+The discovery loop in `iguanatrader.api.routes.register_routers` mounts every module under `routes/` exporting a top-level `router: APIRouter` at the `/api/v1` prefix automatically. SSE endpoints follow the same shape under `iguanatrader.api.sse` and mount under `/api/v1/stream`. **Don't edit `app.py`** — adding a route family is a single-file change.
+
+## Typed frontend client — `packages/shared-types/`
+
+Slice 5 wires the OpenAPI → TypeScript pipeline. CI regenerates `packages/shared-types/src/index.ts` from `/openapi.json` on every push to a `slice/**` / `feat/**` branch (bot commit, mirroring `regenerate-lock.yml`). For local dev with a running API:
+
+```sh
+# Boot the API first (terminal 1):
+poetry run python -m iguanatrader.api
+
+# Regenerate the types (terminal 2):
+pnpm typegen:from-running-api
+```
+
+This curls `http://127.0.0.1:8000/openapi.json` and runs `openapi-typescript` against it — same pipeline CI runs, just sourced from a manually-running uvicorn instead of one CI booted itself. Useful when iterating on a new DTO without pushing every commit.
+
 ## See also
 
 - [`docs/architecture-decisions.md`](../../docs/architecture-decisions.md) — system-wide ADRs, including auth (D-Auth-1, D-Auth-2).
-- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#28 — slice 4 auth-specific footguns.
+- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#30 — slice 4 + slice 5 footguns.
 - [`docs/runbooks/auth-secret-rotation.md`](../../docs/runbooks/auth-secret-rotation.md) — JWT secret rotation procedure.
+- [`docs/runbooks/api-foundation-typegen.md`](../../docs/runbooks/api-foundation-typegen.md) — recovery playbook when the openapi-types CI workflow fails.
 - [`openspec/changes/auth-jwt-cookie/`](../../openspec/changes/auth-jwt-cookie/) — slice 4 design + spec contract.
+- [`openspec/changes/api-foundation-rfc7807/`](../../openspec/changes/api-foundation-rfc7807/) — slice 5 design + spec contract.

@@ -1,15 +1,40 @@
-name: OpenAPI types regen
+name: OpenAPI types regen + Lighthouse
+
+# Slice 5 (api-foundation-rfc7807) — anti-collision foundation pre-pattern.
+# Runs on every push to a slice/** / feat/** / fix/** / chore/** branch
+# (regen + bot-commit pattern, mirroring regenerate-lock.yml). Also runs
+# on PR + main pushes for sanity (but does NOT bot-commit on main).
+#
+# Two jobs:
+#   1. regen — boot FastAPI on the runner, fetch /openapi.json, regenerate
+#      packages/shared-types/src/index.ts via openapi-typescript, commit +
+#      push the diff if it differs from HEAD.
+#   2. lighthouse — boot pnpm --filter @iguanatrader/web dev + lhci autorun
+#      against http://localhost:5173/login, fail only on a11y < 90 (perf /
+#      best-practices / seo are informational baselines per design D7).
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "slice/**"
+      - "feat/**"
+      - "fix/**"
+      - "chore/**"
   pull_request:
     paths:
-      - 'apps/api/**'
-      - 'packages/shared-types/**'
+      - "apps/api/**"
+      - "apps/web/**"
+      - "packages/shared-types/**"
+      - ".github/workflows/openapi-types.yml"
+      - "lighthouserc.cjs"
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: openapi-types-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   regen:
@@ -17,17 +42,127 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Slice 5 (api-foundation-rfc7807) wires up the real generation
-      # pipeline. Until then the workflow is a no-op that reports n/a so
-      # CI dashboards stay green during slices 1-4.
-      - name: Skip until slice 5
-        if: ${{ hashFiles('apps/api/src/iguanatrader/api/app.py') == '' }}
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install Poetry + Python deps
         run: |
-          echo "::notice::n/a — openapi schema not yet present (slice 5 lands the FastAPI app + generation pipeline)"
-      - name: Regenerate types
-        if: ${{ hashFiles('apps/api/src/iguanatrader/api/app.py') != '' }}
+          pip install poetry
+          poetry install --no-interaction --with dev
+
+      - name: Install pnpm deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Boot FastAPI app in background
+        env:
+          # JWT secret only needs to be a non-empty 32+ char string for the
+          # app to boot; we never sign tokens during this workflow — we
+          # just curl /openapi.json. Reusing GITHUB_TOKEN as a long random
+          # string avoids a separate repo secret.
+          IGUANATRADER_JWT_SECRET: ${{ secrets.GITHUB_TOKEN }}
+          # Root pyproject is `package-mode = false`, so poetry does NOT
+          # install iguanatrader.* into site-packages. uvicorn imports
+          # via PYTHONPATH; pytest reads it from pyproject.toml's
+          # [tool.pytest.ini_options].pythonpath but uvicorn doesn't.
+          PYTHONPATH: apps/api/src
         run: |
-          # Slice 5 fills in: extract /openapi.json from FastAPI, run
-          # `npx openapi-typescript`, diff-check that
-          # packages/shared-types/src/index.ts is up to date, fail if drift.
-          echo "Slice 5 implementation pending — placeholder no-op."
+          poetry run python -m uvicorn iguanatrader.api.app:create_app \
+            --factory --host 127.0.0.1 --port 8000 \
+            > /tmp/uvicorn.log 2>&1 &
+          echo $! > /tmp/uvicorn.pid
+
+          # Wait until /openapi.json is reachable (max 30s).
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/openapi.json -o /tmp/openapi.json; then
+              echo "FastAPI ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          if ! test -s /tmp/openapi.json; then
+            echo "::error::FastAPI failed to boot — uvicorn log follows:"
+            cat /tmp/uvicorn.log || true
+            exit 1
+          fi
+
+      - name: Regenerate packages/shared-types/src/index.ts
+        run: |
+          pnpm --filter @iguanatrader/shared-types exec openapi-typescript \
+            /tmp/openapi.json \
+            -o packages/shared-types/src/index.ts
+
+      - name: Stop FastAPI
+        if: always()
+        run: |
+          if [ -f /tmp/uvicorn.pid ]; then
+            kill "$(cat /tmp/uvicorn.pid)" || true
+          fi
+
+      - name: Commit + push diff if changed
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        run: |
+          if ! git diff --quiet packages/shared-types/src/index.ts; then
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git add packages/shared-types/src/index.ts
+            git commit -m "chore(types): regenerate shared-types from /openapi.json"
+            git push
+          else
+            echo "shared-types already in sync — no changes."
+          fi
+
+      - name: Fail PR if drift detected
+        if: github.event_name == 'pull_request'
+        run: |
+          if ! git diff --quiet packages/shared-types/src/index.ts; then
+            echo "::error::packages/shared-types/src/index.ts is out of sync with /openapi.json. Push the slice branch to trigger the bot regen, or run `pnpm typegen:from-running-api` locally."
+            git diff packages/shared-types/src/index.ts
+            exit 1
+          fi
+
+  lighthouse:
+    name: Lighthouse CI (a11y >= 90)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install pnpm deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Lighthouse CI against pnpm dev
+        # @lhci/cli's `autorun` boots the configured `startServerCommand`,
+        # waits for the URL to respond, runs Lighthouse, and asserts the
+        # thresholds defined in lighthouserc.cjs. Fails only when a11y
+        # drops below 90; perf / best-practices / seo are informational.
+        run: pnpm exec lhci autorun
+
+      - name: Upload Lighthouse artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lhci-report
+          path: .lighthouseci/
+          if-no-files-found: ignore
