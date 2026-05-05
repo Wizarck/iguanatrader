@@ -414,6 +414,68 @@ Per-consumer the right invocation lives somewhere durable (Makefile target, runb
 
 **Status**: workaround in place 2026-05-05; slice-O1 fix tracked.
 
+## 29. CLI subcommands MUST use lazy imports for heavy dependencies
+
+**Surfaced**: 2026-05-05 (slice 5, group 3).
+
+**Symptom**: `python -m iguanatrader.cli --version` (or any `--help` invocation) takes >1s on a cold cache, even though the operator just wants to print a version string. As more subcommands land (T4 bootstrap-tenant, K1 risk admin, R5 research backfill, …), the latency grows linearly.
+
+**Root cause**: The Typer auto-discovery loop in `iguanatrader.cli.main._register_subcommands` runs at module import time — it iterates `pkgutil.iter_modules(iguanatrader.cli.__path__)` and `importlib.import_module`s every candidate so `add_typer` can pick up each module's exported `app: typer.Typer`. Any heavy dependency imported at module scope (numpy, pandas, ib_async, sqlalchemy, etc.) gets paid by every CLI invocation, even ones that never touch that subcommand.
+
+**Workaround**: Subcommand modules MUST keep module-scope imports light. Heavy libraries go inside the command function body. Example:
+
+```python
+# apps/api/src/iguanatrader/cli/research_backfill.py — DON'T do this
+import numpy as np  # ⚠️ paid on every `--version`
+
+import typer
+
+app = typer.Typer()
+
+
+@app.command()
+def backfill(symbol: str) -> None:
+    arr = np.array([1, 2, 3])  # noqa: F841
+    ...
+
+# DO this instead — lazy import
+import typer
+
+app = typer.Typer()
+
+
+@app.command()
+def backfill(symbol: str) -> None:
+    import numpy as np  # paid only when `backfill` actually runs
+    arr = np.array([1, 2, 3])  # noqa: F841
+    ...
+```
+
+The contract is documented in `apps/api/src/iguanatrader/cli/__init__.py` docstring (the package marker). New subcommand authors MUST read that file before adding heavy deps.
+
+**Status**: convention documented 2026-05-05; no automated lint yet (slice O1 candidate — a custom pre-commit check that flags slow module-scope imports under `cli/`).
+
+## 30. `Exception` fallback handler MUST re-raise `HTTPException` + `RequestValidationError`
+
+**Surfaced**: 2026-05-05 (slice 5, group 2).
+
+**Symptom**: After registering `app.add_exception_handler(Exception, _render_internal)`, FastAPI's native 404 (route not found) and 422 (Pydantic body validation failure) responses get clobbered into the project's generic 500 + Problem body. Users see "Unexpected server error." for what should be a "field 'email' is required" 422, and frontend code that pattern-matches on the 422 native shape breaks.
+
+**Root cause**: FastAPI's exception-handler dispatch matches by MRO. The `Exception` fallback is the broadest possible handler — it catches **everything**, including FastAPI's own `HTTPException` (used internally for 404/405/etc.) and `RequestValidationError` (Pydantic 422 body failure). Without a re-raise inside the fallback, the framework's default handlers never run.
+
+**Workaround**: The fallback handler in `iguanatrader.api.errors._render_internal` does:
+
+```python
+if isinstance(exc, (HTTPException, RequestValidationError)):
+    raise exc  # let FastAPI's native handler chain render this
+```
+
+The re-raise is critical. Starlette's exception middleware re-dispatches the re-raised exception through the registered handler chain, which finds FastAPI's framework-default handlers next and renders the canonical native response (404 / 422 / etc.). Only "true" unhandled exceptions (third-party `ValueError`, `AssertionError` leaking from a route, etc.) get the 500 + Problem treatment.
+
+**Tests**: `apps/api/tests/integration/test_error_rendering.py` covers both passes — `test_fastapi_http_exception_passes_through` and `test_request_validation_error_uses_fastapi_native_shape` — so a regression that drops the re-raise breaks CI immediately.
+
+**Status**: workaround in place 2026-05-05; the re-raise pattern is the documented contract for any future broad-catch handler.
+
 ---
 
 ## Format for new entries
