@@ -22,17 +22,17 @@
 
 ## 4. DTOs (trades, proposals)
 
-- [ ] 4.1 Create `apps/api/src/iguanatrader/api/dtos/trades.py` with Pydantic v2 models: `StrategyConfigOut`, `StrategyConfigIn`, `TradeOut`, `OrderOut`, `FillOut`, `EquitySnapshotOut`, paginated wrapper `TradeListOut`. Set `model_config = ConfigDict(from_attributes=True)` on every model. Use `Decimal` for money columns, `UUID` for IDs, `datetime` for timestamps.
-- [ ] 4.2 Create `apps/api/src/iguanatrader/api/dtos/proposals.py` with `ProposalIn` (request shape — for FR5 manual proposals if applicable; T4 confirms), `ProposalOut`, paginated wrapper `ProposalListOut`. Same Pydantic v2 conventions as 4.1.
-- [ ] 4.3 Add openapi `examples=...` on each DTO field where a sample value clarifies the contract for the slice-5 typegen output (frontend devs read examples in the generated `index.ts` JSDoc).
+- [x] 4.1 Create `apps/api/src/iguanatrader/api/dtos/trades.py` with Pydantic v2 models: `StrategyConfigOut`, `StrategyConfigIn`, `TradeOut`, `OrderOut`, `FillOut`, `EquitySnapshotOut`, paginated wrapper `TradeListOut`. Set `model_config = ConfigDict(from_attributes=True)` on every model. Use `Decimal` for money columns, `UUID` for IDs, `datetime` for timestamps.
+- [x] 4.2 Create `apps/api/src/iguanatrader/api/dtos/proposals.py` with `ProposalIn` (request shape — for FR5 manual proposals if applicable; T4 confirms), `ProposalOut`, paginated wrapper `ProposalListOut`. Same Pydantic v2 conventions as 4.1.
+- [x] 4.3 Add openapi `examples=...` on each DTO field where a sample value clarifies the contract for the slice-5 typegen output (frontend devs read examples in the generated `index.ts` JSDoc).
 
 ## 5. Routes stubs (501 until T4)
 
-- [ ] 5.1 Create `apps/api/src/iguanatrader/api/routes/trades.py` exporting `router: APIRouter` with the canonical endpoints from `docs/openspec-slice.md` row T4: `GET /trades`, `GET /trades/{trade_id}`, `GET /trades/{trade_id}/fills`. Each handler raises `NotImplementedFeatureError(detail="GET /api/v1/trades will be wired in slice T4 (trading-routes-and-daemon).")`. Each declares `response_model=...` (TradeOut, FillOut, etc.) so OpenAPI schema is complete.
-- [ ] 5.2 Create `apps/api/src/iguanatrader/api/routes/portfolio.py` exporting `router` with `GET /portfolio`, `GET /portfolio/positions`, `GET /portfolio/equity`. Same 501-stub pattern.
-- [ ] 5.3 Create `apps/api/src/iguanatrader/api/routes/strategies.py` exporting `router` with `GET /strategies`, `GET /strategies/{symbol}`, `PUT /strategies/{symbol}`, `DELETE /strategies/{symbol}`. Same 501-stub pattern.
-- [ ] 5.4 Create `apps/api/src/iguanatrader/api/routes/proposals.py` exporting `router` with `GET /proposals`, `GET /proposals/{proposal_id}`. Same 501-stub pattern.
-- [ ] 5.5 Verify slice-5 `register_routers` picks up all four modules without editing `app.py` or `routes/__init__.py` (smoke: boot the app, GET `/openapi.json`, assert all four prefix paths appear).
+- [x] 5.1 Create `apps/api/src/iguanatrader/api/routes/trades.py` exporting `router: APIRouter` with the canonical endpoints from `docs/openspec-slice.md` row T4: `GET /trades`, `GET /trades/{trade_id}`, `GET /trades/{trade_id}/fills`. Each handler raises `NotImplementedFeatureError(detail="GET /api/v1/trades will be wired in slice T4 (trading-routes-and-daemon).")`. Each declares `response_model=...` (TradeOut, FillOut, etc.) so OpenAPI schema is complete.
+- [x] 5.2 Create `apps/api/src/iguanatrader/api/routes/portfolio.py` exporting `router` with `GET /portfolio`, `GET /portfolio/positions`, `GET /portfolio/equity`. Same 501-stub pattern.
+- [x] 5.3 Create `apps/api/src/iguanatrader/api/routes/strategies.py` exporting `router` with `GET /strategies`, `GET /strategies/{symbol}`, `PUT /strategies/{symbol}`, `DELETE /strategies/{symbol}`. Same 501-stub pattern.
+- [x] 5.4 Create `apps/api/src/iguanatrader/api/routes/proposals.py` exporting `router` with `GET /proposals`, `GET /proposals/{proposal_id}`. Same 501-stub pattern.
+- [x] 5.5 Verify slice-5 `register_routers` picks up all four modules without editing `app.py` or `routes/__init__.py` (smoke: boot the app, GET `/openapi.json`, assert all four prefix paths appear).
 
 ## 6. Events.py inter-context contract
 
