@@ -46,13 +46,13 @@
 
 ## 6. SSE consumer stubs (7)
 
-- [ ] 6.1 Create `apps/web/src/lib/sse/equity.ts` — `connectEquityStream(opts)` thin wrapper over `useSSE('equity', opts)`. Owner: T4 backend.
-- [ ] 6.2 Create `apps/web/src/lib/sse/trades.ts` — `connectTradesStream(opts)`. Owner: T4 backend.
-- [ ] 6.3 Create `apps/web/src/lib/sse/research.ts` — `connectResearchStream(opts)`. Owner: R5 backend.
-- [ ] 6.4 Create `apps/web/src/lib/sse/risk.ts` — `connectRiskStream(opts)`. Owner: K1 backend.
-- [ ] 6.5 Create `apps/web/src/lib/sse/approvals.ts` — `connectApprovalsStream(opts)`. Owner: P1 backend.
-- [ ] 6.6 Create `apps/web/src/lib/sse/costs.ts` — `connectCostsStream(opts)`. Owner: O1 backend.
-- [ ] 6.7 Create `apps/web/src/lib/sse/alerts.ts` — `connectAlertsStream(opts)`. Owner: O2 backend.
+- [x] 6.1 Create `apps/web/src/lib/sse/equity.ts` — `connectEquityStream(opts)` thin wrapper over `useSSE('equity', opts)`. Owner: T4 backend.
+- [x] 6.2 Create `apps/web/src/lib/sse/trades.ts` — `connectTradesStream(opts)`. Owner: T4 backend.
+- [x] 6.3 Create `apps/web/src/lib/sse/research.ts` — `connectResearchStream(opts)`. Owner: R5 backend.
+- [x] 6.4 Create `apps/web/src/lib/sse/risk.ts` — `connectRiskStream(opts)`. Owner: K1 backend.
+- [x] 6.5 Create `apps/web/src/lib/sse/approvals.ts` — `connectApprovalsStream(opts)`. Owner: P1 backend.
+- [x] 6.6 Create `apps/web/src/lib/sse/costs.ts` — `connectCostsStream(opts)`. Owner: O1 backend.
+- [x] 6.7 Create `apps/web/src/lib/sse/alerts.ts` — `connectAlertsStream(opts)`. Owner: O2 backend.
 
 ## 7. Lighthouse CI update — a11y ≥ 0.95 + URL list extension
 
