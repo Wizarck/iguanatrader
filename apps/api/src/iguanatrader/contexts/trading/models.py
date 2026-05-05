@@ -137,12 +137,16 @@ class TradeProposal(Base):
     reasoning: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     research_brief_id: Mapped[UUID | None] = mapped_column(
         Uuid,
-        # FK target lives in slice R1's migration ``0002_research_tables``;
-        # the merge order is documented in the design doc §D5. The ORM
-        # ForeignKey stays declared so SQLAlchemy emits the constraint when
-        # ``Base.metadata.create_all`` runs (test path); the migration
-        # encodes the same FK with explicit ``ondelete='RESTRICT'``.
-        ForeignKey("research_briefs.id", ondelete="RESTRICT"),
+        # FK target lives in slice R1's migration ``0002_research_tables``
+        # (table ``research_briefs``); the merge order is documented in
+        # the design doc §D5. We deliberately do NOT declare an ORM-level
+        # ``ForeignKey("research_briefs.id", ...)`` here because the
+        # ``research_briefs`` table is owned by R1 and the bounded
+        # context's ORM does not yet have a sibling :class:`ResearchBrief`
+        # model — ``Base.metadata.create_all`` would fail to resolve the
+        # FK at test time. The FK is declared in the migration
+        # ``0003_trading_tables.py`` with ``ondelete='RESTRICT'`` so the
+        # DB-level enforcement is intact post-rebase on R1.
         nullable=True,
     )
     mode: Mapped[str] = mapped_column(Text, nullable=False)
