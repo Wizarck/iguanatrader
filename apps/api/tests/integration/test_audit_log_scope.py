@@ -67,9 +67,11 @@ async def test_system_actor_inserts_null_tenant_row(
     await session_for_test.commit()
 
     # Read back via query_global — listener must allow with tenant_id_var unset.
-    rows = (await session_for_test.execute(
-        select(AuditLog).where(AuditLog.tenant_id.is_(None))
-    )).scalars().all()
+    rows = (
+        (await session_for_test.execute(select(AuditLog).where(AuditLog.tenant_id.is_(None))))
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].event == "ops.gitleaks.failure"
 
@@ -101,9 +103,7 @@ async def test_tenant_context_query_filters_to_per_tenant(
 
     # In tenant a's context, only a's audit_log rows are visible.
     async with with_tenant_context(a):
-        rows = (
-            (await session_for_test.execute(select(AuditLog))).scalars().all()
-        )
+        rows = (await session_for_test.execute(select(AuditLog))).scalars().all()
     assert len(rows) == 1
     assert rows[0].tenant_id == a
 

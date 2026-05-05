@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 from httpx import AsyncClient
 from iguanatrader.contexts.observability.models import ApiCostEvent
 from iguanatrader.shared.contextvars import with_tenant_context
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 async def _seed_cost_event(

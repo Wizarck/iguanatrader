@@ -10,6 +10,7 @@ Test matrix (per task 7.4):
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,7 @@ from iguanatrader.contexts.observability.replay_cache import (
 
 
 @pytest.fixture
-def fixture_root(tmp_path: Path) -> Path:
+def fixture_root(tmp_path: Path) -> Iterator[Path]:
     set_fixture_root_for_tests(tmp_path)
     yield tmp_path
     set_fixture_root_for_tests(None)
@@ -82,7 +83,6 @@ def test_context_manager_binds_and_resets_scenario() -> None:
 def test_context_manager_resets_on_exception() -> None:
     from iguanatrader.contexts.observability.replay_cache import current_scenario
 
-    with pytest.raises(RuntimeError):
-        with replay_cache("xyz"):
-            raise RuntimeError("body raised")
+    with pytest.raises(RuntimeError), replay_cache("xyz"):
+        raise RuntimeError("body raised")
     assert current_scenario.get() is None

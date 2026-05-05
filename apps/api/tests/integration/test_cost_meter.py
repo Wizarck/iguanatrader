@@ -75,9 +75,7 @@ async def test_decorator_records_event_with_correct_fields(
         await session_for_test.commit()
 
     async with with_tenant_context(seeded_tenant_id):
-        rows = (
-            (await session_for_test.execute(select(ApiCostEvent))).scalars().all()
-        )
+        rows = (await session_for_test.execute(select(ApiCostEvent))).scalars().all()
 
     assert len(rows) == 1
     row = rows[0]
@@ -104,9 +102,7 @@ async def test_cached_response_records_zero_cost(
         await session_for_test.commit()
 
     async with with_tenant_context(seeded_tenant_id):
-        rows = (
-            (await session_for_test.execute(select(ApiCostEvent))).scalars().all()
-        )
+        rows = (await session_for_test.execute(select(ApiCostEvent))).scalars().all()
     assert len(rows) == 1
     assert rows[0].cached is True
     assert rows[0].cost_usd == Decimal("0")
@@ -131,9 +127,7 @@ async def test_sdk_exception_propagates_without_recording(
     # api_cost_events even though the test session may not have a tenant
     # bound at this point.
     async with with_tenant_context(seeded_tenant_id):
-        rows = (
-            (await session_for_test.execute(select(ApiCostEvent))).scalars().all()
-        )
+        rows = (await session_for_test.execute(select(ApiCostEvent))).scalars().all()
     assert rows == []
 
 
@@ -141,6 +135,7 @@ async def test_meter_log_only_when_session_unbound() -> None:
     """When ``session_var`` is unbound, the decorator emits the structlog
     breadcrumb but does not crash. No persistence is attempted.
     """
+
     @cost_meter(provider="openai", model="gpt-4o-mini")
     async def fake_call() -> FakeLLMResponse:
         return FakeLLMResponse(tokens_input=10, tokens_output=20, cached=False)

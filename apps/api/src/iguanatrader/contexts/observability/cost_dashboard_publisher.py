@@ -39,9 +39,7 @@ from iguanatrader.shared.contextvars import (
 from iguanatrader.shared.messagebus import MessageBus
 from iguanatrader.shared.time import now
 
-log = structlog.get_logger(
-    "iguanatrader.contexts.observability.cost_dashboard_publisher"
-)
+log = structlog.get_logger("iguanatrader.contexts.observability.cost_dashboard_publisher")
 
 
 def _cadence_seconds() -> int:
@@ -127,7 +125,12 @@ async def _list_tenant_ids() -> list[UUID]:
     session = cast(AsyncSession, sess)
     stmt = select(Tenant.id).where(Tenant.deleted_at.is_(None))
     result = await session.execute(stmt)
-    return [row[0] if not isinstance(row[0], UUID) else row[0] for row in result.all()]
+    rows = result.all()
+    out: list[UUID] = []
+    for row in rows:
+        raw = row[0]
+        out.append(raw if isinstance(raw, UUID) else UUID(str(raw)))
+    return out
 
 
 async def publish_snapshot(

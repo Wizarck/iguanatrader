@@ -8,8 +8,8 @@ $50/month).
 
 States:
 
-- ``OK`` (0–79%) — proceed normally.
-- ``WARN_80`` (80–99%) — emit ``observability.budget.warning_threshold``
+- ``OK`` (0-79%) — proceed normally.
+- ``WARN_80`` (80-99%) — emit ``observability.budget.warning_threshold``
   exactly once per tenant per month; ``route_llm()`` auto-downgrades
   sonnet → haiku at the next routing decision.
 - ``BLOCK_100`` (100%+) — ``route_llm()`` raises

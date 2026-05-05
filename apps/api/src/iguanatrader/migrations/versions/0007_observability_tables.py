@@ -58,49 +58,39 @@ def _create_append_only_triggers(table_name: str) -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name
     if dialect == "sqlite":
-        op.execute(
-            f"""
+        op.execute(f"""
             CREATE TRIGGER {table_name}_no_update
             BEFORE UPDATE ON {table_name}
             BEGIN
                 SELECT RAISE(FAIL, '{table_name} is append-only');
             END;
-            """
-        )
-        op.execute(
-            f"""
+            """)
+        op.execute(f"""
             CREATE TRIGGER {table_name}_no_delete
             BEFORE DELETE ON {table_name}
             BEGIN
                 SELECT RAISE(FAIL, '{table_name} is append-only');
             END;
-            """
-        )
+            """)
     elif dialect == "postgresql":
-        op.execute(
-            f"""
+        op.execute(f"""
             CREATE OR REPLACE FUNCTION raise_{table_name}_append_only()
             RETURNS trigger AS $$
             BEGIN
                 RAISE EXCEPTION '{table_name} is append-only';
             END;
             $$ LANGUAGE plpgsql;
-            """
-        )
-        op.execute(
-            f"""
+            """)
+        op.execute(f"""
             CREATE TRIGGER {table_name}_no_update
             BEFORE UPDATE ON {table_name}
             FOR EACH ROW EXECUTE FUNCTION raise_{table_name}_append_only();
-            """
-        )
-        op.execute(
-            f"""
+            """)
+        op.execute(f"""
             CREATE TRIGGER {table_name}_no_delete
             BEFORE DELETE ON {table_name}
             FOR EACH ROW EXECUTE FUNCTION raise_{table_name}_append_only();
-            """
-        )
+            """)
 
 
 def _drop_append_only_triggers(table_name: str) -> None:

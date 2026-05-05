@@ -89,16 +89,14 @@ async def _stream_for_user(user: User) -> AsyncIterator[bytes]:
         if event.tenant_id == user.tenant_id:
             await queue.put(event)
 
-    sub: Subscription[CostSnapshotEvent] = bus.subscribe(
-        CostSnapshotEvent, _on_snapshot
-    )
+    sub: Subscription[CostSnapshotEvent] = bus.subscribe(CostSnapshotEvent, _on_snapshot)
 
     try:
         while True:
             event = await queue.get()
             dto = _snapshot_to_dto(event)
             payload = dto.model_dump_json()
-            yield f"data: {payload}\n\n".encode("utf-8")
+            yield f"data: {payload}\n\n".encode()
     except asyncio.CancelledError:
         log.info(
             "observability.cost.snapshot_stream_cancelled",

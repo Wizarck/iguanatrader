@@ -32,7 +32,7 @@ T = TypeVar("T")
 class Tracer(Protocol):
     """Minimal tracer port — start a span. v2 SaaS swaps in OTLP."""
 
-    def start_span(self, name: str) -> "Span":  # pragma: no cover — port surface
+    def start_span(self, name: str) -> Span:  # pragma: no cover — port surface
         ...
 
 
@@ -40,7 +40,7 @@ class Tracer(Protocol):
 class Span(Protocol):
     """Span Protocol — ``__enter__`` / ``__exit__`` for ``with`` usage."""
 
-    def __enter__(self) -> "Span":  # pragma: no cover — port surface
+    def __enter__(self) -> Span:  # pragma: no cover — port surface
         ...
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:  # pragma: no cover
@@ -51,14 +51,16 @@ class Span(Protocol):
 class Meter(Protocol):
     """Minimal meter port — record counter / histogram increments."""
 
-    def add(self, name: str, value: float, attributes: dict[str, Any] | None = None) -> None:  # pragma: no cover
+    def add(
+        self, name: str, value: float, attributes: dict[str, Any] | None = None
+    ) -> None:  # pragma: no cover
         ...
 
 
 class _NoOpSpan:
     """No-op :class:`Span` — used by :class:`_NoOpTracer` until v2."""
 
-    def __enter__(self) -> "_NoOpSpan":
+    def __enter__(self) -> _NoOpSpan:
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,7 @@ def _detach_all_file_handlers() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_logging(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def _isolate_logging(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     monkeypatch.chdir(tmp_path)
     _detach_all_file_handlers()
     yield
@@ -39,9 +40,7 @@ def test_test_env_uses_stdout_only() -> None:
     configure_logging("test")
     root = logging.getLogger()
     file_handlers = [
-        h
-        for h in root.handlers
-        if isinstance(h, logging.handlers.RotatingFileHandler)
+        h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
     ]
     assert file_handlers == []
 
@@ -50,9 +49,7 @@ def test_dev_env_uses_stdout_only() -> None:
     configure_logging("dev")
     root = logging.getLogger()
     file_handlers = [
-        h
-        for h in root.handlers
-        if isinstance(h, logging.handlers.RotatingFileHandler)
+        h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
     ]
     assert file_handlers == []
 
@@ -65,9 +62,7 @@ def test_paper_env_attaches_rotating_file_handler(tmp_path: Path) -> None:
     configure_logging("paper")
     root = logging.getLogger()
     file_handlers = [
-        h
-        for h in root.handlers
-        if isinstance(h, logging.handlers.RotatingFileHandler)
+        h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
     ]
     assert len(file_handlers) == 1
     handler = file_handlers[0]
@@ -85,8 +80,6 @@ def test_unknown_env_falls_back_to_test_behaviour() -> None:
     configure_logging("nonsense")
     root = logging.getLogger()
     file_handlers = [
-        h
-        for h in root.handlers
-        if isinstance(h, logging.handlers.RotatingFileHandler)
+        h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
     ]
     assert file_handlers == []

@@ -57,6 +57,21 @@ def _is_tenant_scoped(cls: type) -> bool:
     return bool(getattr(cls, "__tenant_scoped__", True))
 
 
+def _column_descriptions(state: ORMExecuteState) -> list[dict[str, Any]]:
+    """Best-effort accessor for ``state.statement.column_descriptions``.
+
+    The SQLAlchemy 2.x ``ORMExecuteState.statement`` attribute is typed
+    as :class:`Executable`; only :class:`Select` (and a few related
+    classes) actually expose ``column_descriptions``. This helper does
+    a runtime ``getattr`` so the listener can introspect ORM SELECTs
+    without a static type-check failure.
+    """
+    raw = getattr(state.statement, "column_descriptions", None)
+    if raw is None:
+        return []
+    return list(raw)
+
+
 def _query_targets_only_unscoped_tables(state: ORMExecuteState) -> bool:
     """True iff the query touches ONLY non-scoped mappers (or none).
 
@@ -74,7 +89,7 @@ def _query_targets_only_unscoped_tables(state: ORMExecuteState) -> bool:
     SQL; this fix removes the workaround.
     """
     seen_any_mapper = False
-    for desc in state.statement.column_descriptions or ():
+    for desc in _column_descriptions(state):
         entity = desc.get("entity")
         if entity is None or not isinstance(entity, type):
             continue
@@ -126,7 +141,7 @@ def _inject_tenant_filter(state: ORMExecuteState) -> None:
         # instead of raising. Detected by name-match to keep this listener
         # independent of the observability package import (avoids cycles).
         scoped_mapper_names: set[str] = set()
-        for desc in state.statement.column_descriptions or ():
+        for desc in _column_descriptions(state):
             entity = desc.get("entity")
             if entity is None or not isinstance(entity, type):
                 continue

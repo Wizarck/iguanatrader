@@ -31,7 +31,7 @@ import inspect
 import uuid
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, overload
 from uuid import UUID
 
 import structlog
@@ -44,7 +44,9 @@ from iguanatrader.shared.contextvars import session_var, tenant_id_var
 log = structlog.get_logger("iguanatrader.contexts.observability.cost_meter")
 
 T = TypeVar("T", bound=LLMResponse)
-F = Callable[..., Awaitable[T]] | Callable[..., T]
+SyncF = Callable[..., T]
+AsyncF = Callable[..., Awaitable[T]]
+F = AsyncF[T] | SyncF[T]
 
 
 #: Provider+model price catalogue (USD per million tokens). Values
@@ -115,10 +117,9 @@ def _compute_cost_usd(
             model=model,
         )
         return Decimal("0")
-    cost = (
-        Decimal(response.tokens_input) * per_in / Decimal(1_000_000)
-        + Decimal(response.tokens_output) * per_out / Decimal(1_000_000)
-    )
+    cost = Decimal(response.tokens_input) * per_in / Decimal(1_000_000) + Decimal(
+        response.tokens_output
+    ) * per_out / Decimal(1_000_000)
     return cost
 
 
@@ -160,12 +161,41 @@ async def _persist_cost_event(
     return True
 
 
+class _CostMeterDecorator:
+    """Callable wrapper exposing overloads for sync + async wrapped fns.
+
+    Mypy --strict needs overload signatures to narrow ``await fn()`` at
+    call sites of decorated coroutines; the protocol-style class lets us
+    declare both shapes in one decorator factory.
+    """
+
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        *,
+        price_table: PriceTable | None = None,
+    ) -> None:
+        self._provider = provider
+        self._model = model
+        self._table: PriceTable = price_table or _DEFAULT_PRICE_TABLE
+
+    @overload
+    def __call__(self, fn: AsyncF[T]) -> AsyncF[T]: ...
+
+    @overload
+    def __call__(self, fn: SyncF[T]) -> SyncF[T]: ...
+
+    def __call__(self, fn: F[T]) -> F[T]:
+        return _build_wrapper(fn, self._provider, self._model, self._table)
+
+
 def cost_meter(
     provider: str,
     model: str,
     *,
     price_table: PriceTable | None = None,
-) -> Callable[[F[T]], F[T]]:
+) -> _CostMeterDecorator:
     """Parametrised decorator factory — records the cost of every call.
 
     Usage::
@@ -179,65 +209,24 @@ def cost_meter(
     are supported but DO NOT persist the cost event (no async session
     available); the structlog breadcrumb still fires.
     """
-    table = price_table or _DEFAULT_PRICE_TABLE
+    return _CostMeterDecorator(provider, model, price_table=price_table)
 
-    def _decorator(fn: F[T]) -> F[T]:
-        if inspect.iscoroutinefunction(fn):
 
-            @functools.wraps(fn)
-            async def _async_wrapper(*args: Any, **kwargs: Any) -> T:
-                tenant_value = tenant_id_var.get()
-                try:
-                    response = await cast("Callable[..., Awaitable[T]]", fn)(
-                        *args, **kwargs
-                    )
-                except Exception:
-                    log.warning(
-                        "observability.cost.upstream_error",
-                        provider=provider,
-                        model=model,
-                        tenant_id=str(tenant_value) if tenant_value else None,
-                    )
-                    raise
+def _build_wrapper(
+    fn: F[T],
+    provider: str,
+    model: str,
+    table: PriceTable,
+) -> F[T]:
+    """Internal helper — produces sync or async wrapper depending on ``fn``."""
 
-                cost_usd = _compute_cost_usd(
-                    response,
-                    provider=provider,
-                    model=model,
-                    price_table=table,
-                )
-
-                persisted = False
-                if tenant_value is not None:
-                    persisted = await _persist_cost_event(
-                        tenant_id=tenant_value,
-                        provider=provider,
-                        model=model,
-                        response=response,
-                        cost_usd=cost_usd,
-                        correlation_id=None,
-                    )
-
-                log.info(
-                    "observability.cost.recorded",
-                    provider=provider,
-                    model=model,
-                    tenant_id=str(tenant_value) if tenant_value else None,
-                    tokens_input=response.tokens_input,
-                    tokens_output=response.tokens_output,
-                    cost_usd=str(cost_usd),
-                    cached=response.cached,
-                    persisted=persisted,
-                )
-                return response
-
-            return cast("F[T]", _async_wrapper)
+    if inspect.iscoroutinefunction(fn):
 
         @functools.wraps(fn)
-        def _sync_wrapper(*args: Any, **kwargs: Any) -> T:
+        async def _async_wrapper(*args: Any, **kwargs: Any) -> T:
             tenant_value = tenant_id_var.get()
             try:
-                response = cast("Callable[..., T]", fn)(*args, **kwargs)
+                response = await cast("Callable[..., Awaitable[T]]", fn)(*args, **kwargs)
             except Exception:
                 log.warning(
                     "observability.cost.upstream_error",
@@ -253,6 +242,18 @@ def cost_meter(
                 model=model,
                 price_table=table,
             )
+
+            persisted = False
+            if tenant_value is not None:
+                persisted = await _persist_cost_event(
+                    tenant_id=tenant_value,
+                    provider=provider,
+                    model=model,
+                    response=response,
+                    cost_usd=cost_usd,
+                    correlation_id=None,
+                )
+
             log.info(
                 "observability.cost.recorded",
                 provider=provider,
@@ -262,13 +263,46 @@ def cost_meter(
                 tokens_output=response.tokens_output,
                 cost_usd=str(cost_usd),
                 cached=response.cached,
-                persisted=False,
+                persisted=persisted,
             )
             return response
 
-        return cast("F[T]", _sync_wrapper)
+        return cast("F[T]", _async_wrapper)
 
-    return _decorator
+    @functools.wraps(fn)
+    def _sync_wrapper(*args: Any, **kwargs: Any) -> T:
+        tenant_value = tenant_id_var.get()
+        try:
+            response = cast("Callable[..., T]", fn)(*args, **kwargs)
+        except Exception:
+            log.warning(
+                "observability.cost.upstream_error",
+                provider=provider,
+                model=model,
+                tenant_id=str(tenant_value) if tenant_value else None,
+            )
+            raise
+
+        cost_usd = _compute_cost_usd(
+            response,
+            provider=provider,
+            model=model,
+            price_table=table,
+        )
+        log.info(
+            "observability.cost.recorded",
+            provider=provider,
+            model=model,
+            tenant_id=str(tenant_value) if tenant_value else None,
+            tokens_input=response.tokens_input,
+            tokens_output=response.tokens_output,
+            cost_usd=str(cost_usd),
+            cached=response.cached,
+            persisted=False,
+        )
+        return response
+
+    return cast("F[T]", _sync_wrapper)
 
 
 __all__ = [

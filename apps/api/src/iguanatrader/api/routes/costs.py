@@ -123,9 +123,7 @@ async def get_cost_by_provider(
     cost_by_provider: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     count_by_provider: dict[str, int] = defaultdict(int)
     for provider, cost_usd in result.all():
-        cost_value = (
-            cost_usd if isinstance(cost_usd, Decimal) else Decimal(str(cost_usd))
-        )
+        cost_value = cost_usd if isinstance(cost_usd, Decimal) else Decimal(str(cost_usd))
         cost_by_provider[provider] += cost_value
         count_by_provider[provider] += 1
 
