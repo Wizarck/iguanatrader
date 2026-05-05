@@ -52,9 +52,9 @@
 
 ## 8. Documentation
 
-- [ ] 8.1 Append to `docs/gotchas.md`: gotcha #31 — "Trading routes return 501 until slice T4 lands; frontend (W1) MUST check the `Problem.type` URI `urn:iguanatrader:error:not-implemented` and render 'Coming soon' rather than treating as a real error." Gotcha #32 — "Cross-slice FK `trade_proposals.research_brief_id → research_briefs.id` requires R1 merged before T1; alembic `down_revision='0002_research_tables'` is the linear-chain anchor. Document the merge-order constraint in any T1 PR."
-- [ ] 8.2 Update `docs/data-model.md` cross-reference: add a stub note next to the `equity_snapshots.snapshot_kind` enum row pointing to §7.2 ("authoritative enum is `('event','minute','daily')`; slice-T1 migration uses §7.2"). Out of strict scope but a one-line correction prevents drift.
-- [ ] 8.3 Add `docs/runbooks/trading-event-replay.md`: operator playbook for replaying trading events from `audit_log` if a downstream subscriber crashed mid-handler — mention slice-2 `MessageBus` is in-process (no durable queue), so replay is from DB, not from the bus. Slice O1 + O2 will refine; T1 plants the skeleton.
+- [x] 8.1 Append to `docs/gotchas.md`: gotcha #31 — "Trading routes return 501 until slice T4 lands; frontend (W1) MUST check the `Problem.type` URI `urn:iguanatrader:error:not-implemented` and render 'Coming soon' rather than treating as a real error." Gotcha #32 — "Cross-slice FK `trade_proposals.research_brief_id → research_briefs.id` requires R1 merged before T1; alembic `down_revision='0002_research_tables'` is the linear-chain anchor. Document the merge-order constraint in any T1 PR."
+- [x] 8.2 Update `docs/data-model.md` cross-reference: add a stub note next to the `equity_snapshots.snapshot_kind` enum row pointing to §7.2 ("authoritative enum is `('event','minute','daily')`; slice-T1 migration uses §7.2"). Out of strict scope but a one-line correction prevents drift.
+- [x] 8.3 Add `docs/runbooks/trading-event-replay.md`: operator playbook for replaying trading events from `audit_log` if a downstream subscriber crashed mid-handler — mention slice-2 `MessageBus` is in-process (no durable queue), so replay is from DB, not from the bus. Slice O1 + O2 will refine; T1 plants the skeleton.
 
 ## 9. Pre-merge verification
 
