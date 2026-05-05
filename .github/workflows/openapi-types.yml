@@ -69,13 +69,20 @@ jobs:
 
       - name: Boot FastAPI app in background
         env:
-          IGUANATRADER_JWT_SECRET: ${{ secrets.GITHUB_TOKEN }}
-        run: |
           # JWT secret only needs to be a non-empty 32+ char string for the
           # app to boot; we never sign tokens during this workflow — we
           # just curl /openapi.json. Reusing GITHUB_TOKEN as a long random
           # string avoids a separate repo secret.
-          poetry run python -m uvicorn iguanatrader.api.app:create_app --factory --host 127.0.0.1 --port 8000 &
+          IGUANATRADER_JWT_SECRET: ${{ secrets.GITHUB_TOKEN }}
+          # Root pyproject is `package-mode = false`, so poetry does NOT
+          # install iguanatrader.* into site-packages. uvicorn imports
+          # via PYTHONPATH; pytest reads it from pyproject.toml's
+          # [tool.pytest.ini_options].pythonpath but uvicorn doesn't.
+          PYTHONPATH: apps/api/src
+        run: |
+          poetry run python -m uvicorn iguanatrader.api.app:create_app \
+            --factory --host 127.0.0.1 --port 8000 \
+            > /tmp/uvicorn.log 2>&1 &
           echo $! > /tmp/uvicorn.pid
 
           # Wait until /openapi.json is reachable (max 30s).
@@ -86,7 +93,11 @@ jobs:
             fi
             sleep 1
           done
-          test -s /tmp/openapi.json || { echo "FastAPI failed to boot"; exit 1; }
+          if ! test -s /tmp/openapi.json; then
+            echo "::error::FastAPI failed to boot — uvicorn log follows:"
+            cat /tmp/uvicorn.log || true
+            exit 1
+          fi
 
       - name: Regenerate packages/shared-types/src/index.ts
         run: |

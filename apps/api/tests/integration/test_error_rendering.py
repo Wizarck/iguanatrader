@@ -21,6 +21,8 @@ slice-4 auth surface — only the global handler chain registered by
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
@@ -72,7 +74,7 @@ def app_with_test_routes() -> FastAPI:
 
 
 @pytest.fixture
-async def client(app_with_test_routes: FastAPI):
+async def client(app_with_test_routes: FastAPI) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app_with_test_routes)
     async with AsyncClient(transport=transport, base_url="https://test") as c:
         yield c
