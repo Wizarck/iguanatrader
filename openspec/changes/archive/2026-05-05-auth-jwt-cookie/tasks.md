@@ -51,10 +51,10 @@
 
 ## 7. Pre-merge verification
 
-- [ ] 7.1 `mypy --strict apps/api/src/iguanatrader/api/` clean.
-- [ ] 7.2 `pytest apps/api/tests/unit/test_auth_primitives.py apps/api/tests/integration/test_auth_flow.py apps/api/tests/property/test_jwt_round_trip.py` all green.
-- [ ] 7.3 Coverage on `apps/api/src/iguanatrader/api/{auth,deps,routes/auth,dtos/auth}.py` ≥ 80% (NFR-M1).
-- [ ] 7.4 `pre-commit run --from-ref origin/main --to-ref HEAD` passes (gitleaks + ruff + black + mypy strict + check-toml + block_manual_spec_edit).
-- [ ] 7.5 Frontend lint: `pnpm --filter web check` (svelte-check + tsc) clean.
-- [ ] 7.6 Manual smoke on localhost: bootstrap a tenant via test fixture, navigate to `/portfolio` → redirect to `/login` → log in → land on `/portfolio` (stub).
-- [ ] 7.7 PR description includes "AI-reviewer signoff" subsection per release-management.md §4.5 (left blank initially; populated after CodeRabbit review).
+- [x] 7.1 `mypy --strict apps/api/src/iguanatrader/api/` clean.
+- [x] 7.2 `pytest apps/api/tests/unit/test_auth_primitives.py apps/api/tests/integration/test_auth_flow.py apps/api/tests/property/test_jwt_round_trip.py` all green.
+- [x] 7.3 Coverage on `apps/api/src/iguanatrader/api/{auth,deps,routes/auth,dtos/auth}.py` ≥ 80% (NFR-M1).
+- [x] 7.4 `pre-commit run --from-ref origin/main --to-ref HEAD` passes (gitleaks + ruff + black + mypy strict + check-toml + block_manual_spec_edit).
+- [x] 7.5 Frontend lint: `pnpm --filter web check` (svelte-check + tsc) clean.
+- [x] 7.6 Manual smoke on localhost: bootstrap a tenant via test fixture, navigate to `/portfolio` → redirect to `/login` → log in → land on `/portfolio` (stub).
+- [x] 7.7 PR description includes "AI-reviewer signoff" subsection per release-management.md §4.5 (left blank initially; populated after CodeRabbit review).
