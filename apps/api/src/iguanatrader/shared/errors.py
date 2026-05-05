@@ -166,8 +166,31 @@ class CurrencyMismatchError(ValidationError):
     default_status: ClassVar[int] = 400
 
 
+# Added 2026-05-05 by slice 5 (api-foundation-rfc7807) per design D9 to
+# canonicalise the slice-4 inline 503 zero-tenant Problem (which used a
+# URL-form ``type`` URI ``https://iguanatrader.local/problems/...``) onto
+# the project-wide ``urn:iguanatrader:error:*`` scheme. Semantically
+# equivalent to slice-4's inline 503 — same wire status + body shape;
+# only the ``type`` URI changes form.
+class BootstrapNotReadyError(IguanaError):
+    """API booted but the ``tenants`` table is empty (HTTP 503).
+
+    Raised by ``POST /api/v1/auth/login`` (and any future endpoint that
+    requires an authenticated tenant) when the operator has not yet run
+    ``iguanatrader admin bootstrap-tenant <slug>`` to create the first
+    tenant + admin user. The handler renders RFC 7807 with the canonical
+    urn-form ``type`` URI; the ``detail`` carries the operator-facing
+    CLI hint.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:not-bootstrapped"
+    default_title: ClassVar[str] = "Service Not Bootstrapped"
+    default_status: ClassVar[int] = 503
+
+
 __all__ = [
     "AuthError",
+    "BootstrapNotReadyError",
     "ConflictError",
     "CurrencyMismatchError",
     "ForbiddenError",

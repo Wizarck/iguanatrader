@@ -1,21 +1,27 @@
-"""FastAPI app factory — slice 4 ``auth-jwt-cookie`` minimal pre-pattern.
+"""FastAPI app factory — slice 5 ``api-foundation-rfc7807`` shape.
 
-Slice 5 (``api-foundation-rfc7807``) layers RFC 7807 exception handlers
-+ dynamic-discovery via :func:`pkgutil.iter_modules` + OpenAPI typegen
-on top of this factory; slice 4 ships the smallest possible factory
-that:
+Slice 4 (``auth-jwt-cookie``) shipped a minimal factory with a single
+manual ``app.include_router(auth_router, prefix="/api/v1")`` call and
+no global exception handler. Slice 5 layers the foundation pre-pattern
+on top:
 
-1. Configures structlog so every log line is JSON (test fixtures + dev
-   smoke get the same shape — no per-environment branching).
+1. Configures structlog so every log line is JSON.
 2. Attaches the slowapi :class:`Limiter` to ``app.state.limiter`` and
    registers the 429 RFC 7807 handler.
 3. Installs :class:`BufferLoginEmailMiddleware` so the limiter's
-   compound ``(ip, email)`` key works (per design D5).
-4. Manually registers the auth router. Slice 5 will refactor this to
-   discover routers via ``pkgutil`` over :mod:`iguanatrader.api.routes`.
+   compound ``(ip, email)`` key works (per design D5 of slice 4).
+4. Discovers and mounts every ``routes/<name>.py`` via
+   :func:`iguanatrader.api.routes.register_routers` (per design D1).
+5. Discovers and mounts every ``sse/<name>.py`` via
+   :func:`iguanatrader.api.sse.register_sse` (per design D2).
+6. Registers the global :class:`IguanaError` + ``Exception`` handlers
+   via :func:`iguanatrader.api.errors.register_error_handlers`
+   (per design D3).
 
-This module is also the entrypoint for the dev/smoke uvicorn runner via
-:mod:`iguanatrader.api.__main__`.
+Adding a new route family or SSE feed is a single-file change under
+``routes/`` or ``sse/``; this factory does NOT need to be touched.
+
+Entrypoint for the dev/smoke uvicorn runner: :mod:`iguanatrader.api.__main__`.
 """
 
 from __future__ import annotations
@@ -28,8 +34,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
+from iguanatrader.api.errors import register_error_handlers
 from iguanatrader.api.limiting import BufferLoginEmailMiddleware, limiter
-from iguanatrader.api.routes.auth import router as auth_router
+from iguanatrader.api.routes import register_routers
+from iguanatrader.api.sse import register_sse
 
 
 def _configure_structlog() -> None:
@@ -72,7 +80,6 @@ def _rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
     log = structlog.get_logger("iguanatrader.api.app")
     log.info("auth.login.rate_limited")
 
-    # slowapi's RateLimitExceeded carries the limit description on .detail.
     detail_text = getattr(exc, "detail", None) or "Too many login attempts. Try again shortly."
 
     # Conservative Retry-After: the smallest window slowapi enforces on
@@ -103,13 +110,13 @@ def create_app() -> FastAPI:
     is fine — the slowapi in-memory store is process-local and
     isolated across pytest workers via :mod:`pytest-xdist`'s default
     process boundaries; for in-test resets see the integration test
-    fixture in ``test_auth_flow.py``).
+    fixtures under ``apps/api/tests/integration/conftest.py``).
     """
     _configure_structlog()
 
     app = FastAPI(
         title="iguanatrader API",
-        version="slice-4",
+        version="slice-5",
         docs_url="/docs",
         redoc_url=None,
     )
@@ -118,13 +125,17 @@ def create_app() -> FastAPI:
     # decorator pulls the key — install it first.
     app.add_middleware(BufferLoginEmailMiddleware)
 
-    # slowapi wiring (per design D5).
+    # slowapi wiring (per slice 4 design D5).
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
-    # Manual router registration — slice 5 replaces with dynamic
-    # discovery via pkgutil.iter_modules over iguanatrader.api.routes.
-    app.include_router(auth_router, prefix="/api/v1")
+    # Slice 5: dynamic discovery + global error rendering. Order:
+    # routers + SSE first (so their endpoints exist on the app),
+    # then error handlers (handler registration is order-sensitive
+    # per slice-5 design D10 — see register_error_handlers docstring).
+    register_routers(app)
+    register_sse(app)
+    register_error_handlers(app)
 
     return app
 
