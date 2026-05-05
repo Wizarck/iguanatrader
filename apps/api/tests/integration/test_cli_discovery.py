@@ -38,7 +38,7 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     """
     src_root = Path(__file__).resolve().parents[3] / "src"
     env_path = sys.executable
-    return subprocess.run(  # noqa: S603 — controlled args, no shell
+    return subprocess.run(
         [env_path, "-m", "iguanatrader.cli", *args],
         capture_output=True,
         text=True,
@@ -74,7 +74,7 @@ def stub_subcommand() -> Iterator[Path]:
         "from __future__ import annotations\n\n"
         "import typer\n\n"
         'app = typer.Typer(help="Stub for discovery test.")\n\n\n'
-        '@app.command()\n'
+        "@app.command()\n"
         "def hello() -> None:\n"
         '    """Print a deterministic greeting."""\n'
         '    typer.echo("hello-from-stub")\n',
