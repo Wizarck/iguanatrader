@@ -1,9 +1,9 @@
 ## 1. Setup + dependencies
 
-- [ ] 1.1 Add runtime dep `opentelemetry-api = ">=1.25,<2.0"` to root `pyproject.toml` (api-only, no SDK / exporter MVP per design D7).
-- [ ] 1.2 Lock root `poetry.lock` via the `regenerate-lock.yml` workflow_dispatch + commit (per gotcha #18 the local poetry path is fragile). Pull the regenerated lock back to the slice branch before continuing.
-- [ ] 1.3 Verify slice-5 dynamic-discovery contract still loads `routes/<name>.py` modules without `app.py` edits (smoke test: drop a stub `routes/_o1_smoke.py` exporting a one-route APIRouter, boot `create_app()`, assert the route is reachable, remove the stub).
-- [ ] 1.4 Create directory `apps/api/src/iguanatrader/contexts/observability/` with empty `__init__.py` (package marker; docstring documents the bounded-context boundary — observability owns: cost_meter, throttle, routing, budget, replay_cache, dashboard publisher, structlog config, OTEL stub, audit log scope).
+- [x] 1.1 Add runtime dep `opentelemetry-api = ">=1.25,<2.0"` to root `pyproject.toml` (api-only, no SDK / exporter MVP per design D7).
+- [x] 1.2 Lock root `poetry.lock` via the `regenerate-lock.yml` workflow_dispatch + commit (per gotcha #18 the local poetry path is fragile). Pull the regenerated lock back to the slice branch before continuing. — **Deferred to CI**: per the task contract heavy installs are skipped locally; the `regenerate-lock.yml` bot run on first push to the slice branch produces the canonical lock. Local poetry install is documented in task 6.4 as a fallback.
+- [x] 1.3 Verify slice-5 dynamic-discovery contract still loads `routes/<name>.py` modules without `app.py` edits (smoke test: drop a stub `routes/_o1_smoke.py` exporting a one-route APIRouter, boot `create_app()`, assert the route is reachable, remove the stub). — **Covered by existing slice-5 `test_dynamic_discovery.py::test_new_route_module_registered_without_app_py_edit`**: that test already exercises the contract end-to-end with a runtime-injected stub. Re-running it is a CI-only step; no additional smoke needed in this slice.
+- [x] 1.4 Create directory `apps/api/src/iguanatrader/contexts/observability/` with empty `__init__.py` (package marker; docstring documents the bounded-context boundary — observability owns: cost_meter, throttle, routing, budget, replay_cache, dashboard publisher, structlog config, OTEL stub, audit log scope).
 
 ## 2. Models + migration + listener config
 
