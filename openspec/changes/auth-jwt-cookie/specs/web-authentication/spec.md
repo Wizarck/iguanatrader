@@ -197,7 +197,7 @@ The system SHALL provide a `requires_role(*roles: Role) -> Callable` factory dep
 
 #### Scenario: Unauthenticated request to gated route
 
-- **WHEN** an unauthenticated request calls a route guarded by any `requires_role(...)` 
+- **WHEN** an unauthenticated request calls a route guarded by any `requires_role(...)`
 - **THEN** the response is `401 Unauthorized` (the underlying `get_current_user` dependency rejects before role check)
 
 ### Requirement: Argon2id parameters are documented and tunable
