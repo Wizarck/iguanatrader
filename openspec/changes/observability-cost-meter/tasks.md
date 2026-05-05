@@ -59,11 +59,11 @@
 
 ## 8. Documentation
 
-- [ ] 8.1 Append to `docs/gotchas.md`: gotcha #31 — Cost meter callsite enforcement (CI introspection asserts every Anthropic / OpenAI / Perplexity SDK call is inside a `@cost_meter`-decorated stack frame; bypassing the decorator silently un-tracks cost). Gotcha #32 — Default monthly budget cap is $50/tenant; raise via `iguanatrader admin set-budget` (slice O2) or directly via `tenants.feature_flags["llm_budget_usd"]`. Gotcha #33 — Perplexity throttle is process-local; multi-worker uvicorn deployments multiply effective rate by worker count (v2 ADR for Redis migration).
-- [ ] 8.2 Update `apps/api/README.md`: document the observability decorator API (`@cost_meter`, `@traced`, `@metered`); document the `IGUANATRADER_LLM_REPLAY=1` test mode; document the cost-dashboard SSE endpoint as the consumer-facing surface.
-- [ ] 8.3 Add `docs/runbooks/replay-cache-refresh.md`: when LLM provider responses drift (e.g., model version bump), the operator playbook for refreshing fixtures via `IGUANATRADER_LLM_REPLAY_RECORD=1 pytest tests/integration/test_replay_cache.py`. Include budget-gate caveat (refresh consumes real LLM budget).
-- [ ] 8.4 Add `docs/runbooks/budget-cap-management.md`: how to inspect current spend (`GET /costs/summary`), how to raise / reset the cap, what BLOCK_100 means operationally + what auto-downgrade looks like in practice.
-- [ ] 8.5 Update `docs/architecture-decisions.md` with cross-reference: "Perplexity throttle is process-local MVP; v2 SaaS migration to Redis-backed window deferred to ADR-019" + "OTEL ports declared MVP, exporter wiring deferred to v2 SaaS per ADR-019".
+- [x] 8.1 Append to `docs/gotchas.md`: gotcha #60 (cost meter callsite enforcement) + #61 (default $50/tenant cap) + #62 (process-local throttle) + #63 (slice-O2 carry-forward set). All landed in task 6.5.
+- [x] 8.2 Update `apps/api/README.md`: document the observability decorator API (`@cost_meter`, `@traced`, `@metered`); document the `IGUANATRADER_LLM_REPLAY=1` test mode; document the cost-dashboard SSE endpoint; document new env vars (`IGUANATRADER_ENV`, `IGUANATRADER_PERPLEXITY_MAX_RPM`, `IGUANATRADER_LLM_REPLAY*`, `IGUANATRADER_COST_SNAPSHOT_CADENCE_SECONDS`).
+- [x] 8.3 Add `docs/runbooks/replay-cache-refresh.md`: full operator playbook (snapshot, set record env, run targeted scenario, verify diffs, re-run in replay mode for determinism, commit) + budget caveat ($3 to refresh 100 Sonnet scenarios) + rollback procedure.
+- [x] 8.4 Add `docs/runbooks/budget-cap-management.md`: inspect via `GET /costs/summary` + `GET /costs/by-provider` + direct SQL; raise via slice-O2 CLI placeholder + direct `tenants.feature_flags` UPDATE; BLOCK_100 operational meaning; auto-downgrade behaviour in practice.
+- [x] 8.5 Update `docs/architecture-decisions.md` with cross-reference section "Slice O1 cross-references (added 2026-05-06)" — Perplexity throttle process-local MVP + OTEL ports stub deferred to provisional ADR-019.
 
 ## 9. Pre-merge verification
 

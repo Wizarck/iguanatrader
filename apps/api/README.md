@@ -403,6 +403,69 @@ Multichannel approval surface for trade proposals — Telegram + Hermes/WhatsApp
 - `iguanatrader approval audit <request_id>` — full audit chain
 - `iguanatrader approval sweep-expired` — manual timeout sweeper (slice O2 will cron-schedule)
 
+## Observability — cost meter + budget + replay cache
+
+Slice O1 (`observability-cost-meter`) plants the `iguanatrader.contexts.observability` bounded context. Public surface for downstream slices:
+
+```python
+from iguanatrader.contexts.observability.cost_meter import cost_meter
+from iguanatrader.contexts.observability.llm_routing import TaskClass, route_llm
+from iguanatrader.contexts.observability.budget import check_budget
+from iguanatrader.contexts.observability.perplexity_throttle import get_throttle
+from iguanatrader.contexts.observability.replay_cache import replay_cache
+from iguanatrader.contexts.observability.otel import traced, metered
+```
+
+### `@cost_meter(provider, model)` — wrap every LLM call
+
+```python
+from iguanatrader.contexts.observability.cost_meter import cost_meter
+
+@cost_meter(provider="anthropic", model="claude-3-5-sonnet")
+async def synthesize_brief(prompt: str) -> LLMResponse:
+    # call Anthropic SDK; return an object exposing
+    # tokens_input / tokens_output / cached
+    ...
+```
+
+The decorator persists `ApiCostEvent` automatically when `tenant_id_var` is set + a session is bound. Async-aware: works for both sync and async functions. **Every** Anthropic / OpenAI / Perplexity call site MUST be wrapped (gotcha #60 — currently a contract, not a static lint).
+
+### `route_llm(task_class, tenant_id=...)` — model-tier routing
+
+```python
+from iguanatrader.contexts.observability.llm_routing import TaskClass, route_llm
+
+tier = await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=user.tenant_id)
+# tier is `claude-3-5-sonnet` normally; `claude-3-5-haiku` on WARN_80;
+# raises BudgetExceededError on BLOCK_100.
+```
+
+The function runs the budget gate and emits `observability.llm.route_chosen`.
+
+### `@traced(span_name)` / `@metered(metric_name, kind)` — OTEL stub
+
+```python
+from iguanatrader.contexts.observability.otel import traced, metered
+
+@traced("research.synthesize_brief")
+@metered("research.briefs_synthesized_total", kind="counter")
+async def synthesize_brief(...): ...
+```
+
+No-op MVP per design D7. v2 SaaS swaps the bodies for OTLP exporter wiring; caller-side `@traced(...)` usage is wire-stable.
+
+### `IGUANATRADER_LLM_REPLAY=1` — deterministic test mode
+
+```sh
+IGUANATRADER_LLM_REPLAY=1 pytest apps/api/tests/integration/test_replay_cache.py
+```
+
+Replay-cache fixtures live under `apps/api/tests/fixtures/replay_cache/<scenario>.json`. Refresh procedure: `docs/runbooks/replay-cache-refresh.md`.
+
+### `GET /api/v1/stream/costs/snapshots` — SSE cost dashboard
+
+The cost-dashboard publisher emits `CostSnapshotEvent`s every 5 minutes per tenant; the SSE endpoint forwards them filtered to the authenticated tenant. Slice W1 + later UI slice consume the stream.
+
 ## See also
 
 - [`docs/architecture-decisions.md`](../../docs/architecture-decisions.md) — system-wide ADRs, including auth (D-Auth-1, D-Auth-2) + ADR-014 bitemporal research facts.

@@ -1758,6 +1758,15 @@ Estructura `apps/api/src/iguanatrader/contexts/<context>/` soporta:
 6. ISO 8601 UTC for ALL dates (wire/code/logs/docs/file-names).
 7. External adapters MUST extender `HeartbeatMixin` desde `shared/heartbeat.py` y proveer test integration `test_<adapter>_resilience.py`.
 
+## Slice O1 cross-references (added 2026-05-06 by `observability-cost-meter`)
+
+Two design decisions in slice O1 are process-local MVP with v2 SaaS migration paths. Both warrant a future **ADR-019: v2 SaaS observability — Redis throttle + OTLP exporter** but do not yet meet the bar for a standalone ADR file. Cross-references recorded here for traceability:
+
+- **Perplexity throttle is process-local MVP** (slice O1 design D3 + gotcha #62). The 60-second sliding-window deque is per-process; multi-worker uvicorn deployments multiply effective rate by worker count. v2 SaaS migration to Redis-backed window deferred to ADR-019. MVP runs single-process (`--workers 1`).
+- **OpenTelemetry ports declared, exporter wiring deferred** (slice O1 design D7). The `Tracer` / `Meter` Protocols + `@traced` / `@metered` decorators are no-op MVP; v2 SaaS lands the OTLP exporter + Grafana / Tempo collector. Caller-side `@traced(...)` usage is wire-stable; the v2 swap is in the decorator body, not at call sites.
+
+Both items are also documented in `apps/api/src/iguanatrader/contexts/observability/{perplexity_throttle,otel}.py` module docstrings.
+
 **First Implementation Priority (M1 Foundation):**
 
 ```bash
