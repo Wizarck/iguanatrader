@@ -204,7 +204,10 @@ async def test_zero_tenant_bootstrap_returns_503(
     assert resp.headers["content-type"].startswith("application/problem+json")
     body = resp.json()
     assert body["status"] == 503
-    assert body["type"] == "https://iguanatrader.local/problems/not-bootstrapped"
+    # Slice 5 (api-foundation-rfc7807) D9 canonicalises the type URI
+    # scheme from the slice-4 URL form to the project-wide urn form.
+    assert body["type"] == "urn:iguanatrader:error:not-bootstrapped"
+    assert body["title"] == "Service Not Bootstrapped"
     assert "iguanatrader admin bootstrap-tenant" in body["detail"]
 
 
