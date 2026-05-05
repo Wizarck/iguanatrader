@@ -27,12 +27,12 @@
 
 ## 4. Channel adapters (Telegram + WhatsApp/Hermes; stubbed transports)
 
-- [ ] 4.1 Create `apps/api/src/iguanatrader/contexts/approval/channels/transports/__init__.py` (package marker) + `transports/base.py` defining `ChannelTransportPort(Protocol)` with `async send_message`, `async fetch_updates`, `async health_check` per D8.
-- [ ] 4.2 Create `transports/fakes.py` with `FakeTelegramTransport` + `FakeHermesTransport` — in-memory implementations. Both expose test-only hooks: `inject_inbound(IncomingCommand)`, `pop_outbound() -> list[Message]`, `simulate_health_failure(times: int)` for the resilience tests.
-- [ ] 4.3 Create `apps/api/src/iguanatrader/contexts/approval/channels/telegram.py` with `TelegramChannel(ChannelPort)` taking a `ChannelTransportPort` at construction. Implements `_send_heartbeat` (delegates to `transport.health_check`), `_on_disconnect` (emits `approval.channel.telegram.disconnected` + flushes pending callbacks), `deliver_request` (renders the proposal as Telegram markdown + inline keyboard via `transport.send_message`), `start_listening` (long-poll via `transport.fetch_updates` → verify sender via `repository.is_sender_authorized` → normalise to `IncomingCommand` → call `command_handler.dispatch`).
-- [ ] 4.4 Create `apps/api/src/iguanatrader/contexts/approval/channels/whatsapp_hermes.py` mirroring telegram.py but for the Hermes/Meta wire format. Same Port consumption, same heartbeat heritage, same canonical backoff (no overrides).
-- [ ] 4.5 Create `apps/api/src/iguanatrader/contexts/approval/channels/dashboard.py` with `DashboardChannel(ChannelPort)` — third Port implementation (per design open-question resolution) so the dashboard route flows through `command_handler` for uniformity. `deliver_request` is a no-op (dashboard pulls via SSE); `start_listening` is also a no-op (dashboard sends via REST routes that call `dispatch` directly). Heartbeat overrides return `True` immediately (the dashboard is always "connected" in the FastAPI process).
-- [ ] 4.6 CI grep assertion: no `time.sleep`, `asyncio.sleep` with hardcoded numeric literals inside `contexts/approval/channels/` (forces use of `backoff_seconds`). Implement as a pre-commit local hook or a unit test parsing the AST.
+- [x] 4.1 `transports/__init__.py` + `transports/base.py` — `ChannelTransportPort(Protocol)` with `send_message`, `fetch_updates`, `health_check` (D8).
+- [x] 4.2 `transports/fakes.py` — `FakeTelegramTransport` + `FakeHermesTransport` with `inject_inbound`, `pop_outbound`, `simulate_health_failure` test hooks.
+- [x] 4.3 `channels/telegram.py` — `TelegramChannel(ChannelPort)`. Heartbeat delegates to `transport.health_check`; `_on_disconnect` emits `approval.channel.telegram.disconnected`. `start_listening` drains updates → checks `repository.is_sender_authorized` (silent-drop on miss with hashed external_id structlog) → normalises → `dispatch`.
+- [x] 4.4 `channels/whatsapp_hermes.py` — `HermesWhatsAppChannel(ChannelPort)` mirrors telegram.py shape; same canonical backoff via `HeartbeatMixin` (no overrides).
+- [x] 4.5 `channels/dashboard.py` — `DashboardChannel(ChannelPort)` third Port implementation. `deliver_request` no-op (dashboard pulls via SSE); `start_listening` no-op (REST routes call `dispatch` directly). Heartbeat returns immediately (always connected in-process).
+- [x] 4.6 `tests/unit/contexts/approval/test_no_hardcoded_sleeps.py` — AST-parameterised test that scans every module under `contexts/approval/channels/` and fails if any `<x>.sleep(N)` literal numeric arg is present. Forces use of `backoff_seconds` per design D3 / NFR-R7.
 
 ## 5. API routes + SSE + CLI + DTOs
 
