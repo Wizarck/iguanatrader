@@ -18,7 +18,6 @@ from __future__ import annotations
 import time
 
 import pytest
-
 from iguanatrader.api.auth import (
     JWT_ROTATION_THRESHOLD_SECONDS,
     Role,

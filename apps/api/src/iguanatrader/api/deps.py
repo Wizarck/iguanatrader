@@ -33,11 +33,13 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import lru_cache
+from typing import Any
+from uuid import UUID
 
 import structlog
 import structlog.contextvars
 from fastapi import Depends, HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from iguanatrader.api.auth import (
@@ -85,6 +87,82 @@ async def get_db() -> AsyncIterator[AsyncSession]:
     sessionmaker = _get_session_factory()
     async with sessionmaker() as session:
         yield session
+
+
+async def bootstrap_load_user_by_id(session: AsyncSession, user_id: UUID) -> User | None:
+    """Bootstrap-path User lookup that bypasses the slice-3 tenant listener.
+
+    Per design D7 + ``docs/gotchas.md`` #23: :func:`get_current_user` and
+    :func:`iguanatrader.api.routes.auth.login` need to load a User BEFORE
+    they know which tenant to set on :data:`tenant_id_var`. The slice-3
+    ORM listener raises :class:`TenantContextMissingError` for any ORM
+    SELECT when :data:`tenant_id_var` is unset (even queries that touch
+    only non-scoped tables — slice-3 design did not implement the
+    "absent ContextVar = no filter" branch promised in slice-4 design).
+
+    Raw SQL via :func:`sqlalchemy.text` bypasses the listener entirely
+    (gotcha #23). The query is parameterised by ``id`` only; cross-tenant
+    exposure is bounded by the JWT trust boundary (the JWT subject is
+    asserted by HS256 signature, an attacker can't forge a sub for
+    another tenant).
+
+    Returns a transient (not session-attached) :class:`User` instance
+    suitable for read-only use in the request lifecycle. Slice O1 will
+    fix the slice-3 listener to skip filter injection for queries that
+    only touch non-scoped tables, after which this helper can collapse
+    back to ORM ``select(User).where(...)``.
+    """
+    sql = text(
+        "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at "
+        "FROM users WHERE id = :uid LIMIT 1"
+    )
+    # SQLAlchemy 2.x ``Uuid`` column on SQLite stores as 32-char hex
+    # without hyphens (no native UUID type). Pass ``user_id.hex`` so the
+    # comparison hits the storage representation; the ORM-mapped User
+    # lookup wouldn't have this issue but raw SQL skips that conversion.
+    result = await session.execute(sql, {"uid": user_id.hex})
+    row = result.first()
+    if row is None:
+        return None
+    return _row_to_user(row)
+
+
+async def bootstrap_load_user_by_email(session: AsyncSession, email: str) -> User | None:
+    """Bootstrap-path counterpart of :func:`bootstrap_load_user_by_id`.
+
+    Used by ``POST /auth/login`` before any tenant context is established.
+    See :func:`bootstrap_load_user_by_id` docstring for rationale.
+    """
+    sql = text(
+        "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at "
+        "FROM users WHERE email = :email LIMIT 1"
+    )
+    result = await session.execute(sql, {"email": email})
+    row = result.first()
+    if row is None:
+        return None
+    return _row_to_user(row)
+
+
+def _row_to_user(row: Any) -> User:
+    """Construct a transient :class:`User` from a raw SQL row.
+
+    The returned instance is NOT attached to a session (no identity-map
+    membership, no lazy loading); it's a plain DTO for read paths. The
+    ``role_enum`` property still works because it's a pure-Python
+    property.
+    """
+    raw_id = row.id
+    raw_tid = row.tenant_id
+    return User(
+        id=raw_id if isinstance(raw_id, UUID) else UUID(raw_id),
+        tenant_id=raw_tid if isinstance(raw_tid, UUID) else UUID(raw_tid),
+        email=row.email,
+        password_hash=row.password_hash,
+        role=row.role,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 def is_secure_cookie() -> bool:
@@ -141,27 +219,29 @@ async def get_current_user(
     user_id_raw = claims.get("sub")
     if not isinstance(user_id_raw, str) or not user_id_raw:
         raise HTTPException(status_code=401, detail="Invalid token claims")
+    try:
+        user_id_uuid = uuid.UUID(user_id_raw)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token claims") from None
 
-    # Bootstrap path: tenant_id_var is UNSET here. Slice-3 tenant listener
-    # treats absent ContextVar as "no filter", which is what we need to
-    # find the user in the first place.
-    user = (
-        await session.execute(select(User).where(User.id == user_id_raw))
-    ).scalar_one_or_none()
+    # Bootstrap path: tenant_id_var is UNSET here. Use the raw-SQL helper
+    # (gotcha #23) to bypass the slice-3 listener — see helper docstring
+    # for rationale + slice-O1 follow-up that collapses this back to ORM.
+    user = await bootstrap_load_user_by_id(session, user_id_uuid)
     if user is None:
         log.warning("auth.user.not_found", user_id=user_id_raw)
         raise HTTPException(status_code=401, detail="User not found")
 
     # Now set the tenant ContextVar so any subsequent query in the request
-    # is tenant-isolated.
-    tenant_id_var.set(uuid.UUID(user.tenant_id))
+    # is tenant-isolated. user.tenant_id is already a UUID (Mapped[UUID]).
+    tenant_id_var.set(user.tenant_id)
 
     # Bind structlog contextvars so log records automatically carry
-    # tenant_id / user_id / correlation_id.
+    # tenant_id / user_id / correlation_id (rendered as strings for JSON).
     correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(
-        tenant_id=user.tenant_id,
-        user_id=user.id,
+        tenant_id=str(user.tenant_id),
+        user_id=str(user.id),
         correlation_id=correlation_id,
     )
 
@@ -170,8 +250,8 @@ async def get_current_user(
     if isinstance(exp_raw, int) and should_rotate(exp_raw, now):
         new_token = encode_jwt(
             {
-                "sub": user.id,
-                "tenant_id": user.tenant_id,
+                "sub": str(user.id),
+                "tenant_id": str(user.tenant_id),
                 "role": user.role,
                 "login_at": login_at_raw,
             },
@@ -187,7 +267,7 @@ async def get_current_user(
             samesite="strict",
             path="/",
         )
-        log.info("auth.session.rotated", user_id=user.id)
+        log.info("auth.session.rotated", user_id=str(user.id))
 
     return user
 

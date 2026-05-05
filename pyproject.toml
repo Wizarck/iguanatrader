@@ -97,6 +97,26 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["B011"] # asserts allowed in tests
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI canonical pattern: `Depends(callable)` / `Query(...)` etc. as
+# default argument values. The ruff B008 check flags these; the
+# extend-immutable-calls list whitelists the FastAPI factory functions
+# that ARE intended to be called at module load time.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+    # Project factories: by design (slice 4 D10) they return a fresh
+    # Depends-ready callable; calling at module-load is intentional.
+    "iguanatrader.api.deps.requires_role",
+]
+
 [tool.black]
 target-version = ["py311"]
 line-length = 100

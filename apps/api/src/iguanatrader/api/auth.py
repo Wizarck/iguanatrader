@@ -100,9 +100,7 @@ def _get_jwt_secret() -> str:
             "Generate a 32-byte hex secret and set it before booting."
         )
     if len(secret.encode("utf-8")) < _JWT_SECRET_MIN_BYTES:
-        raise RuntimeError(
-            f"{_JWT_SECRET_ENV} must be at least {_JWT_SECRET_MIN_BYTES} bytes."
-        )
+        raise RuntimeError(f"{_JWT_SECRET_ENV} must be at least {_JWT_SECRET_MIN_BYTES} bytes.")
     return secret
 
 
@@ -123,7 +121,7 @@ def verify_password(plain: str, hashed: str) -> bool:
         return _password_hasher.verify(hashed, plain)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
-    except Exception:  # noqa: BLE001  (defensive — argon2 has odd unicode edges)
+    except Exception:  # defensive — argon2 has odd unicode edges
         log.warning("auth.password.verify.unexpected_error", exc_info=True)
         return False
 

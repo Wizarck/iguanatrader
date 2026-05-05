@@ -27,8 +27,6 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-
 from iguanatrader.api import deps as api_deps
 from iguanatrader.api.app import create_app
 from iguanatrader.api.auth import hash_password
@@ -42,6 +40,8 @@ from iguanatrader.persistence import (
     unregister_global_listeners,
 )
 from iguanatrader.persistence.base import Base
+from iguanatrader.shared.contextvars import with_tenant_context
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 # Same Windows event-loop quirk as the persistence conftest.
 if sys.platform == "win32":
@@ -155,16 +155,23 @@ async def seeded_tenant_user(
     canonical single-seat-per-tenant model (per
     ``docs/personas-jtbd.md`` §RBAC Matrix refined 2026-05-05).
     """
-    tenant_id = str(uuid4())
-    user_id = str(uuid4())
+    tenant_uuid = uuid4()
+    user_uuid = uuid4()
     pw_hash = hash_password(SEEDED_PLAINTEXT_PASSWORD)
 
+    # Tenant insert is cross-tenant (Tenant.__tenant_scoped__ == False), so
+    # the slice-3 listener skips it. The User row IS tenant-scoped — wrap
+    # in `with_tenant_context` so `_stamp_tenant_on_inserts` finds the
+    # current tenant via tenant_id_var.
     async with schema_session_factory() as s:
-        s.add(Tenant(id=tenant_id, name=SEEDED_TENANT_NAME, feature_flags={}))
+        s.add(Tenant(id=tenant_uuid, name=SEEDED_TENANT_NAME, feature_flags={}))
+        await s.commit()
+
+    async with with_tenant_context(tenant_uuid), schema_session_factory() as s:
         s.add(
             User(
-                id=user_id,
-                tenant_id=tenant_id,
+                id=user_uuid,
+                tenant_id=tenant_uuid,
                 email=SEEDED_USER_EMAIL,
                 password_hash=pw_hash,
                 role="tenant_user",
@@ -172,4 +179,8 @@ async def seeded_tenant_user(
         )
         await s.commit()
 
-    return {"user_id": user_id, "tenant_id": tenant_id, "email": SEEDED_USER_EMAIL}
+    return {
+        "user_id": str(user_uuid),
+        "tenant_id": str(tenant_uuid),
+        "email": SEEDED_USER_EMAIL,
+    }

@@ -12,9 +12,20 @@ the bounded-context decomposition (``research``, ``trading``, ``risk``,
 
 Conventions:
 
-* IDs are stored as ``CHAR(36)`` (UUID with hyphens) for SQLite parity
-  with PostgreSQL ``UUID``. Application code converts to :class:`uuid.UUID`
-  at the boundary when needed.
+* IDs use SQLAlchemy's :class:`Uuid` type (Python :class:`uuid.UUID` at
+  the ORM boundary; SQLite stores as ``CHAR(32)`` non-hyphenated by
+  default, native ``UUID`` on PostgreSQL). The slice-3 migration
+  ``0001_initial_schema.py`` declared the columns as ``CHAR(36)`` —
+  there's a latent ORM/migration storage-shape disagreement (ORM-driven
+  ``Base.metadata.create_all`` produces ``CHAR(32)``, Alembic-driven
+  produces ``CHAR(36)``); slice-3 tests rely on the ORM path so the
+  pattern propagates here for consistency. Long-term fix is a slice-O1
+  follow-up that aligns the migration to ``Uuid``.
+* The slice-3 :func:`tenant_listener` compares
+  ``instance.tenant_id != tenant_id_var.get()`` directly; both sides
+  MUST be :class:`UUID` for the equality to work, hence the type choice
+  here (``Mapped[str]`` would yield string-vs-UUID mismatch and trip
+  :class:`TenantContextMismatchError` on every tenant-scoped insert).
 * ``Tenant`` is **not** tenant-scoped (``__tenant_scoped__ = False``) — it
   is the catalogue itself. ``User`` and ``AuthorizedSender`` inherit the
   default ``__tenant_scoped__ = True`` so the slice 3 listener filters
@@ -30,8 +41,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
-from sqlalchemy import CHAR, JSON, Boolean, DateTime, ForeignKey, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from iguanatrader.persistence.base import Base
@@ -46,7 +58,7 @@ class Tenant(Base):
     __tablename__ = "tenants"
     __tenant_scoped__ = False
 
-    id: Mapped[str] = mapped_column(CHAR(36), primary_key=True)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     feature_flags: Mapped[dict[str, Any]] = mapped_column(
         JSON,
@@ -82,9 +94,9 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(CHAR(36), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(
-        CHAR(36),
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
         ForeignKey("tenants.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
@@ -122,9 +134,9 @@ class AuthorizedSender(Base):
 
     __tablename__ = "authorized_senders"
 
-    id: Mapped[str] = mapped_column(CHAR(36), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(
-        CHAR(36),
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
         ForeignKey("tenants.id", ondelete="RESTRICT"),
         nullable=False,
     )

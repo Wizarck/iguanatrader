@@ -1,4 +1,4 @@
-"""Auth routes — ``POST /login``, ``POST /logout``, ``GET /me``.
+r"""Auth routes — ``POST /login``, ``POST /logout``, ``GET /me``.
 
 The router is mounted at ``/api/v1/auth`` via the manual
 ``app.include_router(...)`` call in :mod:`iguanatrader.api.app` (slice 5
@@ -30,13 +30,12 @@ from __future__ import annotations
 
 import time
 from typing import Any
-from uuid import UUID
 
 import structlog
 import structlog.contextvars
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iguanatrader.api.auth import (
@@ -49,13 +48,14 @@ from iguanatrader.api.auth import (
 )
 from iguanatrader.api.deps import (
     COOKIE_NAME,
-    is_secure_cookie,
+    bootstrap_load_user_by_email,
     get_current_user,
     get_db,
+    is_secure_cookie,
 )
 from iguanatrader.api.dtos.auth import LoginRequest, LoginResponse, MeResponse
 from iguanatrader.api.limiting import limiter
-from iguanatrader.persistence import Tenant, User
+from iguanatrader.persistence import User
 
 log = structlog.get_logger("iguanatrader.api.routes.auth")
 
@@ -138,9 +138,14 @@ async def login(
     """
     email_hash = hash_email_for_log(body.email)
 
-    # 1. Zero-tenant bootstrap guard (D6).
-    tenant_count_raw = await session.execute(select(func.count()).select_from(Tenant))
-    tenant_count = int(tenant_count_raw.scalar_one())
+    # 1. Zero-tenant bootstrap guard (D6). Raw SQL via text() — gotcha #23
+    #    documents the bypass; the slice-3 listener raises on every ORM
+    #    SELECT when tenant_id_var is unset (even queries against
+    #    non-tenant-scoped tables like ``tenants``). Slice-O1 follow-up
+    #    will fix the listener to skip filter injection for queries that
+    #    only touch non-scoped tables; until then, raw SQL is the contract.
+    tenant_count_row = (await session.execute(text("SELECT COUNT(*) AS n FROM tenants"))).first()
+    tenant_count = int(tenant_count_row.n) if tenant_count_row is not None else 0
     if tenant_count == 0:
         log.info("auth.login.bootstrap_required", email_hash=email_hash)
         return _problem_response(
@@ -153,12 +158,12 @@ async def login(
             ),
         )
 
-    # 2. User lookup. tenant_id_var is UNSET here on purpose — slice-3
-    #    listener treats absent ContextVar as "no filter", which is what
-    #    we need to find the user across tenants by their unique email.
-    user = (
-        await session.execute(select(User).where(User.email == body.email))
-    ).scalar_one_or_none()
+    # 2. User lookup. tenant_id_var is UNSET here on purpose (we don't yet
+    #    know which tenant the email belongs to — chicken-and-egg). The
+    #    raw-SQL helper bypasses the slice-3 listener (gotcha #23); JWT
+    #    trust boundary keeps cross-tenant exposure scoped to the
+    #    submitted email's owner only.
+    user = await bootstrap_load_user_by_email(session, body.email)
 
     # 3 + 4. Verify (or dummy-verify), uniform 401 on any failure.
     plaintext = body.password.get_secret_value()
@@ -181,7 +186,7 @@ async def login(
             "auth.login.failure",
             email_hash=email_hash,
             reason="wrong_password",
-            user_id=user.id,
+            user_id=str(user.id),
         )
         return _problem_response(
             status=401,
@@ -194,8 +199,8 @@ async def login(
     now = int(time.time())
     token = encode_jwt(
         {
-            "sub": user.id,
-            "tenant_id": user.tenant_id,
+            "sub": str(user.id),
+            "tenant_id": str(user.tenant_id),
             "role": user.role,
             "login_at": now,
         },
@@ -206,7 +211,7 @@ async def login(
     if redirect_to and safe_redirect != redirect_to:
         log.warning(
             "auth.login.redirect_rejected",
-            user_id=user.id,
+            user_id=str(user.id),
             rejected_value=redirect_to,
         )
 
@@ -225,8 +230,8 @@ async def login(
     )
 
     structlog.contextvars.bind_contextvars(
-        tenant_id=user.tenant_id,
-        user_id=user.id,
+        tenant_id=str(user.tenant_id),
+        user_id=str(user.id),
     )
     log.info("auth.login.success", email_hash=email_hash)
     return response
@@ -263,8 +268,8 @@ async def me(user: User = Depends(get_current_user)) -> MeResponse:
     field-by-field, not serialised wholesale).
     """
     return MeResponse(
-        user_id=UUID(user.id),
-        tenant_id=UUID(user.tenant_id),
+        user_id=user.id,
+        tenant_id=user.tenant_id,
         email=user.email,
         role=user.role_enum,
         created_at=user.created_at,

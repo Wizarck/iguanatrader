@@ -73,9 +73,7 @@ def _rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
     log.info("auth.login.rate_limited")
 
     # slowapi's RateLimitExceeded carries the limit description on .detail.
-    detail_text = (
-        getattr(exc, "detail", None) or "Too many login attempts. Try again shortly."
-    )
+    detail_text = getattr(exc, "detail", None) or "Too many login attempts. Try again shortly."
 
     # Conservative Retry-After: the smallest window slowapi enforces on
     # the login route is 60s ("5/minute"). We surface 60 unconditionally

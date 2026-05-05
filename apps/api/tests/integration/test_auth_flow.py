@@ -23,8 +23,6 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from iguanatrader.api import deps as api_deps
 from iguanatrader.api.auth import (
     COOKIE_CEILING_SECONDS,
@@ -35,12 +33,13 @@ from iguanatrader.api.auth import (
 )
 from iguanatrader.api.deps import COOKIE_NAME, requires_role
 from iguanatrader.persistence import Tenant, User
+from iguanatrader.shared.contextvars import with_tenant_context
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import (
     SEEDED_PLAINTEXT_PASSWORD,
     SEEDED_USER_EMAIL,
 )
-
 
 # --------------------------------------------------------------------------- #
 # 4.1 — login → /me → logout
@@ -63,7 +62,7 @@ async def test_login_success_sets_cookie_and_me_round_trips(
     assert COOKIE_NAME in set_cookie_header
     assert "HttpOnly" in set_cookie_header
     assert "Secure" in set_cookie_header
-    assert "SameSite=strict" in set_cookie_header.lower()
+    assert "samesite=strict" in set_cookie_header.lower()
     assert f"Max-Age={COOKIE_CEILING_SECONDS}" in set_cookie_header
     # Domain unset (default = exact host).
     assert "Domain=" not in set_cookie_header
@@ -228,7 +227,7 @@ async def test_jwt_rotation_attaches_set_cookie_on_near_expiry_request(
         },
         exp_seconds=25 * 60,  # 25 min < 30 min rotation threshold
     )
-    client.cookies.set(COOKIE_NAME, near_expiry_token, domain="test")
+    client.cookies.set(COOKIE_NAME, near_expiry_token)
 
     resp = await client.get("/api/v1/auth/me")
     assert resp.status_code == 200
@@ -258,7 +257,7 @@ async def test_7day_ceiling_returns_401_even_with_valid_jwt(
         },
         exp_seconds=JWT_DEFAULT_EXP_SECONDS,  # JWT itself is fresh
     )
-    client.cookies.set(COOKIE_NAME, expired_session_token, domain="test")
+    client.cookies.set(COOKIE_NAME, expired_session_token)
 
     resp = await client.get("/api/v1/auth/me")
     assert resp.status_code == 401
@@ -273,33 +272,45 @@ async def test_role_gating_tenant_user_vs_god_admin(
     schema_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """tenant_user gets 403, god_admin gets 200 on a god_admin-gated route."""
-    # Seed both users + their tenants.
-    tu_tenant = str(uuid4())
-    tu_user = str(uuid4())
-    ga_tenant = str(uuid4())
-    ga_user = str(uuid4())
+    # Seed both users + their tenants. Tenant inserts are cross-tenant
+    # (NOT scoped); User inserts MUST run under with_tenant_context so
+    # the slice-3 listener's _stamp_tenant_on_inserts finds the tenant.
+    tu_tenant_uuid = uuid4()
+    ga_tenant_uuid = uuid4()
+    tu_user_uuid = uuid4()
+    ga_user_uuid = uuid4()
     pw_hash = hash_password(SEEDED_PLAINTEXT_PASSWORD)
 
     async with schema_session_factory() as s:
         s.add_all(
             [
-                Tenant(id=tu_tenant, name="tu-tenant", feature_flags={}),
-                Tenant(id=ga_tenant, name="ga-tenant", feature_flags={}),
-                User(
-                    id=tu_user,
-                    tenant_id=tu_tenant,
-                    email="tu@example.com",
-                    password_hash=pw_hash,
-                    role="tenant_user",
-                ),
-                User(
-                    id=ga_user,
-                    tenant_id=ga_tenant,
-                    email="ga@example.com",
-                    password_hash=pw_hash,
-                    role="god_admin",
-                ),
+                Tenant(id=tu_tenant_uuid, name="tu-tenant", feature_flags={}),
+                Tenant(id=ga_tenant_uuid, name="ga-tenant", feature_flags={}),
             ]
+        )
+        await s.commit()
+
+    async with with_tenant_context(tu_tenant_uuid), schema_session_factory() as s:
+        s.add(
+            User(
+                id=tu_user_uuid,
+                tenant_id=tu_tenant_uuid,
+                email="tu@example.com",
+                password_hash=pw_hash,
+                role="tenant_user",
+            )
+        )
+        await s.commit()
+
+    async with with_tenant_context(ga_tenant_uuid), schema_session_factory() as s:
+        s.add(
+            User(
+                id=ga_user_uuid,
+                tenant_id=ga_tenant_uuid,
+                email="ga@example.com",
+                password_hash=pw_hash,
+                role="god_admin",
+            )
         )
         await s.commit()
 
@@ -323,13 +334,13 @@ async def test_role_gating_tenant_user_vs_god_admin(
         # tenant_user → 403.
         tu_token = encode_jwt(
             {
-                "sub": tu_user,
-                "tenant_id": tu_tenant,
+                "sub": str(tu_user_uuid),
+                "tenant_id": str(tu_tenant_uuid),
                 "role": "tenant_user",
                 "login_at": int(time.time()),
             }
         )
-        c.cookies.set(COOKIE_NAME, tu_token, domain="test")
+        c.cookies.set(COOKIE_NAME, tu_token)
         tu_resp = await c.get("/_test/god-only")
         assert tu_resp.status_code == 403
 
@@ -337,13 +348,13 @@ async def test_role_gating_tenant_user_vs_god_admin(
         c.cookies.clear()
         ga_token = encode_jwt(
             {
-                "sub": ga_user,
-                "tenant_id": ga_tenant,
+                "sub": str(ga_user_uuid),
+                "tenant_id": str(ga_tenant_uuid),
                 "role": "god_admin",
                 "login_at": int(time.time()),
             }
         )
-        c.cookies.set(COOKIE_NAME, ga_token, domain="test")
+        c.cookies.set(COOKIE_NAME, ga_token)
         ga_resp = await c.get("/_test/god-only")
         assert ga_resp.status_code == 200
         assert ga_resp.json() == {"role": "god_admin"}
@@ -377,9 +388,7 @@ async def test_me_with_tampered_jwt_returns_401(
     )
     head, payload, sig = token.rsplit(".", 2)
     tampered = f"{head}.{payload}.{'A' if sig[0] != 'A' else 'B'}{sig[1:]}"
-    client.cookies.set(COOKIE_NAME, tampered, domain="test")
+    client.cookies.set(COOKIE_NAME, tampered)
 
     resp = await client.get("/api/v1/auth/me")
     assert resp.status_code == 401
-
-

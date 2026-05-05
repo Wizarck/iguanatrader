@@ -8,7 +8,7 @@ OpenAPI typegen pipeline on top.
 
 This module exposes Argon2id parameter constants used by
 :mod:`iguanatrader.api.auth`. Defaults follow OWASP 2024 minimum
-recommendations + 2× memory headroom. Every parameter is overridable
+recommendations + 2x memory headroom. Every parameter is overridable
 via env var so operators can tune for constrained hosts (per design
 decision D4 in the slice 4 ``design.md``).
 

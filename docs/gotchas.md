@@ -406,11 +406,13 @@ Per-consumer the right invocation lives somewhere durable (Makefile target, runb
 
 **Symptom**: A developer adds a database query inside `get_current_user` (e.g., to load a user's role assignments) BEFORE the `tenant_id_var.set(...)` line. The new query returns rows from the wrong tenant, or all tenants, depending on the call site.
 
-**Root cause**: `get_current_user` is the bootstrap dependency that establishes tenant scope for the request. The very first SELECT (lookup user by JWT subject) MUST run with `tenant_id_var` UNSET so the slice-3 `tenant_listener` applies no filter — otherwise we'd need to know the tenant before we can load the user, which is circular. The current implementation has a single SELECT in the bootstrap path; everything after `tenant_id_var.set(user.tenant_id)` is tenant-isolated.
+**Root cause**: `get_current_user` is the bootstrap dependency that establishes tenant scope for the request. The very first SELECT (lookup user by JWT subject) MUST run with `tenant_id_var` UNSET — there's no tenant context yet, that's the whole point of the lookup. Slice 4's design.md D7 originally claimed the slice-3 listener "treats absent ContextVar as no filter", but that was a mis-read: the slice-3 listener actually **raises `TenantContextMissingError`** for any ORM SELECT when `tenant_id_var` is unset (even queries that touch only non-scoped tables like `tenants`).
 
-**Workaround**: Don't add queries to the bootstrap path. If you need additional joins (role table, feature flags, etc.), do them AFTER `tenant_id_var.set(...)` and rely on the listener. If the join MUST happen on the bootstrap path (e.g., a `User` join to `Tenant` for an active-tenant check), the developer MUST: (a) document inline why; (b) ensure the join's `WHERE` clause references `tenant_id` explicitly so cross-tenant leakage is impossible regardless of the listener's behaviour. Code comments in `apps/api/src/iguanatrader/api/deps.py::get_current_user` document the boundary.
+**Workaround**: The bootstrap-path queries (Tenant count + User-by-email + User-by-id) use raw SQL via `sqlalchemy.text()` per gotcha #23 — raw SQL bypasses the listener entirely. The helpers `bootstrap_load_user_by_id` and `bootstrap_load_user_by_email` in `apps/api/src/iguanatrader/api/deps.py` encapsulate this; the helper docstrings explain why and link back to this gotcha. After `tenant_id_var.set(user.tenant_id)` runs, every subsequent query is ORM-mapped + tenant-scoped via the listener as designed. **Don't add ORM SELECTs to the bootstrap path** — use the helpers (or extend them with new fields) so the workaround stays contained.
 
-**Status**: documented 2026-05-05. Linter rule that flags ORM SELECT inside `get_current_user` is a slice O1 follow-up.
+**Slice O1 follow-up**: Fix the slice-3 listener to skip filter injection for queries that only touch non-scoped tables. After that, the Tenant count helper can collapse to plain ORM. The User-by-id/email helpers stay raw-SQL (still no tenant context yet to filter on).
+
+**Status**: workaround in place 2026-05-05; slice-O1 fix tracked.
 
 ---
 

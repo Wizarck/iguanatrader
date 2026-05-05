@@ -15,7 +15,6 @@ import os
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
 from iguanatrader.api.auth import (
     JWT_DEFAULT_EXP_SECONDS,
     Role,
@@ -35,9 +34,7 @@ os.environ.setdefault("IGUANATRADER_JWT_SECRET", "x" * 64)
     role=st.sampled_from(list(Role)),
 )
 @settings(max_examples=100, deadline=None)
-def test_jwt_encode_decode_preserves_payload(
-    user_id: str, tenant_id: str, role: Role
-) -> None:
+def test_jwt_encode_decode_preserves_payload(user_id: str, tenant_id: str, role: Role) -> None:
     payload = {
         "sub": user_id,
         "tenant_id": tenant_id,
