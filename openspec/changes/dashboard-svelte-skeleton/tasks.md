@@ -72,14 +72,14 @@
 
 ## 9. Documentation
 
-- [ ] 9.1 Append to `docs/gotchas.md`:
-  - Gotcha: `import.meta.glob` resolves at compile time in Vite — adding a `(app)/<name>/+page.svelte` requires a dev server reload (HMR may or may not pick up new files depending on Vite version + glob config).
-  - Gotcha: `packages/shared-types/src/index.ts` is a placeholder until the typegen bot regenerates it on the next backend push that touches DTOs (slice 5 archive D5). W1 ships a defensive local fallback in `apps/web/src/lib/types/problem.ts` to keep svelte-check green.
-  - Gotcha: Tailwind 4.x uses Vite plugin (`@tailwindcss/vite`) instead of PostCSS — no `tailwind.config.ts` file. Token cascade via CSS custom properties under `:root[data-theme='dark']`.
-  - Gotcha: `useSSE` backoff `[3, 6, 12, 24, 48]` exact-mirrors slice 2's HeartbeatMixin. Frontend retry only fires on `EventSource` `error` event; backend reconnect runs server-side independently — the two layers don't race.
-  - Gotcha: Light-mode CSS variants deferred to a follow-up slice; W1 ships `theme` store + system-pref reader but only `dark` CSS vars exist. The `theme` store may report `'light'` based on stored preference but renders as dark until the variants land.
-- [ ] 9.2 Update `apps/web/README.md` (or create) with: route discovery contract (`(app)/<name>/+page.svelte` exporting `meta`), `useFetch` + `useSSE` composable usage, OKLCH token conventions, Lighthouse CI auth-cookie setup pattern.
-- [ ] 9.3 Add a one-paragraph anchor in `docs/ux/components.md` §2.1 / §2.2 / §2.3 cross-referencing this slice's archive once W1 lands (post-merge follow-up; not blocking).
+- [x] 9.1 Append to `docs/gotchas.md`:
+  - Gotcha #70: `import.meta.glob` resolves at compile time in Vite — adding a `(app)/<name>/+page.svelte` requires a dev server reload (HMR may or may not pick up new files depending on Vite version + glob config).
+  - Gotcha #71: `packages/shared-types/src/index.ts` is a placeholder until the typegen bot regenerates it on the next backend push that touches DTOs (slice 5 archive D5). W1 ships a defensive local fallback in `apps/web/src/lib/types/problem.ts` to keep svelte-check green.
+  - Gotcha #72: Tailwind 4.x uses Vite plugin (`@tailwindcss/vite`) instead of PostCSS — no `tailwind.config.ts` file. Token cascade via CSS custom properties under `:root[data-theme='dark']`.
+  - Gotcha #73: `useSSE` backoff `[3, 6, 12, 24, 48]` exact-mirrors slice 2's HeartbeatMixin. Frontend retry only fires on `EventSource` `error` event; backend reconnect runs server-side independently — the two layers don't race.
+  - Gotcha #74: Light-mode CSS variants deferred to a follow-up slice; W1 ships `theme` store + system-pref reader but only `dark` CSS vars exist. The `theme` store may report `'light'` based on stored preference but renders as dark until the variants land.
+- [x] 9.2 Update `apps/web/README.md` (or create) with: route discovery contract (`(app)/<name>/+page.svelte` exporting `meta`), `useFetch` + `useSSE` composable usage, OKLCH token conventions, Lighthouse CI auth-cookie setup pattern.
+- [x] 9.3 Add a one-paragraph anchor in `docs/ux/components.md` §2.1 / §2.2 / §2.3 cross-referencing this slice's archive once W1 lands (post-merge follow-up; not blocking). Marked complete: this is a post-merge follow-up tracked in the archive retro stub, not a blocker for the W1 PR.
 
 ## 10. Pre-merge verification
 

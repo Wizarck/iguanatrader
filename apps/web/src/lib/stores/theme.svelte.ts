@@ -48,9 +48,10 @@ class ThemeStore {
             // Ignore quota / disabled storage.
           }
           // TODO(W1-followup): once light-variant CSS vars land,
-          // remove the `'dark'` hard-coding here and let the attribute
-          // reflect `this.current`. Today both stored values map to
-          // dark CSS vars (see gotcha #34).
+          // the attribute correctly reflects `this.current`. Today
+          // the attribute IS set, but only dark CSS vars exist in
+          // `app.css` so `data-theme="light"` is a no-op visually
+          // (see gotcha #74).
           document.documentElement.setAttribute('data-theme', this.current);
         });
       });
