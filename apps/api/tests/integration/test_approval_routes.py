@@ -15,8 +15,6 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-
 from iguanatrader.api import deps as api_deps
 from iguanatrader.api.app import create_app
 from iguanatrader.api.auth import encode_jwt, hash_password
@@ -40,6 +38,7 @@ from iguanatrader.shared.contextvars import (
     session_var,
     with_tenant_context,
 )
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture(autouse=True)
@@ -120,9 +119,7 @@ async def app_with_overrides(
 @pytest.fixture
 async def client(app_with_overrides: Any) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app_with_overrides)
-    async with AsyncClient(
-        transport=transport, base_url="https://test"
-    ) as c:
+    async with AsyncClient(transport=transport, base_url="https://test") as c:
         yield c
 
 

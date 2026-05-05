@@ -17,9 +17,7 @@ import pytest
 
 
 def _channels_root() -> Path:
-    pkg = importlib.import_module(
-        "iguanatrader.contexts.approval.channels"
-    )
+    pkg = importlib.import_module("iguanatrader.contexts.approval.channels")
     paths = list(getattr(pkg, "__path__", []))
     if not paths:
         raise RuntimeError("could not resolve channels package path")
@@ -43,18 +41,16 @@ def test_no_hardcoded_sleep_literals(module_path: Path) -> None:
         # (``time.sleep``, ``asyncio.sleep``) and bare (``sleep``)
         # forms are checked — bare is unlikely but defensive.
         is_sleep_call = False
-        if isinstance(func, ast.Attribute) and func.attr == "sleep":
-            is_sleep_call = True
-        elif isinstance(func, ast.Name) and func.id == "sleep":
+        if (isinstance(func, ast.Attribute) and func.attr == "sleep") or (
+            isinstance(func, ast.Name) and func.id == "sleep"
+        ):
             is_sleep_call = True
         if not is_sleep_call:
             continue
         if not node.args:
             continue
         first_arg = node.args[0]
-        if isinstance(first_arg, ast.Constant) and isinstance(
-            first_arg.value, (int, float)
-        ):
+        if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, (int, float)):
             raise AssertionError(
                 f"Hardcoded sleep literal in {module_path}:{node.lineno} — "
                 "channels MUST use `iguanatrader.shared.backoff.backoff_seconds` "

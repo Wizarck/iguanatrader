@@ -23,9 +23,7 @@ import structlog
 from iguanatrader.contexts.approval.channels.base import ChannelPort
 from iguanatrader.contexts.approval.channels.types import ApprovalRequestRow
 
-log = structlog.get_logger(
-    "iguanatrader.contexts.approval.channels.dashboard"
-)
+log = structlog.get_logger("iguanatrader.contexts.approval.channels.dashboard")
 
 
 class DashboardChannel(ChannelPort):

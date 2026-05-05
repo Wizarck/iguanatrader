@@ -24,14 +24,10 @@ async def _handle(ctx: CommandContext) -> CommandResult:
     if len(reason) < _REASON_MIN_LEN:
         return CommandResult(
             status="error",
-            message=(
-                f"/override requires a reason of at least {_REASON_MIN_LEN} chars."
-            ),
+            message=(f"/override requires a reason of at least {_REASON_MIN_LEN} chars."),
         )
     try:
-        risk_service = importlib.import_module(
-            "iguanatrader.contexts.risk.service"
-        )
+        risk_service = importlib.import_module("iguanatrader.contexts.risk.service")
         record_override = getattr(risk_service, "record_override", None)
         if record_override is None:
             return CommandResult(
@@ -58,7 +54,5 @@ SPEC: CommandSpec = CommandSpec(
     handler=_handle,
     required_role="admin",
     idempotency_key_source="payload",
-    description_md=(
-        "Override a risk decision. Reason >= 20 chars. Admin only."
-    ),
+    description_md=("Override a risk decision. Reason >= 20 chars. Admin only."),
 )

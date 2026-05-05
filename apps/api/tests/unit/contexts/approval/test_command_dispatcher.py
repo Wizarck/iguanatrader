@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-
 from iguanatrader.contexts.approval.channels.command_handler import (
     dispatch,
     reset_idempotency_cache,

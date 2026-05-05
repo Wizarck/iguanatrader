@@ -18,8 +18,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-
 from iguanatrader.contexts.approval.bootstrap import get_message_bus
 from iguanatrader.contexts.approval.channels.command_handler import (
     reset_idempotency_cache,
@@ -48,9 +46,9 @@ from iguanatrader.persistence import (
 from iguanatrader.persistence.base import Base
 from iguanatrader.shared.contextvars import (
     session_var,
-    tenant_id_var,
     with_tenant_context,
 )
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture(autouse=True)

@@ -20,9 +20,7 @@ from iguanatrader.contexts.approval.channels.types import (
 async def _handle(ctx: CommandContext) -> CommandResult:
     reason = ctx.incoming.raw_args.strip() or None
     try:
-        risk_service = importlib.import_module(
-            "iguanatrader.contexts.risk.service"
-        )
+        risk_service = importlib.import_module("iguanatrader.contexts.risk.service")
         record_halt = getattr(risk_service, "record_halt", None)
         if record_halt is None:
             return CommandResult(

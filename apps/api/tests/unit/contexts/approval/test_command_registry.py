@@ -26,12 +26,8 @@ def test_assert_canonical_passes() -> None:
 
 def test_admin_role_assignment() -> None:
     """Per design D2 table: 6 admin commands; 11 user commands."""
-    admin_commands = {
-        name for name, spec in COMMANDS.items() if spec.required_role == "admin"
-    }
-    user_commands = {
-        name for name, spec in COMMANDS.items() if spec.required_role == "user"
-    }
+    admin_commands = {name for name, spec in COMMANDS.items() if spec.required_role == "admin"}
+    user_commands = {name for name, spec in COMMANDS.items() if spec.required_role == "user"}
     assert admin_commands == {
         "/halt",
         "/resume",
@@ -48,19 +44,13 @@ def test_idempotency_key_source_assignment() -> None:
     commands keyed by payload; read-only by 'none'.
     """
     request_id_commands = {
-        name
-        for name, spec in COMMANDS.items()
-        if spec.idempotency_key_source == "request_id"
+        name for name, spec in COMMANDS.items() if spec.idempotency_key_source == "request_id"
     }
     payload_commands = {
-        name
-        for name, spec in COMMANDS.items()
-        if spec.idempotency_key_source == "payload"
+        name for name, spec in COMMANDS.items() if spec.idempotency_key_source == "payload"
     }
     none_commands = {
-        name
-        for name, spec in COMMANDS.items()
-        if spec.idempotency_key_source == "none"
+        name for name, spec in COMMANDS.items() if spec.idempotency_key_source == "none"
     }
     assert request_id_commands == {"/approve", "/reject"}
     assert "/halt" in payload_commands

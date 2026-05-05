@@ -69,9 +69,7 @@ class ApprovalRepository(BaseRepository):
         """
         tenant_id = tenant_id_var.get()
         if tenant_id is None:
-            raise LookupError(
-                "tenant_id_var not set; cannot create approval request"
-            )
+            raise LookupError("tenant_id_var not set; cannot create approval request")
         created_at = utc_now()
         # ``expires_at`` is computed in pure Python so the value is
         # available immediately for fan-out + audit. Database also
@@ -129,9 +127,7 @@ class ApprovalRepository(BaseRepository):
         """
         tenant_id = tenant_id_var.get()
         if tenant_id is None:
-            raise LookupError(
-                "tenant_id_var not set; cannot record approval decision"
-            )
+            raise LookupError("tenant_id_var not set; cannot record approval decision")
         created_at = utc_now()
         row_id = uuid4()
         instance = ApprovalDecision(
@@ -152,8 +148,7 @@ class ApprovalRepository(BaseRepository):
             await self.session.rollback()
             raise ApprovalAlreadyDecidedError(
                 detail=(
-                    f"Decision already recorded for request {request_id}; "
-                    "first-decision-wins."
+                    f"Decision already recorded for request {request_id}; " "first-decision-wins."
                 ),
             ) from exc
         return ApprovalDecisionRow(
@@ -170,9 +165,7 @@ class ApprovalRepository(BaseRepository):
 
     async def get_decision(self, request_id: UUID) -> ApprovalDecisionRow | None:
         """Return the canonical decision row for a request, or None."""
-        stmt = select(ApprovalDecision).where(
-            ApprovalDecision.request_id == request_id
-        )
+        stmt = select(ApprovalDecision).where(ApprovalDecision.request_id == request_id)
         result = await self.session.execute(stmt)
         instance = result.scalar_one_or_none()
         if instance is None:

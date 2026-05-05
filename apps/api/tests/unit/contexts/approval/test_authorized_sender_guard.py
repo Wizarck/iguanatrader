@@ -10,15 +10,14 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-
 from iguanatrader.contexts.approval.channels.telegram import TelegramChannel
-from iguanatrader.contexts.approval.channels.types import IncomingCommand
-from iguanatrader.contexts.approval.channels.whatsapp_hermes import (
-    HermesWhatsAppChannel,
-)
 from iguanatrader.contexts.approval.channels.transports.fakes import (
     FakeHermesTransport,
     FakeTelegramTransport,
+)
+from iguanatrader.contexts.approval.channels.types import IncomingCommand
+from iguanatrader.contexts.approval.channels.whatsapp_hermes import (
+    HermesWhatsAppChannel,
 )
 
 

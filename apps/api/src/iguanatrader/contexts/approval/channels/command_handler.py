@@ -55,15 +55,11 @@ _recent_keys_set: set[str] = set()
 
 def _registry() -> Mapping[str, CommandSpec]:
     """Late-binding registry lookup to break circular imports."""
-    pkg = importlib.import_module(
-        "iguanatrader.contexts.approval.channels.commands"
-    )
+    pkg = importlib.import_module("iguanatrader.contexts.approval.channels.commands")
     commands_attr = getattr(pkg, "COMMANDS", None)
     if not isinstance(commands_attr, Mapping):
-        raise RuntimeError(
-            "approval commands package did not export COMMANDS mapping"
-        )
-    return commands_attr  # type: ignore[no-any-return]
+        raise RuntimeError("approval commands package did not export COMMANDS mapping")
+    return commands_attr
 
 
 def _resolve_caller_role(incoming: IncomingCommand) -> str:

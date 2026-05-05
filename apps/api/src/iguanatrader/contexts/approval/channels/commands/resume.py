@@ -13,9 +13,7 @@ from iguanatrader.contexts.approval.channels.types import (
 
 async def _handle(ctx: CommandContext) -> CommandResult:
     try:
-        risk_service = importlib.import_module(
-            "iguanatrader.contexts.risk.service"
-        )
+        risk_service = importlib.import_module("iguanatrader.contexts.risk.service")
         record_resume = getattr(risk_service, "record_resume", None)
         if record_resume is None:
             return CommandResult(

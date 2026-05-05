@@ -13,8 +13,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-
 from iguanatrader.contexts.approval.models import (
     ApprovalDecision,
     ApprovalRequest,
@@ -30,6 +28,7 @@ from iguanatrader.persistence import (
 from iguanatrader.persistence.base import Base
 from iguanatrader.shared.contextvars import with_tenant_context
 from iguanatrader.shared.time import UTC
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture(autouse=True)

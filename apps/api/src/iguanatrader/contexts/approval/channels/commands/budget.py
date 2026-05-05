@@ -17,9 +17,7 @@ from iguanatrader.contexts.approval.channels.types import (
 
 async def _handle(ctx: CommandContext) -> CommandResult:
     try:
-        obs_repo = importlib.import_module(
-            "iguanatrader.contexts.observability.repository"
-        )
+        obs_repo = importlib.import_module("iguanatrader.contexts.observability.repository")
     except ModuleNotFoundError:
         return CommandResult(
             status="ok",

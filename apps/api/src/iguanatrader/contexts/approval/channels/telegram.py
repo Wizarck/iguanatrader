@@ -108,9 +108,7 @@ class TelegramChannel(ChannelPort):
             # D6: silent-drop + structlog. NEVER echo to the user.
             import hashlib
 
-            external_hash = hashlib.sha256(
-                inbound.sender_external_id.encode("utf-8")
-            ).hexdigest()
+            external_hash = hashlib.sha256(inbound.sender_external_id.encode("utf-8")).hexdigest()
             log.info(
                 "approval.channel.sender_rejected",
                 channel="telegram",

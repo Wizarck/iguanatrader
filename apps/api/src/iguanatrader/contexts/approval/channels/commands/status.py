@@ -24,7 +24,7 @@ async def _handle(ctx: CommandContext) -> CommandResult:
         try:
             pending = await ctx.repository.list_pending()
             sections.append(f"approval: {len(pending)} pending")
-        except Exception:  # noqa: BLE001 — best-effort fold
+        except Exception:
             sections.append("approval: unavailable")
     # Trading section — optional cross-context.
     try:

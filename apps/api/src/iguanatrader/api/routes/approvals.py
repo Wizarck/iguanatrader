@@ -30,8 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from iguanatrader.api.deps import get_current_user, get_db
 from iguanatrader.api.dtos.approvals import (
     ApprovalCommandResult,
-    ApprovalRequest as ApprovalRequestDto,
     RejectionRequest,
+)
+from iguanatrader.api.dtos.approvals import (
+    ApprovalRequest as ApprovalRequestDto,
 )
 from iguanatrader.contexts.approval.bootstrap import (
     get_message_bus,

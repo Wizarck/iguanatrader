@@ -86,9 +86,7 @@ def assert_canonical() -> None:
             f"missing={sorted(missing)} extra={sorted(extra)}"
         )
     if len(COMMANDS) != 17:
-        raise AssertionError(
-            f"approval command registry must have 17 entries; got {len(COMMANDS)}"
-        )
+        raise AssertionError(f"approval command registry must have 17 entries; got {len(COMMANDS)}")
 
 
 __all__ = [

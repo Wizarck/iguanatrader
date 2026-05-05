@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-
 from iguanatrader.contexts.approval.channels.transports.fakes import (
     FakeHermesTransport,
 )

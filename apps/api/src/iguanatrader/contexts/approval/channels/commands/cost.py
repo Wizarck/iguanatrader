@@ -13,9 +13,7 @@ from iguanatrader.contexts.approval.channels.types import (
 
 async def _handle(ctx: CommandContext) -> CommandResult:
     try:
-        obs_repo = importlib.import_module(
-            "iguanatrader.contexts.observability.repository"
-        )
+        obs_repo = importlib.import_module("iguanatrader.contexts.observability.repository")
         current_month_cost = getattr(obs_repo, "current_month_cost", None)
         if current_month_cost is None:
             return CommandResult(

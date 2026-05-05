@@ -13,9 +13,7 @@ from iguanatrader.contexts.approval.channels.types import (
 
 async def _handle(ctx: CommandContext) -> CommandResult:
     try:
-        tenant_admin = importlib.import_module(
-            "iguanatrader.contexts.observability.tenant_admin"
-        )
+        tenant_admin = importlib.import_module("iguanatrader.contexts.observability.tenant_admin")
         set_flag = getattr(tenant_admin, "set_feature_flag", None)
         if set_flag is None:
             return CommandResult(

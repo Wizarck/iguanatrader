@@ -13,9 +13,7 @@ from iguanatrader.contexts.approval.channels.types import (
 
 async def _handle(ctx: CommandContext) -> CommandResult:
     try:
-        trading_repo = importlib.import_module(
-            "iguanatrader.contexts.trading.repository"
-        )
+        trading_repo = importlib.import_module("iguanatrader.contexts.trading.repository")
         list_active_strategies = getattr(trading_repo, "list_active_strategies", None)
         if list_active_strategies is None:
             return CommandResult(

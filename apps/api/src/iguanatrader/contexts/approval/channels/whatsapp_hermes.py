@@ -30,9 +30,7 @@ from iguanatrader.contexts.approval.channels.types import (
 )
 from iguanatrader.contexts.approval.repository import ApprovalRepository
 
-log = structlog.get_logger(
-    "iguanatrader.contexts.approval.channels.whatsapp_hermes"
-)
+log = structlog.get_logger("iguanatrader.contexts.approval.channels.whatsapp_hermes")
 
 
 class HermesWhatsAppChannel(ChannelPort):
@@ -100,9 +98,7 @@ class HermesWhatsAppChannel(ChannelPort):
             external_id=inbound.sender_external_id,
         )
         if not authorized:
-            external_hash = hashlib.sha256(
-                inbound.sender_external_id.encode("utf-8")
-            ).hexdigest()
+            external_hash = hashlib.sha256(inbound.sender_external_id.encode("utf-8")).hexdigest()
             log.info(
                 "approval.channel.sender_rejected",
                 channel="whatsapp",

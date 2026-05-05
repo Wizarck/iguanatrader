@@ -13,9 +13,7 @@ from iguanatrader.contexts.approval.channels.types import (
 
 async def _handle(ctx: CommandContext) -> CommandResult:
     try:
-        risk_repo = importlib.import_module(
-            "iguanatrader.contexts.risk.repository"
-        )
+        risk_repo = importlib.import_module("iguanatrader.contexts.risk.repository")
         snapshot = getattr(risk_repo, "snapshot", None)
         if snapshot is None:
             return CommandResult(

@@ -15,13 +15,10 @@ checks then recover. We assert:
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-
 from iguanatrader.contexts.approval.channels.telegram import TelegramChannel
 from iguanatrader.contexts.approval.channels.transports.fakes import (
     FakeTelegramTransport,

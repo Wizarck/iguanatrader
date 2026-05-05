@@ -13,9 +13,7 @@ from iguanatrader.contexts.approval.channels.types import (
 
 async def _handle(ctx: CommandContext) -> CommandResult:
     try:
-        trading_repo = importlib.import_module(
-            "iguanatrader.contexts.trading.repository"
-        )
+        trading_repo = importlib.import_module("iguanatrader.contexts.trading.repository")
         latest_equity_snapshot = getattr(trading_repo, "latest_equity_snapshot", None)
         if latest_equity_snapshot is None:
             return CommandResult(

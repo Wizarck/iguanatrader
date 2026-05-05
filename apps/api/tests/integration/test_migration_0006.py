@@ -26,6 +26,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 
 
 @pytest.fixture
@@ -116,7 +117,7 @@ def test_unique_constraint_rejects_duplicate_decision(alembic_config: Config) ->
                 "ca": "2026-05-06T00:00:00Z",
             },
         )
-    with sync_engine.begin() as conn, pytest.raises(Exception):
+    with sync_engine.begin() as conn, pytest.raises(SQLAlchemyError):
         conn.execute(
             text(
                 "INSERT INTO approval_decisions "
@@ -158,7 +159,7 @@ def test_update_blocked_by_trigger(alembic_config: Config) -> None:
                 "ca": "2026-05-06T00:00:00Z",
             },
         )
-    with sync_engine.begin() as conn, pytest.raises(Exception):
+    with sync_engine.begin() as conn, pytest.raises(SQLAlchemyError):
         conn.execute(
             text("UPDATE approval_requests SET timeout_seconds = 120 WHERE id = :id"),
             {"id": request_id},

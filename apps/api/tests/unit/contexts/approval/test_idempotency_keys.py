@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-
 from iguanatrader.contexts.approval.channels.command_handler import (
     dispatch,
     reset_idempotency_cache,
@@ -110,4 +109,4 @@ async def test_halt_time_bucket_dedups_within_window() -> None:
     # Both attempt fresh; neither succeeds — the cache only records
     # ok-status results.
     assert r1.status in {"error", "ok"}
-    assert r2.status in {"error", "ok", "ok"}
+    assert r2.status in {"error", "ok"}

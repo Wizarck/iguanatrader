@@ -16,10 +16,8 @@ from iguanatrader.contexts.approval.channels.types import (
 
 
 async def _handle(ctx: CommandContext) -> CommandResult:
-    registry = importlib.import_module(
-        "iguanatrader.contexts.approval.channels.commands"
-    )
-    commands_map = registry.COMMANDS  # type: ignore[attr-defined]
+    registry = importlib.import_module("iguanatrader.contexts.approval.channels.commands")
+    commands_map = registry.COMMANDS
     lines: list[str] = []
     # Sort alphabetically for stable output across channels (FR37).
     for name in sorted(commands_map.keys()):
