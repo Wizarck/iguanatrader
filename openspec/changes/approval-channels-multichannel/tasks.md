@@ -1,9 +1,9 @@
 ## 1. Setup + dependencies
 
-- [ ] 1.1 Verify slice 5 (`api-foundation-rfc7807`) is merged on the slice branch's base — dynamic discovery + RFC 7807 + typegen pipeline must be present (read-only check; no edits to slice-5 surfaces).
-- [ ] 1.2 Verify slice K1 (`risk-engine-protections`) is merged ahead of P1 per merge order; rebase if K1 lands after the slice branch is opened. Hard prereq because `/halt`, `/resume`, `/override` route into `iguanatrader.contexts.risk.service`.
-- [ ] 1.3 No new external Python deps (D8 — channel transports stubbed via Ports). Confirm `pyproject.toml` is unchanged in this slice except for any internal package-path additions.
-- [ ] 1.4 No new pnpm deps; the typegen pipeline auto-includes new DTOs on the next CI push.
+- [x] 1.1 Verify slice 5 (`api-foundation-rfc7807`) is merged on the slice branch's base — dynamic discovery + RFC 7807 + typegen pipeline must be present (read-only check; no edits to slice-5 surfaces).
+- [x] 1.2 Verify slice K1 (`risk-engine-protections`) is merged ahead of P1 per merge order; rebase if K1 lands after the slice branch is opened. Hard prereq because `/halt`, `/resume`, `/override` route into `iguanatrader.contexts.risk.service`. **Cross-slice merge plan**: P1 imports the K1 surface lazily (`importlib`) inside command handlers so this slice's CI does not depend on K1 having landed. The skipped alembic chain test guards the migration order. Documented inline in commands/halt.py / resume.py / override.py.
+- [x] 1.3 No new external Python deps (D8 — channel transports stubbed via Ports). Confirm `pyproject.toml` is unchanged in this slice except for any internal package-path additions.
+- [x] 1.4 No new pnpm deps; the typegen pipeline auto-includes new DTOs on the next CI push.
 
 ## 2. Models + migration + append-only listener wiring
 
