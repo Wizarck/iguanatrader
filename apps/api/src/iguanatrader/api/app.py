@@ -26,9 +26,6 @@ Entrypoint for the dev/smoke uvicorn runner: :mod:`iguanatrader.api.__main__`.
 
 from __future__ import annotations
 
-import logging
-import sys
-
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -38,34 +35,28 @@ from iguanatrader.api.errors import register_error_handlers
 from iguanatrader.api.limiting import BufferLoginEmailMiddleware, limiter
 from iguanatrader.api.routes import register_routers
 from iguanatrader.api.sse import register_sse
+from iguanatrader.contexts.observability.structlog_config import (
+    configure_logging,
+    get_env,
+)
 
 
 def _configure_structlog() -> None:
-    """Configure structlog for JSON output to stdout.
+    """Configure structlog via the observability bounded context.
 
-    Idempotent — calling twice is a no-op (structlog tracks the config
-    state internally). Slice O1 will replace this with a richer config
-    (e.g., per-level filtering, dev pretty-printer, OTLP forwarding).
+    Added 2026-05-06 by slice O1 (``observability-cost-meter``) per
+    design D6 — this is the single deliberate exception to the
+    "slice O1 doesn't edit shared infra" scope clause. Justification:
+    NFR-O3 requires log rotation + 7-day retention; the only sensible
+    owner is the observability context. Pushing the config there +
+    leaving a one-liner delegate here is the cleanest factoring; future
+    enhancements (OTLP forwarding, dev TTY pretty-printer) edit
+    :mod:`iguanatrader.contexts.observability.structlog_config`, never
+    this file.
+
+    Idempotent — calling twice replaces the existing config.
     """
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=logging.INFO,
-    )
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
+    configure_logging(get_env())
 
 
 def _rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
