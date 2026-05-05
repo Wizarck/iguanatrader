@@ -74,9 +74,8 @@ async def get_state(
     """
     service = _build_service(session)
     caps = service.load_caps()
-    state = await service._repo.load_risk_state(user.tenant_id)  # noqa: SLF001
-    is_active = await service._repo.load_kill_switch_state(user.tenant_id)  # noqa: SLF001
-
+    state = await service.repository.load_risk_state(user.tenant_id)
+    is_active = await service.repository.load_kill_switch_state(user.tenant_id)
     # ``per_trade`` utilisation is per-proposal (not stateful), so it's
     # absent from this snapshot — the dashboard renders it on a
     # per-proposal basis from the per-evaluation events.

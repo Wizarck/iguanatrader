@@ -67,9 +67,7 @@ def _resolve_tenant_id(tenant_id: str | None) -> UUID:
     """Resolve the tenant id from CLI flag or env var; raise on neither."""
     raw = tenant_id or os.getenv(_TENANT_ID_ENV)
     if not raw:
-        raise typer.BadParameter(
-            f"--tenant-id is required (or set {_TENANT_ID_ENV} env var)."
-        )
+        raise typer.BadParameter(f"--tenant-id is required (or set {_TENANT_ID_ENV} env var).")
     try:
         return uuid.UUID(raw)
     except ValueError as exc:
@@ -188,8 +186,7 @@ def override(
     actor_uuid = _resolve_actor_user_id(actor_user_id)
     if actor_uuid is None:
         raise typer.BadParameter(
-            "--actor-user-id is required for override (or set "
-            "IGUANATRADER_OPS_ACTOR_USER_ID)."
+            "--actor-user-id is required for override (or set " "IGUANATRADER_OPS_ACTOR_USER_ID)."
         )
     try:
         proposal_uuid = uuid.UUID(proposal_id)
@@ -210,12 +207,8 @@ def override(
         async with with_tenant_context(tenant_uuid):
             now = utc_now()
             chain = ConfirmationChain(
-                first_confirmation=Confirmation(
-                    channel="cli", at=now, actor_user_id=actor_uuid
-                ),
-                second_confirmation=Confirmation(
-                    channel="cli", at=now, actor_user_id=actor_uuid
-                ),
+                first_confirmation=Confirmation(channel="cli", at=now, actor_user_id=actor_uuid),
+                second_confirmation=Confirmation(channel="cli", at=now, actor_user_id=actor_uuid),
             )
             service = RiskService(repository=RiskRepository(session))
             return await service.record_override(

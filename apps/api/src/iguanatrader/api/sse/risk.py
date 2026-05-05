@@ -22,7 +22,7 @@ import json
 from collections.abc import AsyncIterator
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
@@ -38,7 +38,7 @@ from iguanatrader.contexts.risk.events import (
     RiskProposalRejected,
 )
 from iguanatrader.persistence import User
-from iguanatrader.shared.messagebus import MessageBus
+from iguanatrader.shared.messagebus import Event, MessageBus, Subscription
 
 log = structlog.get_logger("iguanatrader.api.sse.risk")
 
@@ -145,12 +145,15 @@ async def stream_risk_events(
     async def _enqueue(event: Any) -> None:
         await queue.put(event)
 
-    subs = [
-        bus.subscribe(RiskProposalAccepted, _enqueue),
-        bus.subscribe(RiskProposalRejected, _enqueue),
-        bus.subscribe(RiskProposalOverrideRequired, _enqueue),
-        bus.subscribe(RiskKillSwitchActivated, _enqueue),
-        bus.subscribe(RiskKillSwitchDeactivated, _enqueue),
+    subs: list[Subscription[Event]] = [
+        cast("Subscription[Event]", bus.subscribe(RiskProposalAccepted, _enqueue)),
+        cast("Subscription[Event]", bus.subscribe(RiskProposalRejected, _enqueue)),
+        cast(
+            "Subscription[Event]",
+            bus.subscribe(RiskProposalOverrideRequired, _enqueue),
+        ),
+        cast("Subscription[Event]", bus.subscribe(RiskKillSwitchActivated, _enqueue)),
+        cast("Subscription[Event]", bus.subscribe(RiskKillSwitchDeactivated, _enqueue)),
     ]
 
     log.info(

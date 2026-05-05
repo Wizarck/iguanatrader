@@ -213,9 +213,7 @@ async def test_record_override_persists_full_audit_metadata(
         await session.commit()
 
         row = (
-            await session.execute(
-                select(RiskOverrideORM).where(RiskOverrideORM.id == override_id)
-            )
+            await session.execute(select(RiskOverrideORM).where(RiskOverrideORM.id == override_id))
         ).scalar_one()
         assert row.authorised_by_user_id == user_id
         assert len(row.reason_text) >= 20

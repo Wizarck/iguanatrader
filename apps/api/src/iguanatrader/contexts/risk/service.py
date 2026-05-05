@@ -50,7 +50,6 @@ from iguanatrader.contexts.risk.models import (
     Decision,
     KillSwitchSource,
     RiskCaps,
-    RiskState,
     TradeProposalInput,
 )
 from iguanatrader.contexts.risk.ports import RiskRepositoryPort
@@ -83,6 +82,17 @@ class RiskService:
     ) -> None:
         self._repo = repository
         self._bus = bus
+
+    @property
+    def repository(self) -> RiskRepositoryPort:
+        """Read-only accessor for the underlying repository.
+
+        Routes use this to satisfy the "load state + load kill-switch"
+        round-trip without going through :meth:`evaluate_proposal`.
+        Direct calls bypass the kill-switch gate, so callers MUST NOT
+        use this to short-circuit a real evaluation.
+        """
+        return self._repo
 
     # ------------------------------------------------------------------
     # Cap loading
@@ -239,9 +249,7 @@ class RiskService:
         if cap_type not in {"daily_loss", "weekly_loss", "max_drawdown"}:
             return
 
-        already = await self._repo.has_today_automatic_breach_event(
-            tenant_id, utc_now(), cap_type
-        )
+        already = await self._repo.has_today_automatic_breach_event(tenant_id, utc_now(), cap_type)
         if already:
             return
 

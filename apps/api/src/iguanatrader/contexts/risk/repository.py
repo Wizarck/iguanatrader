@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -64,7 +65,7 @@ class RiskRepository(RiskRepositoryPort):
         Until then the service layer can override this method (or
         the test fixture can swap an in-memory port impl).
         """
-        return RiskState(capital=0)
+        return RiskState(capital=Decimal(0))
 
     async def save_evaluation(
         self,
@@ -178,14 +179,14 @@ class RiskRepository(RiskRepositoryPort):
         equivalent ``sqlalchemy.dialects.postgresql.insert`` lands as
         a follow-up when the engine is detected at boot.
         """
-        stmt = sqlite_insert(KillSwitchStateORM.__table__).values(
+        stmt = sqlite_insert(KillSwitchStateORM).values(
             tenant_id=tenant_id,
             is_active=is_active,
             last_event_id=last_event_id,
             updated_at=updated_at,
         )
         stmt = stmt.on_conflict_do_update(
-            index_elements=[KillSwitchStateORM.__table__.c.tenant_id],
+            index_elements=["tenant_id"],
             set_={
                 "is_active": is_active,
                 "last_event_id": last_event_id,

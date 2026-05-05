@@ -138,6 +138,4 @@ def test_engine_protections_module_has_no_forbidden_imports() -> None:
             failures.append(f"{module_path.name}:")
             failures.extend([f"  {v}" for v in violations])
 
-    assert not failures, (
-        "protection module purity violation(s):\n" + "\n".join(failures)
-    )
+    assert not failures, "protection module purity violation(s):\n" + "\n".join(failures)
