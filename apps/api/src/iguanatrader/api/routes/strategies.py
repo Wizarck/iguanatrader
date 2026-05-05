@@ -31,10 +31,7 @@ def _stub(method: str, path: str) -> NotImplementedFeatureError:
         path=path,
     )
     return NotImplementedFeatureError(
-        detail=(
-            f"{method} /api/v1{path} will be wired in slice T4 "
-            "(trading-routes-and-daemon)."
-        ),
+        detail=(f"{method} /api/v1{path} will be wired in slice T4 (trading-routes-and-daemon)."),
     )
 
 

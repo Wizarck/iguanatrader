@@ -24,15 +24,7 @@ from sqlalchemy import create_engine, inspect
 
 def _versions_dir() -> Path:
     repo_root = Path(__file__).resolve().parents[5]
-    return (
-        repo_root
-        / "apps"
-        / "api"
-        / "src"
-        / "iguanatrader"
-        / "migrations"
-        / "versions"
-    )
+    return repo_root / "apps" / "api" / "src" / "iguanatrader" / "migrations" / "versions"
 
 
 def _r1_migration_present() -> bool:
@@ -76,9 +68,9 @@ def test_r1_migration_required_for_upgrade(alembic_config: Config) -> None:
             "without temporarily removing 0002_research_tables.py from versions/"
         )
 
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017 — alembic raises one of several internal types
         # Loading the script directory walks the chain and surfaces the
-        # missing-revision error.
+        # missing-revision error (alembic.util.exc.CommandError or similar).
         ScriptDirectory.from_config(alembic_config).walk_revisions()
 
 

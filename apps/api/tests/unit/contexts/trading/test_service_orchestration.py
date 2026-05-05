@@ -13,7 +13,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-
 from iguanatrader.contexts.trading.events import (
     ProposalApproved,
     ProposalCreated,
@@ -146,12 +145,8 @@ async def test_execute_on_approval_handler_idempotent_under_duplicate_publish() 
     bus.subscribe(ProposalApproved, _wrapper, idempotent=True)
 
     pid = uuid4()
-    await bus.publish(
-        ProposalApproved(tenant_id=tenant_id, proposal_id=pid)
-    )
-    await bus.publish(
-        ProposalApproved(tenant_id=tenant_id, proposal_id=pid)
-    )
+    await bus.publish(ProposalApproved(tenant_id=tenant_id, proposal_id=pid))
+    await bus.publish(ProposalApproved(tenant_id=tenant_id, proposal_id=pid))
 
     # Drain queues. asyncio.sleep(0) repeatedly until everything has been
     # processed; the FIFO worker hops control on each await.

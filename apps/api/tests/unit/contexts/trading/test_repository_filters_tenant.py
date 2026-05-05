@@ -9,7 +9,6 @@ tenant is bound.
 from __future__ import annotations
 
 import pytest
-
 from iguanatrader.contexts.trading.repository import (
     EquitySnapshotRepository,
     FillRepository,

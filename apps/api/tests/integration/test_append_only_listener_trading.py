@@ -24,9 +24,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-
 from iguanatrader.contexts.trading.models import (
     Order,
     StrategyConfig,
@@ -43,6 +40,8 @@ from iguanatrader.persistence import (
 from iguanatrader.persistence.base import Base
 from iguanatrader.persistence.errors import AppendOnlyViolationError
 from iguanatrader.shared.contextvars import with_tenant_context
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 if sys.platform == "win32":
     import asyncio
@@ -191,17 +190,13 @@ async def test_update_on_trade_state_succeeds(
         await s.commit()
 
     async with with_tenant_context(tenant_id), session_fx() as s:
-        trade = (
-            await s.execute(select(Trade).where(Trade.id == trade_id))
-        ).scalar_one()
+        trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
         trade.state = "closed_filled"
         trade.closed_at = datetime.now(UTC)
         await s.commit()  # Should NOT raise — both columns whitelisted.
 
     async with with_tenant_context(tenant_id), session_fx() as s:
-        trade = (
-            await s.execute(select(Trade).where(Trade.id == trade_id))
-        ).scalar_one()
+        trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
         assert trade.state == "closed_filled"
         assert trade.closed_at is not None
 
@@ -249,9 +244,7 @@ async def test_update_on_trade_symbol_raises(
         await s.commit()
 
     async with with_tenant_context(tenant_id), session_fx() as s:
-        trade = (
-            await s.execute(select(Trade).where(Trade.id == trade_id))
-        ).scalar_one()
+        trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
         trade.symbol = "QQQ"
         with pytest.raises(AppendOnlyViolationError):
             await s.commit()
@@ -314,9 +307,7 @@ async def test_update_on_order_broker_order_id_succeeds(
         await s.commit()
 
     async with with_tenant_context(tenant_id), session_fx() as s:
-        order = (
-            await s.execute(select(Order).where(Order.id == order_id))
-        ).scalar_one()
+        order = (await s.execute(select(Order).where(Order.id == order_id))).scalar_one()
         order.broker_order_id = "IB-12345"
         order.state = "submitted"
         order.submitted_at = datetime.now(UTC)
@@ -337,9 +328,7 @@ async def test_strategy_config_update_bumps_version(
 
     async with with_tenant_context(tenant_id), session_fx() as s:
         cfg = (
-            await s.execute(
-                select(StrategyConfig).where(StrategyConfig.id == strategy_id)
-            )
+            await s.execute(select(StrategyConfig).where(StrategyConfig.id == strategy_id))
         ).scalar_one()
         original = cfg.version
         cfg.params = {"lookback": 30}
@@ -347,8 +336,6 @@ async def test_strategy_config_update_bumps_version(
 
     async with with_tenant_context(tenant_id), session_fx() as s:
         cfg = (
-            await s.execute(
-                select(StrategyConfig).where(StrategyConfig.id == strategy_id)
-            )
+            await s.execute(select(StrategyConfig).where(StrategyConfig.id == strategy_id))
         ).scalar_one()
         assert cfg.version == original + 1

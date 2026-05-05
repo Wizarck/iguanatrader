@@ -114,7 +114,11 @@ class TradeProposal(Base):
     """
 
     __tablename__ = "trade_proposals"
-    __tablename_is_append_only__: ClassVar[bool] = True
+    # ``__tablename_is_append_only__`` is declared on :class:`Base` as an
+    # instance-attribute annotation; per-subclass overrides land as plain
+    # class attributes (no ClassVar annotation) so mypy doesn't flag a
+    # variance mismatch with the parent's declaration.
+    __tablename_is_append_only__ = True
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -169,10 +173,8 @@ class Trade(Base):
     """
 
     __tablename__ = "trades"
-    __tablename_is_append_only__: ClassVar[bool] = True
-    __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset(
-        {"state", "closed_at"}
-    )
+    __tablename_is_append_only__ = True
+    __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset({"state", "closed_at"})
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -216,7 +218,7 @@ class Order(Base):
     """
 
     __tablename__ = "orders"
-    __tablename_is_append_only__: ClassVar[bool] = True
+    __tablename_is_append_only__ = True
     __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset(
         {
             "state",
@@ -275,7 +277,7 @@ class Fill(Base):
     """
 
     __tablename__ = "fills"
-    __tablename_is_append_only__: ClassVar[bool] = True
+    __tablename_is_append_only__ = True
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -324,7 +326,7 @@ class EquitySnapshot(Base):
     """
 
     __tablename__ = "equity_snapshots"
-    __tablename_is_append_only__: ClassVar[bool] = True
+    __tablename_is_append_only__ = True
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -429,9 +431,7 @@ EquitySnapshot.__table_args__ = (
 # T1 onwards.
 # ---------------------------------------------------------------------------
 @event.listens_for(StrategyConfig, "before_update", propagate=False)
-def _strategy_config_before_update(
-    mapper: Any, connection: Any, target: StrategyConfig
-) -> None:
+def _strategy_config_before_update(mapper: Any, connection: Any, target: StrategyConfig) -> None:
     """Bump :attr:`StrategyConfig.version` + emit ``trading.config.changed``.
 
     Hook is registered at module import time. The structlog event is the

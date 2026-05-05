@@ -162,9 +162,7 @@ class TradingService:
                 symbol=symbol,
                 strategy_config_id=str(strategy_config_id),
             )
-            raise KillSwitchActiveError(
-                detail="Kill switch is active; no new proposals accepted."
-            )
+            raise KillSwitchActiveError(detail="Kill switch is active; no new proposals accepted.")
 
         tenant_id = tenant_id_var.get()
         if tenant_id is None:
@@ -316,7 +314,7 @@ class TradingService:
         # T1 leaves the call wired but commented to avoid hitting a fake
         # broker on import-time test loading. Document the call-site so
         # T4 just uncomments + fills the missing fields.
-        broker_order_id: BrokerOrderId | None = None  # noqa: F841 — T4 fills
+        broker_order_id: BrokerOrderId | None = None
         _ = (new_order_stub, broker_order_id, OrderPlaced, Order, utc_now, datetime)
 
         log.info(

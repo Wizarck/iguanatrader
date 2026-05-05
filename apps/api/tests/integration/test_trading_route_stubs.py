@@ -105,6 +105,11 @@ async def test_openapi_surfaces_all_four_trading_route_prefixes(
     resp = await client.get("/openapi.json")
     assert resp.status_code == 200
     paths = resp.json()["paths"].keys()
-    expected_prefixes = ["/api/v1/trades", "/api/v1/portfolio", "/api/v1/strategies", "/api/v1/proposals"]
+    expected_prefixes = [
+        "/api/v1/trades",
+        "/api/v1/portfolio",
+        "/api/v1/strategies",
+        "/api/v1/proposals",
+    ]
     for prefix in expected_prefixes:
         assert any(p.startswith(prefix) for p in paths), f"missing {prefix} in OpenAPI"

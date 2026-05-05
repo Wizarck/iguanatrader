@@ -80,14 +80,17 @@ def test_metadata_defaults_to_empty_dict() -> None:
         correlation_id=uuid4(),
     )
     assert ev.metadata == {}
-    assert ev.metadata is not ProposalCreated(
-        tenant_id=uuid4(),
-        proposal_id=uuid4(),
-        symbol="SPY",
-        strategy_kind="donchian_atr",
-        strategy_version=1,
-        correlation_id=uuid4(),
-    ).metadata
+    assert (
+        ev.metadata
+        is not ProposalCreated(
+            tenant_id=uuid4(),
+            proposal_id=uuid4(),
+            symbol="SPY",
+            strategy_kind="donchian_atr",
+            strategy_version=1,
+            correlation_id=uuid4(),
+        ).metadata
+    )
 
 
 def test_tenant_id_is_required_field() -> None:
