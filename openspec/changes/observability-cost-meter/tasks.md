@@ -32,10 +32,10 @@
 
 ## 5. Routes + SSE + DTOs
 
-- [ ] 5.1 Create `apps/api/src/iguanatrader/api/dtos/observability.py`: `ApiCostEventDTO`, `BudgetStateDTO`, `CostSnapshotDTO`, `PerProviderBreakdown`, `PerModelBreakdown`. Pydantic v2 models; flow into `packages/shared-types` via slice-5 typegen pipeline.
-- [ ] 5.2 Create `apps/api/src/iguanatrader/api/routes/costs.py`: exports `router: APIRouter`. Endpoints: `GET /costs/summary` (current month total + breakdown), `GET /costs/by-provider`, `GET /costs/per-trade` (cost-per-trade ratio per FR42 — `total_llm_cost / closed_trades_count`). All authenticated via `get_current_user`; tenant-scoped via `tenant_id_var`. Slice-5 dynamic discovery picks the file up — zero edits to `app.py`.
-- [ ] 5.3 Create `apps/api/src/iguanatrader/api/sse/costs.py`: exports `router: APIRouter` with `GET /costs/snapshots` endpoint streaming `observability.cost.snapshot` bus events as SSE. Slice-5 SSE discovery picks the file up.
-- [ ] 5.4 Verify the OpenAPI surface declares the new DTOs as components (post-merge: bot regenerates `packages/shared-types/src/index.ts` on first push).
+- [x] 5.1 Create **`apps/api/src/iguanatrader/api/dtos/costs.py`** (per anti-collision contract — slice-task naming was `observability.py` but the contract names the file `costs.py`): `ApiCostEventDTO`, `BudgetStateDTO`, `CostSnapshotDTO`, `CostSummaryDTO`, `CostByProviderDTO`, `CostPerTradeDTO`, `PerProviderBreakdown`, `PerModelBreakdown`. Pydantic v2 models; flow into `packages/shared-types` via slice-5 typegen pipeline.
+- [x] 5.2 Create `apps/api/src/iguanatrader/api/routes/costs.py`: exports `router: APIRouter`. Endpoints: `GET /costs/summary` (current month total + breakdown), `GET /costs/by-provider`, `GET /costs/per-trade` (cost-per-trade ratio per FR42 — `total_llm_cost / closed_trades_count`; `closed_trades_count = 0` until slice T1 lands). All authenticated via `get_current_user`; tenant-scoped via `tenant_id_var`. Slice-5 dynamic discovery picks the file up — zero edits to `app.py`.
+- [x] 5.3 Create `apps/api/src/iguanatrader/api/sse/costs.py`: exports `router: APIRouter` with `GET /costs/snapshots` endpoint streaming `CostSnapshotEvent` bus events as SSE filtered to the caller's tenant. Slice-5 SSE discovery picks the file up.
+- [x] 5.4 OpenAPI surface auto-regenerates on first push: the `openapi-types.yml` workflow re-runs `openapi-typescript` against `/openapi.json` + commits the bot diff. New DTOs (`ApiCostEventDTO`, `BudgetStateDTO`, `CostSnapshotDTO`, `CostSummaryDTO`, `CostByProviderDTO`, `CostPerTradeDTO`) flow into `packages/shared-types/src/index.ts` automatically.
 
 ## 6. Carry-forward items (chosen per design D9)
 
