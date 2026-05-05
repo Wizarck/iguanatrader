@@ -317,13 +317,67 @@ Per-tenant cap overrides (via `risk_caps` config row + dashboard UI) are out of 
 
 Engine purity is verified by `tests/unit/contexts/risk/test_engine_purity.py` — an AST inspector that fails the build if `engine.py` (or any protection module) imports `datetime`, `time`, `sqlalchemy`, `requests`, `httpx`, or calls `.now()` / `.utcnow()` / `.commit()` / `.execute()` / `.add()` / `.delete()`. See gotcha #44.
 
+## Bounded contexts — public surface
+
+Each subpackage under `src/iguanatrader/contexts/<name>/` is one bounded context with a stable public API. Cross-context coupling MUST go through `iguanatrader.shared.messagebus.MessageBus`; direct deep imports across context boundaries are forbidden.
+
+### `contexts/approval/` (slice P1 — `approval-channels-multichannel`)
+
+Multichannel approval surface for trade proposals — Telegram + Hermes/WhatsApp + dashboard transports with a shared 17-command dispatcher, append-only audit, idempotent retries, authorized-sender enforcement, heartbeat-based reconnect resilience, and cross-context event emission.
+
+**Events emitted** (slice 2 `MessageBus`):
+
+- `approval.proposal.approved` — payload `{proposal_id, decision_id, decided_at, decided_by_user_id, decided_via_channel}`. Trading T2/T4 subscribes to trigger broker order placement.
+- `approval.proposal.rejected` — payload `{proposal_id, decision_id, decided_at, reason?, decided_via_channel}`.
+- `approval.proposal.timed_out` — payload `{proposal_id, request_id, expired_at}` (FR13 auto-discard).
+
+**Ports consumed**:
+
+- `iguanatrader.shared.heartbeat.HeartbeatMixin` — every channel subclasses (slice 2 D6).
+- `iguanatrader.shared.backoff.backoff_seconds` — canonical `[3, 6, 12, 24, 48]` reconnect ladder.
+- `iguanatrader.persistence.append_only_listener` — both new tables register `__tablename_is_append_only__ = True`.
+- `ChannelTransportPort` (Protocol, slice-local) — wire-format facade. Slice P1 ships fakes only (D8).
+
+**Errors raised** (slice-local under `contexts/approval/errors.py`; rendered as RFC 7807 by the slice 5 global handler):
+
+- `ApprovalNotFoundError` (404, `urn:iguanatrader:error:approval-not-found`)
+- `ApprovalAlreadyDecidedError` (409, `urn:iguanatrader:error:approval-already-decided`) — first-decision-wins (D4)
+- `ApprovalExpiredError` (410, `urn:iguanatrader:error:approval-expired`)
+- `UnauthorizedSenderError` (403, `urn:iguanatrader:error:unauthorized-sender`)
+
+**The 17-command registry** lives in `contexts/approval/channels/commands/` — one module per command exporting `SPEC: CommandSpec`. The registry is built at import time via `pkgutil.iter_modules`. Adding a command is a single-file edit:
+
+```
+/approve  /reject  /halt    /resume   /status
+/positions /equity /strategies /risk   /override
+/cost     /budget  /help    /whoami   /lock
+/unlock   /logout
+```
+
+`assert_canonical()` in `commands/__init__.py` enforces "exactly 17 entries; canonical names". The unit test `tests/unit/contexts/approval/test_command_registry.py` runs it on every test run.
+
+**HTTP surface** (auto-discovered by slice 5 routers):
+
+- `GET /api/v1/approvals` — list pending requests for the caller's tenant
+- `POST /api/v1/approvals/{id}/approve` — record granted via dashboard channel
+- `POST /api/v1/approvals/{id}/reject` — record rejected (optional `reason` body)
+- `GET /api/v1/stream/approvals` — SSE feed of `ApprovalProposal*` events
+
+**CLI surface** (auto-discovered):
+
+- `iguanatrader approval list` — list pending requests
+- `iguanatrader approval audit <request_id>` — full audit chain
+- `iguanatrader approval sweep-expired` — manual timeout sweeper (slice O2 will cron-schedule)
+
 ## See also
 
 - [`docs/architecture-decisions.md`](../../docs/architecture-decisions.md) — system-wide ADRs, including auth (D-Auth-1, D-Auth-2) + ADR-014 bitemporal research facts.
-- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#43 — slices 4-5 + R1 + T1 + K1 footguns.
+- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#52 — slices 4-5 + R1 + T1 + K1 + P1 footguns.
 - [`docs/runbooks/risk-kill-switch.md`](../../docs/runbooks/risk-kill-switch.md) — operator playbook for kill-switch activation + recovery.
 - [`docs/runbooks/auth-secret-rotation.md`](../../docs/runbooks/auth-secret-rotation.md) — JWT secret rotation procedure.
 - [`docs/runbooks/api-foundation-typegen.md`](../../docs/runbooks/api-foundation-typegen.md) — recovery playbook when the openapi-types CI workflow fails.
+- [`docs/runbooks/approval-channels-resilience.md`](../../docs/runbooks/approval-channels-resilience.md) — slice P1 channel-outage diagnosis + token rotation.
 - [`openspec/changes/auth-jwt-cookie/`](../../openspec/changes/auth-jwt-cookie/) — slice 4 design + spec contract.
 - [`openspec/changes/api-foundation-rfc7807/`](../../openspec/changes/api-foundation-rfc7807/) — slice 5 design + spec contract.
 - [`openspec/changes/research-bitemporal-schema/`](../../openspec/changes/research-bitemporal-schema/) — slice R1 design + spec contract.
+- [`openspec/changes/approval-channels-multichannel/`](../../openspec/changes/approval-channels-multichannel/) — slice P1 design + spec contract.

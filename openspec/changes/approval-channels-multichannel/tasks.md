@@ -56,11 +56,11 @@
 
 ## 7. Documentation
 
-- [ ] 7.1 Append to `docs/gotchas.md`: gotcha — D6 silent-drop of unauthorized senders means the bot looks dead to a non-whitelisted user; operational doc must explicitly tell users "if the bot doesn't reply, ask the admin to add your Telegram ID / phone to authorized_senders".
-- [ ] 7.2 Append to `docs/gotchas.md`: gotcha — D8 stub-only channel transports; production deployment requires the follow-up slice `approval-channels-real-clients` before live trading; CI is green at this slice but the actual wire path is unproven.
-- [ ] 7.3 Append to `docs/gotchas.md`: gotcha — the 17-command registry is the single source of truth; do NOT add commands to a transport adapter directly. New command = new file under `commands/`.
-- [ ] 7.4 Add `docs/runbooks/approval-channels-resilience.md`: operator playbook for "the Telegram bot stopped responding" — verify `_send_heartbeat` is succeeding, inspect structlog `approval.channel.telegram.*` events, manual `iguanatrader approval sweep-expired` if pending requests piled up during a long outage, token rotation procedure (NFR-I6 second clause).
-- [ ] 7.5 Update `apps/api/README.md`: document the approval bounded context's public API (events emitted, ports consumed, the 17-command registry).
+- [x] 7.1 Append `docs/gotchas.md` #50 — D6 silent-drop of unauthorized senders + operational guidance to add senders to `authorized_senders`.
+- [x] 7.2 Append `docs/gotchas.md` #51 — D8 stub-only transports; follow-up slice `approval-channels-real-clients` required before live trading.
+- [x] 7.3 Append `docs/gotchas.md` #52 — 17-command registry is single source of truth; new commands = new files under `commands/`, `assert_canonical()` enforces.
+- [x] 7.4 `docs/runbooks/approval-channels-resilience.md` — heartbeat diagnosis, pending-request inspection, sweeper invocation, token rotation procedure (NFR-I6 second clause), escalation criteria.
+- [x] 7.5 `apps/api/README.md` — new "Bounded contexts — public surface" section documenting `contexts/approval/` events emitted, ports consumed, errors raised, the 17-command registry, and HTTP/CLI surface.
 
 ## 8. Pre-merge verification
 
