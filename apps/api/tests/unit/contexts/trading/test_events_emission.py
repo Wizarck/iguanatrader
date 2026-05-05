@@ -35,7 +35,12 @@ CANONICAL_NAMES: dict[type, str] = {
 
 def test_event_names_match_convention() -> None:
     for cls, expected in CANONICAL_NAMES.items():
-        assert cls.event_name == expected, f"{cls.__name__}.event_name != {expected!r}"
+        # `event_name` is declared `ClassVar[str]` on each Event subclass.
+        # The dict's value type is `type` (parent of all subclasses);
+        # mypy can't statically prove `event_name` is on every entry.
+        # `getattr` keeps the runtime check intact + silences mypy.
+        actual = getattr(cls, "event_name", None)
+        assert actual == expected, f"{cls.__name__}.event_name != {expected!r}"
 
 
 def test_proposal_created_idempotency_key_is_proposal_id() -> None:

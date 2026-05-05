@@ -59,7 +59,7 @@ class StrategyConfigRepository(BaseRepository):
             .where(StrategyConfig.symbol == symbol)
         )
         result = await self.session.execute(stmt)
-        existing = result.scalar_one_or_none()
+        existing: StrategyConfig | None = result.scalar_one_or_none()
 
         if existing is None:
             row = StrategyConfig(

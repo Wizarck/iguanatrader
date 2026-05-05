@@ -132,7 +132,7 @@ async def test_execute_on_approval_handler_idempotent_under_duplicate_publish() 
 
     service = TradingService(
         bus=bus,
-        broker=broker,  # type: ignore[arg-type]
+        broker=broker,
         strategy_resolver=lambda _sid: _FakeStrategy(return_proposal=None),
     )
 
@@ -178,7 +178,7 @@ async def test_propose_emits_proposal_created_with_correct_payload(
 
     service = TradingService(
         bus=bus,
-        broker=broker,  # type: ignore[arg-type]
+        broker=broker,
         strategy_resolver=lambda _sid: strategy,
     )
 
@@ -241,7 +241,7 @@ async def test_propose_returns_none_and_does_not_publish_on_no_signal() -> None:
 
     service = TradingService(
         bus=bus,
-        broker=broker,  # type: ignore[arg-type]
+        broker=broker,
         strategy_resolver=lambda _sid: strategy,
     )
 
@@ -282,7 +282,7 @@ async def test_propose_raises_when_kill_switch_active() -> None:
 
     service = TradingService(
         bus=bus,
-        broker=broker,  # type: ignore[arg-type]
+        broker=broker,
         strategy_resolver=lambda _sid: strategy,
     )
 

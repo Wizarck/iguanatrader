@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, NewType, Protocol
+from typing import Any, NewType, Protocol, runtime_checkable
 from uuid import UUID
 
 from iguanatrader.shared.ports import Port
@@ -179,15 +179,16 @@ class Proposal:
 # ----------------------------------------------------------------------
 
 
+@runtime_checkable
 class BrokerPort(Port, Protocol):
     """Broker-side interface — implemented by slice T2's IBKR adapter.
 
     Concrete adapters satisfy the protocol structurally (no inheritance
     required); ``mypy --strict`` flags any missing or mistyped method.
-    The ``@runtime_checkable`` marker is inherited from
-    :class:`iguanatrader.shared.ports.Port` so a defensive
+    The ``@runtime_checkable`` decorator is required on each Protocol
+    subclass (it does NOT inherit from :class:`Port`); a defensive
     ``isinstance(adapter, BrokerPort)`` check at module boundaries works
-    too — but the primary enforcement is static.
+    accordingly — but the primary enforcement is static.
     """
 
     async def place_order(self, order: NewOrder) -> BrokerOrderId:
@@ -223,6 +224,7 @@ class BrokerPort(Port, Protocol):
         ...
 
 
+@runtime_checkable
 class StrategyPort(Port, Protocol):
     """Strategy-side interface — implemented by slice T3's
     :class:`DonchianATRStrategy` (and any future strategy).
