@@ -24,23 +24,25 @@
 
 ## 4. Domain page stubs (8)
 
-- [ ] 4.1 Update `apps/web/src/routes/(app)/portfolio/+page.svelte` (slice 4 placeholder) to: render `<section aria-busy="true">loading…</section>` + export `meta = { label: 'Portfolio', icon: 'briefcase', order: 10 } as const`.
-- [ ] 4.2 Create `apps/web/src/routes/(app)/trades/+page.svelte` — same shape; `meta = { label: 'Trades', icon: 'arrow-up-right-from-square', order: 20 } as const` (or another Lucide icon per j1.md §3 step 3 / components.md §0.5).
-- [ ] 4.3 Create `apps/web/src/routes/(app)/strategies/+page.svelte` — `meta = { label: 'Strategies', icon: 'cpu', order: 30 } as const`.
-- [ ] 4.4 Create `apps/web/src/routes/(app)/research/+page.svelte` — `meta = { label: 'Research', icon: 'search', order: 40 } as const`.
-- [ ] 4.5 Create `apps/web/src/routes/(app)/approvals/+page.svelte` — `meta = { label: 'Approvals', icon: 'bell', order: 50 } as const` (per components.md §0.5).
-- [ ] 4.6 Create `apps/web/src/routes/(app)/risk/+page.svelte` — `meta = { label: 'Risk', icon: 'gauge', order: 60 } as const` (per components.md §0.5).
-- [ ] 4.7 Create `apps/web/src/routes/(app)/costs/+page.svelte` — `meta = { label: 'Costs', icon: 'wallet', order: 70 } as const`.
-- [ ] 4.8 Create `apps/web/src/routes/(app)/settings/+page.svelte` — `meta = { label: 'Settings', icon: 'settings', order: 80 } as const`.
+- [x] 4.1 Update `apps/web/src/routes/(app)/portfolio/+page.svelte` (slice 4 placeholder) to: render `<section aria-busy="true">loading…</section>` + export `meta = { label: 'Portfolio', icon: 'briefcase', order: 10 } as const`. The `meta` export lives inside `<script lang="ts" module>` (Svelte 5 module-context syntax — required for `import.meta.glob` eager resolution).
+- [x] 4.2 Create `apps/web/src/routes/(app)/trades/+page.svelte` — same shape; `meta = { label: 'Trades', icon: 'arrow-up-right-from-square', order: 20 } as const` (or another Lucide icon per j1.md §3 step 3 / components.md §0.5).
+- [x] 4.3 Create `apps/web/src/routes/(app)/strategies/+page.svelte` — `meta = { label: 'Strategies', icon: 'cpu', order: 30 } as const`.
+- [x] 4.4 Create `apps/web/src/routes/(app)/research/+page.svelte` — `meta = { label: 'Research', icon: 'search', order: 40 } as const`.
+- [x] 4.5 Create `apps/web/src/routes/(app)/approvals/+page.svelte` — `meta = { label: 'Approvals', icon: 'bell', order: 50 } as const` (per components.md §0.5).
+- [x] 4.6 Create `apps/web/src/routes/(app)/risk/+page.svelte` — `meta = { label: 'Risk', icon: 'gauge', order: 60 } as const` (per components.md §0.5).
+- [x] 4.7 Create `apps/web/src/routes/(app)/costs/+page.svelte` — `meta = { label: 'Costs', icon: 'wallet', order: 70 } as const`.
+- [x] 4.8 Create `apps/web/src/routes/(app)/settings/+page.svelte` — `meta = { label: 'Settings', icon: 'settings', order: 80 } as const`.
+
+  Additionally, the slice retires the root `/src/routes/+page.svelte` (slice 4 placeholder) in favor of `/src/routes/(app)/+page.svelte` so `/` is now gated by the cookie hook (per spec scenario "Authenticated request renders the shell"). The root `(app)/+page.svelte` does NOT export `meta` — the Sidebar glob targets `(app)/<segment>/+page.svelte` so the home is not a Sidebar entry by design.
 
 ## 5. Stores + composables
 
-- [ ] 5.1 Create `apps/web/src/lib/stores/auth.ts` — singleton class with `user = $state<App.Locals['user'] | null>(null)`. Hydrated from `(app)/+layout.svelte`'s `$effect` reading `data.user`.
-- [ ] 5.2 Create `apps/web/src/lib/stores/nav.ts` — singleton class with `collapsed = $state(false)`, `activeHref = $state<string>('/')`. `$effect` persists `collapsed` to `localStorage['iguanatrader:nav:collapsed']`. Hydrate on mount.
-- [ ] 5.3 Create `apps/web/src/lib/stores/theme.ts` — singleton class with `current = $state<'dark' | 'light'>('dark')`. Reads `prefers-color-scheme` + `localStorage['iguanatrader:theme']` (latter wins). `$effect` applies `data-theme` to `<html>`. NOTE: light variant CSS vars deferred — current always resolves to `dark` in W1 even if stored as `light` (with a TODO comment + gotcha entry).
-- [ ] 5.4 Create `apps/web/src/lib/stores/connection.ts` — singleton class with `streams = $state<Record<string, 'open' | 'reconnecting' | 'closed'>>({})`. `global` is `$derived` worst-case across all values (closed > reconnecting > open).
-- [ ] 5.5 Create `apps/web/src/lib/composables/useFetch.ts` — `useFetch<T>(url: string, init?: RequestInit): Promise<T | Problem>`. Always sets `credentials: 'include'`. On 4xx/5xx with `application/problem+json`, returns parsed Problem. Otherwise returns parsed JSON. On transport errors, throws.
-- [ ] 5.6 Create `apps/web/src/lib/composables/useSSE.ts` — `useSSE(name: string, opts: { onMessage?, onProblem? }): { close: () => void }`. Wraps `EventSource` against `${API_BASE_URL}/api/v1/stream/${name}`. Backoff `[3, 6, 12, 24, 48]` seconds on `error` event. Updates `connectionStore.streams[name]`. Returns `close` for caller's `$effect` cleanup.
+- [x] 5.1 Create `apps/web/src/lib/stores/auth.ts` — singleton class with `user = $state<App.Locals['user'] | null>(null)`. Hydrated from `(app)/+layout.svelte`'s `$effect` reading `data.user`. Implementation: filename is `auth.svelte.ts` (Svelte 5 requires the `.svelte.ts` extension for runes outside `.svelte` components).
+- [x] 5.2 Create `apps/web/src/lib/stores/nav.ts` — singleton class with `collapsed = $state(false)`, `activeHref = $state<string>('/')`. `$effect` persists `collapsed` to `localStorage['iguanatrader:nav:collapsed']`. Hydrate on mount. Implementation: `nav.svelte.ts`; uses `$effect.root` so persistence survives across component mounts.
+- [x] 5.3 Create `apps/web/src/lib/stores/theme.ts` — singleton class with `current = $state<'dark' | 'light'>('dark')`. Reads `prefers-color-scheme` + `localStorage['iguanatrader:theme']` (latter wins). `$effect` applies `data-theme` to `<html>`. NOTE: light variant CSS vars deferred — current always resolves to `dark` in W1 even if stored as `light` (with a TODO comment + gotcha entry). Implementation: `theme.svelte.ts`; TODO inline + gotcha #34 documents the deferral.
+- [x] 5.4 Create `apps/web/src/lib/stores/connection.ts` — singleton class with `streams = $state<Record<string, 'open' | 'reconnecting' | 'closed'>>({})`. `global` is `$derived` worst-case across all values (closed > reconnecting > open). Implementation: `connection.svelte.ts`; uses `$derived.by` for the priority lookup; helper methods `setStream` / `removeStream` so callers don't need to clone the object.
+- [x] 5.5 Create `apps/web/src/lib/composables/useFetch.ts` — `useFetch<T>(url: string, init?: RequestInit): Promise<T | Problem>`. Always sets `credentials: 'include'`. On 4xx/5xx with `application/problem+json`, returns parsed Problem. Otherwise returns parsed JSON. On transport errors, throws. Also exports `isProblem(value)` discriminator helper.
+- [x] 5.6 Create `apps/web/src/lib/composables/useSSE.ts` — `useSSE(name: string, opts: { onMessage?, onProblem? }): { close: () => void }`. Wraps `EventSource` against `${API_BASE_URL}/api/v1/stream/${name}`. Backoff `[3, 6, 12, 24, 48]` seconds on `error` event. Updates `connectionStore.streams[name]`. Returns `close` for caller's `$effect` cleanup. Exports `SSE_BACKOFF_SECONDS` constant for tests.
 
 ## 6. SSE consumer stubs (7)
 
