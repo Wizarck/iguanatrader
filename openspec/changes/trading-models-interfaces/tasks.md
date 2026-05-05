@@ -58,11 +58,11 @@
 
 ## 9. Pre-merge verification
 
-- [ ] 9.1 `mypy --strict apps/api/src/iguanatrader/contexts/trading/ apps/api/src/iguanatrader/api/dtos/trades.py apps/api/src/iguanatrader/api/dtos/proposals.py apps/api/src/iguanatrader/api/routes/{trades,portfolio,strategies,proposals}.py` clean.
-- [ ] 9.2 `pytest apps/api/tests/unit/contexts/trading/ apps/api/tests/integration/test_trading_route_stubs.py apps/api/tests/integration/test_trading_migration.py apps/api/tests/integration/test_append_only_listener_trading.py` all green.
-- [ ] 9.3 Coverage on `apps/api/src/iguanatrader/contexts/trading/` ≥ 80% (per NFR-M1; slice-O1 will wire `--cov-fail-under` enforcement).
-- [ ] 9.4 `pre-commit run --from-ref origin/main --to-ref HEAD` passes (gitleaks + ruff + black + mypy + eslint + prettier + openapi-typescript regen + license-boundary-check).
-- [ ] 9.5 Manual smoke: bring up `python -m iguanatrader.api`, GET `/openapi.json`, confirm 4 new route prefixes (`/api/v1/trades`, `/api/v1/portfolio`, `/api/v1/strategies`, `/api/v1/proposals`) and the 6 new DTO schemas (Trade, Order, Fill, EquitySnapshot, StrategyConfig, Proposal) are present. GET `/api/v1/trades` (with auth cookie) returns 501 + Problem body.
-- [ ] 9.6 Verify `alembic upgrade head` + `alembic downgrade -1` + `alembic upgrade head` cycle on a fresh DB succeeds (idempotency smoke).
-- [ ] 9.7 PR description includes "AI-reviewer signoff" subsection per release-management.md §4.5; document merge-order checkbox `[ ] R1 (research-bitemporal-schema) merged into main before this PR is merged`.
-- [ ] 9.8 Verify the slice-5 OpenAPI typegen workflow fires on push and bot-commits the regenerated `packages/shared-types/src/index.ts` containing the new trading interfaces.
+- [x] 9.1 `mypy --strict` (locally `--ignore-missing-imports` because the worktree-isolated python lacks sqlalchemy / structlog / fastapi runtime deps — gotcha #1; CI runs the canonical `mypy --strict` with deps installed). `ruff check` clean on all T1 paths. `black --check` clean on all T1 paths.
+- [ ] 9.2 `pytest` — **deferred to CI** per slice-T1 brief (Windows local hangs). Tests written and committed in group 7; CI is canonical.
+- [ ] 9.3 Coverage ≥ 80% — **deferred to CI** (depends on 9.2). Slice-O1 will wire `--cov-fail-under`.
+- [ ] 9.4 `pre-commit run` — **deferred to CI** (CI runs the full hook chain on every push).
+- [ ] 9.5 Manual smoke — **deferred to CI** (requires a running uvicorn + sqlalchemy installed; gotcha #1).
+- [ ] 9.6 `alembic upgrade head + downgrade -1 + upgrade head` cycle — **deferred to CI** (requires R1's migration merged + sqlalchemy installed; the cycle test in `test_trading_migration.py` runs on CI once R1 is on `main`).
+- [ ] 9.7 PR description — **N/A in slice-T1 apply phase**: per brief "Do NOT push, do NOT open a PR." Slice maintainer drafts the PR body when opening; the merge-order checkbox is documented in design D5 + gotcha #32.
+- [ ] 9.8 OpenAPI typegen workflow — **deferred to CI** (the workflow only fires on push to a branch with the new DTOs visible to FastAPI; see slice-5 D5 contract).
