@@ -35,6 +35,13 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
+from iguanatrader.migrations._research_trigger_helpers import (
+    FULLY_APPEND_ONLY_TABLES as _FULLY_APPEND_ONLY_TABLES,
+)
+from iguanatrader.migrations._research_trigger_helpers import (
+    SQLITE_TRIGGER_SQL,
+)
+
 revision: str = "0003"
 down_revision: str | None = "0002"
 branch_labels: str | Sequence[str] | None = None
@@ -44,37 +51,11 @@ depends_on: str | Sequence[str] | None = None
 # ---------------------------------------------------------------------------
 # Append-only L2 trigger DDL — dialect-aware
 # ---------------------------------------------------------------------------
-
-#: Tables whose mutation is fully blocked (no narrow exception).
-_FULLY_APPEND_ONLY_TABLES: tuple[str, ...] = (
-    "research_briefs",
-    "corporate_events",
-    "analyst_ratings",
-)
-
-
-def _emit_sqlite_full_lock_triggers(table: str) -> None:
-    """SQLite BEFORE UPDATE/DELETE triggers — block every mutation."""
-    op.execute(
-        f"""
-        CREATE TRIGGER trg_{table}_no_update
-        BEFORE UPDATE ON {table}
-        FOR EACH ROW
-        BEGIN
-            SELECT RAISE(FAIL, 'append-only: UPDATE on {table} forbidden');
-        END;
-        """
-    )
-    op.execute(
-        f"""
-        CREATE TRIGGER trg_{table}_no_delete
-        BEFORE DELETE ON {table}
-        FOR EACH ROW
-        BEGIN
-            SELECT RAISE(FAIL, 'append-only: DELETE on {table} forbidden');
-        END;
-        """
-    )
+# SQLite trigger DDL is centralised in
+# ``_0003_research_tables_helpers.SQLITE_TRIGGER_SQL`` so tests can import
+# the same DDL the migration emits (tests use Base.metadata.create_all
+# rather than running the full Alembic chain).
+# ---------------------------------------------------------------------------
 
 
 def _emit_postgres_full_lock_triggers(table: str) -> None:
@@ -103,77 +84,6 @@ def _emit_postgres_full_lock_triggers(table: str) -> None:
         CREATE TRIGGER trg_{table}_no_delete
         BEFORE DELETE ON {table}
         FOR EACH ROW EXECUTE FUNCTION {fn_name}();
-        """
-    )
-
-
-def _emit_sqlite_research_facts_triggers() -> None:
-    """SQLite ``research_facts`` triggers — narrow ``recorded_to`` exception.
-
-    Per design D1: an UPDATE is permitted when (and ONLY when) the only
-    column that changes is ``recorded_to`` going from NULL to a non-NULL
-    value. Every other column must be unchanged. Every other UPDATE
-    pattern aborts with ``RAISE(FAIL, ...)``.
-
-    SQLite's ``WHEN`` clause on triggers supports ``OLD.x IS NOT NEW.x``
-    for per-column equality checks (``IS NOT`` accommodates NULL on
-    either side, which a plain ``<>`` would not).
-    """
-    # The huge OR chain compares every other column. If any of them differs
-    # OR if recorded_to is NOT going from NULL to non-NULL, the trigger
-    # fires and raises.
-    other_columns_changed = " OR ".join(
-        f"OLD.{col} IS NOT NEW.{col}"
-        for col in (
-            "id",
-            "tenant_id",
-            "source_id",
-            "symbol_universe_id",
-            "fact_kind",
-            "value_numeric",
-            "value_text",
-            "value_jsonb",
-            "unit",
-            "currency",
-            "effective_from",
-            "effective_to",
-            "recorded_from",
-            "source_url",
-            "retrieval_method",
-            "retrieved_at",
-            "raw_payload_inline",
-            "raw_payload_path",
-            "raw_payload_sha256",
-            "raw_payload_size_bytes",
-            "confidence",
-            "metadata",
-            "created_at",
-        )
-    )
-    op.execute(
-        f"""
-        CREATE TRIGGER trg_research_facts_no_update
-        BEFORE UPDATE ON research_facts
-        FOR EACH ROW
-        WHEN
-            NOT (OLD.recorded_to IS NULL AND NEW.recorded_to IS NOT NULL)
-            OR ({other_columns_changed})
-        BEGIN
-            SELECT RAISE(
-                FAIL,
-                'append-only: only recorded_to NULL->ts supersession permitted on research_facts'
-            );
-        END;
-        """
-    )
-    op.execute(
-        """
-        CREATE TRIGGER trg_research_facts_no_delete
-        BEFORE DELETE ON research_facts
-        FOR EACH ROW
-        BEGIN
-            SELECT RAISE(FAIL, 'append-only: DELETE on research_facts forbidden');
-        END;
         """
     )
 
@@ -749,9 +659,8 @@ def upgrade() -> None:
     # ---------------------------------------------------------------------
 
     if dialect == "sqlite":
-        for table in _FULLY_APPEND_ONLY_TABLES:
-            _emit_sqlite_full_lock_triggers(table)
-        _emit_sqlite_research_facts_triggers()
+        for sql in SQLITE_TRIGGER_SQL:
+            op.execute(sql)
     elif dialect == "postgresql":
         for table in _FULLY_APPEND_ONLY_TABLES:
             _emit_postgres_full_lock_triggers(table)
