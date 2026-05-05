@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · C6 — Inline Settings row vs FeatureFlagToggle.svelte</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --accent-hover: oklch(76% 0.14 195);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --r-pill: 9999px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1400px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: var(--mute); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 800px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__header {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    border-bottom: 1px solid var(--border);
+  }
+  .surface-frame__title {
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 4px 14px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 24px;
+  }
+
+  .page-h {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    color: var(--ink);
+  }
+  .page-sub {
+    font-size: 13px;
+    color: var(--mute);
+    margin: 0 0 24px;
+  }
+  .section-h {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 24px 0 8px;
+  }
+  .section-h:first-child { margin-top: 0; }
+
+  /* Switch primitive (shared) */
+  .switch {
+    width: 36px;
+    height: 20px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 120ms ease;
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 16px;
+    height: 16px;
+    background: var(--mute);
+    border-radius: 50%;
+    transition: transform 120ms ease, background 120ms ease;
+  }
+  .switch.on { background: var(--accent); border-color: var(--accent); }
+  .switch.on::after { transform: translateX(16px); background: var(--accent-fg); }
+
+  /* ============ OPCIÓN A: inline Settings row ============ */
+  .settings-list {
+    background: var(--surface);
+    border-radius: var(--r-2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .settings-row:first-child { border-top: none; }
+  .settings-row__main {
+    flex: 1;
+    min-width: 0;
+  }
+  .settings-row__label {
+    font-size: 14px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .settings-row__sub {
+    font-size: 12px;
+    color: var(--mute);
+    margin-top: 2px;
+  }
+
+  /* ============ OPCIÓN B: FeatureFlagToggle.svelte ============ */
+  .ff-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .ff-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .ff-head__main {
+    flex: 1;
+    min-width: 0;
+  }
+  .ff-label-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .ff-label {
+    font-size: 14px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .ff-badge {
+    background: oklch(78% 0.14 80 / 0.15);
+    border: 1px solid var(--warn-bg);
+    color: var(--warn-bg);
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 8px;
+    border-radius: var(--r-pill);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+  }
+  .ff-helper {
+    font-size: 12px;
+    color: var(--mute);
+    margin: 0;
+    line-height: 1.5;
+  }
+  .ff-helper code { font-size: 11px; }
+  .ff-warn {
+    background: oklch(64% 0.20 25 / 0.10);
+    border: 1px solid oklch(64% 0.20 25 / 0.40);
+    border-radius: var(--r-1);
+    padding: 8px 10px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--destructive);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .ff-warn [data-lucide] { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; }
+
+  /* Comparison block */
+  .comparison {
+    background: var(--surface);
+    border-radius: var(--r-3);
+    padding: 20px;
+    margin-top: 32px;
+    max-width: 1100px;
+  }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .opt {
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 14px;
+  }
+  .opt h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); font-weight: 500; }
+  .opt ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--mute); }
+  .opt ul li { margin-bottom: 4px; }
+  .opt.recommended { border-color: var(--accent); background: oklch(72% 0.14 195 / 0.06); }
+  .opt.recommended h4::after { content: ' ← my read'; color: var(--mute); font-size: 12px; font-weight: 400; }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · Feature flag UX shape</h1>
+<div class="meta">
+  <strong>Decision:</strong> C6 / J3-4 — inline Settings row vs <code>FeatureFlagToggle.svelte</code> dedicated component
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked · <strong>Icons:</strong> Lucide
+</div>
+
+<p>Both frames render the <code>/settings</code> page (or sub-section) with the same content: <strong>FR81 Hindsight bias guard</strong> as the only MVP flag, plus two hypothetical future flags ("Paper-trading only" and "Verbose audit mode") so you can see the visual cost when flag #2 and #3 arrive. Identical functional behaviour — the difference is information density per flag.</p>
+
+<div class="grid-2">
+
+  <!-- ============ OPCIÓN A: Inline Settings row ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">OPTION A — Inline Settings row (no dedicated component)</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">https://localhost:8443/settings</code></div>
+    <div class="surface-frame__body">
+
+      <h2 class="page-h">Settings</h2>
+      <p class="page-sub">Tenant-scoped preferences. Changes take effect immediately.</p>
+
+      <div class="section-h">Feature flags</div>
+
+      <div class="settings-list">
+        <!-- FR81 Hindsight -->
+        <div class="settings-row">
+          <div class="settings-row__main">
+            <div class="settings-row__label">Hindsight bias guard</div>
+            <div class="settings-row__sub">Strips outcome knowledge from research briefs to reduce hindsight bias.</div>
+          </div>
+          <div class="switch on" aria-checked="true" role="switch" tabindex="0"></div>
+        </div>
+
+        <!-- Future flag #2 -->
+        <div class="settings-row">
+          <div class="settings-row__main">
+            <div class="settings-row__label">Paper-trading only</div>
+            <div class="settings-row__sub">Forbid live broker connections for this tenant.</div>
+          </div>
+          <div class="switch" aria-checked="false" role="switch" tabindex="0"></div>
+        </div>
+
+        <!-- Future flag #3 -->
+        <div class="settings-row">
+          <div class="settings-row__main">
+            <div class="settings-row__label">Verbose audit mode</div>
+            <div class="settings-row__sub">Persist every LLM prompt + response (storage cost).</div>
+          </div>
+          <div class="switch" aria-checked="false" role="switch" tabindex="0"></div>
+        </div>
+      </div>
+
+      <p style="font-size:12px;color:var(--mute);margin-top:16px;font-family:var(--font-mono);">component: 1 list + N rows · ~5 LOC per flag</p>
+
+    </div>
+  </div>
+
+  <!-- ============ OPCIÓN B: FeatureFlagToggle ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">OPTION B — FeatureFlagToggle.svelte dedicated component</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">https://localhost:8443/settings</code></div>
+    <div class="surface-frame__body">
+
+      <h2 class="page-h">Settings</h2>
+      <p class="page-sub">Tenant-scoped preferences. Changes take effect immediately.</p>
+
+      <div class="section-h">Feature flags</div>
+
+      <!-- FR81 Hindsight -->
+      <div class="ff-card">
+        <div class="ff-head">
+          <div class="ff-head__main">
+            <div class="ff-label-row">
+              <span class="ff-label">Hindsight bias guard</span>
+              <span class="ff-badge">Experimental</span>
+            </div>
+            <p class="ff-helper">Strips outcome knowledge from research briefs to reduce hindsight bias. When enabled, brief synthesis re-runs <code>research_brief_generator</code> with <code>--no-future</code>; cost ≈ +1.4× per brief.</p>
+          </div>
+          <div class="switch on" aria-checked="true" role="switch" tabindex="0"></div>
+        </div>
+        <div class="ff-warn">
+          <i data-lucide="alert-triangle"></i>
+          <span>Toggling clears the brief cache for this tenant. Active routines re-run on next trigger.</span>
+        </div>
+      </div>
+
+      <!-- Future flag #2 -->
+      <div class="ff-card">
+        <div class="ff-head">
+          <div class="ff-head__main">
+            <div class="ff-label-row">
+              <span class="ff-label">Paper-trading only</span>
+            </div>
+            <p class="ff-helper">Forbid live broker connections for this tenant. When enabled, all <code>/api/v1/orders</code> calls are routed to the paper adapter regardless of strategy config.</p>
+          </div>
+          <div class="switch" aria-checked="false" role="switch" tabindex="0"></div>
+        </div>
+      </div>
+
+      <!-- Future flag #3 -->
+      <div class="ff-card">
+        <div class="ff-head">
+          <div class="ff-head__main">
+            <div class="ff-label-row">
+              <span class="ff-label">Verbose audit mode</span>
+              <span class="ff-badge">Experimental</span>
+            </div>
+            <p class="ff-helper">Persist every LLM prompt + response, plus tool-call traces, to <code>llm_audit</code>. Storage cost ≈ 4× research cost; recommended only for debugging.</p>
+          </div>
+          <div class="switch" aria-checked="false" role="switch" tabindex="0"></div>
+        </div>
+      </div>
+
+      <p style="font-size:12px;color:var(--mute);margin-top:16px;font-family:var(--font-mono);">component: <code style="background:transparent;color:var(--accent);padding:0;">FeatureFlagToggle.svelte</code> · ~30 LOC + N props per flag</p>
+
+    </div>
+  </div>
+
+</div>
+
+<h2>Trade-offs side-by-side</h2>
+
+<div class="comparison">
+  <div class="comparison-grid">
+    <div class="opt recommended">
+      <h4>Option A — inline rows</h4>
+      <ul>
+        <li><strong>Cost</strong>: 5 LOC per flag (label + sub + Switch). No new component.</li>
+        <li><strong>Information density</strong>: low. One-line label + one-line subtext. Good when the flag is self-explanatory.</li>
+        <li><strong>Hindsight UX cost</strong>: subtext slightly cramped — "Strips outcome knowledge from research briefs to reduce hindsight bias" reads OK but doesn't surface the cost-multiplier or the side-effect (cache clear on toggle).</li>
+        <li><strong>Future flags</strong>: copy/paste pattern. Each new flag = another row.</li>
+        <li><strong>Migrate later</strong>: trivial. When 2nd flag justifies extra surface (warning, badge), promote to <code>FeatureFlagToggle.svelte</code> in one PR.</li>
+        <li><strong>Risk</strong>: if FR81 needs the warning + badge + cost note (which it might, given Hindsight is non-trivial), Option A forces us to either drop those affordances or extend rows ad-hoc → inconsistency.</li>
+      </ul>
+    </div>
+    <div class="opt">
+      <h4>Option B — dedicated component</h4>
+      <ul>
+        <li><strong>Cost</strong>: ~30 LOC component + N props per flag. Premature for a single flag.</li>
+        <li><strong>Information density</strong>: high. Helper paragraph + experimental badge + optional warning row.</li>
+        <li><strong>Hindsight UX cost</strong>: handles it well — badge says "experimental", helper text has cost multiplier, warning row says "cache clears on toggle". Future flags inherit the same surface.</li>
+        <li><strong>Future flags</strong>: each new flag = new <code>&lt;FeatureFlagToggle /&gt;</code> with props. Consistent surface.</li>
+        <li><strong>Risk</strong>: shape-locking the component before knowing flag #2's needs. If flag #2 needs a different affordance (e.g. a button "Reset to default" instead of a Switch), the component shape mismatches.</li>
+        <li><strong>Mitigates</strong>: inconsistency across flags; the temptation to extend rows ad-hoc.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>What changes my recommendation after seeing it rendered</h2>
+<p style="color:var(--ink);max-width:1100px;">Looking at the rendered Hindsight row in <strong>Option A</strong>: the subtext is too thin. "Strips outcome knowledge from research briefs to reduce hindsight bias" reads OK alone, but the user needs to know about the cost multiplier and the cache-clear side effect. To get those into Option A's surface, we'd extend the row pattern — which inverts the YAGNI argument because we'd be ad-hoc'ing the component anyway.</p>
+
+<p style="color:var(--ink);max-width:1100px;">After rendering: I revise toward <strong>Option B</strong> for FR81 specifically. The flag carries enough nuance (cost, side-effect, experimental status) that pretending it fits in a one-line row is wishful thinking. Promoting to <code>FeatureFlagToggle.svelte</code> on day 1 is cheap (30 LOC) and locks the right surface for future flags.</p>
+
+<div class="comparison" style="background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent);">
+  <h3 style="color: var(--accent);">→ Revised recommendation: Option B</h3>
+  <p style="color: var(--ink); margin: 0;">Ship <code>FeatureFlagToggle.svelte</code> with FR81 in slice R6 (<code>hindsight-integration</code>). The Hindsight flag's three affordances (badge, helper paragraph with cost note, optional warning row) define the canonical shape; future flags either fit the shape or become a new component with its own decision.</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-c6-feature-flag-toggle.html</code>
+  <br><br>
+  <strong>Note:</strong> Switch primitive in this mock is CSS-only; production version is the <code>Switch.svelte</code> primitive (already canonical in components.md §1).
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+    document.querySelectorAll('.switch').forEach(s => {
+      s.addEventListener('click', () => s.classList.toggle('on'));
+    });
+  });
+</script>
+
+</body>
+</html>

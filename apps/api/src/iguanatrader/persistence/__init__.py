@@ -26,6 +26,7 @@ from iguanatrader.persistence.errors import (
     TenantContextMissingError,
 )
 from iguanatrader.persistence.json1_check import verify_json1_extension
+from iguanatrader.persistence.models import AuthorizedSender, Tenant, User
 from iguanatrader.persistence.session import (
     AsyncEngine,
     AsyncSession,
@@ -62,10 +63,13 @@ __all__ = [
     "AppendOnlyViolationError",
     "AsyncEngine",
     "AsyncSession",
+    "AuthorizedSender",
     "Base",
     "JSON1NotAvailableError",
+    "Tenant",
     "TenantContextMismatchError",
     "TenantContextMissingError",
+    "User",
     "engine_factory",
     "metadata",
     "register_append_only_listener",

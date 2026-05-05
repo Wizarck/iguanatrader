@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · J3-1 — Routine digest surface</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --r-pill: 9999px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1700px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: var(--mute); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 1100px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .grid-1 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__title {
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .surface-frame__title.muted { background: var(--surface-2); color: var(--mute); }
+  .surface-frame__header {
+    background: var(--surface-2);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    border-bottom: 1px solid var(--border);
+  }
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 0;
+    min-height: 720px;
+    position: relative;
+  }
+
+  /* App shell mini */
+  .shell { display: grid; grid-template-columns: 56px 1fr; height: 100%; min-height: 720px; }
+  .sidebar-mini { background: var(--surface-2); border-right: 1px solid var(--border); padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .sb-mark { width: 28px; height: 28px; background: var(--accent); border-radius: var(--r-1); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-fg); font-weight: 700; font-size: 13px; font-family: var(--font-mono); margin-bottom: 8px; }
+  .sb-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--r-1); color: var(--mute); cursor: pointer; position: relative; }
+  .sb-icon.active { color: var(--accent); background: var(--bg); }
+  .sb-icon [data-lucide] { width: 18px; height: 18px; }
+  .sb-icon .badge {
+    position: absolute; top: 2px; right: 2px;
+    background: var(--accent); color: var(--accent-fg);
+    font-size: 9px; font-family: var(--font-mono); font-weight: 600;
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .main { padding: 16px 18px; overflow: auto; }
+
+  .page-h { font-size: 18px; margin: 0 0 4px; }
+  .page-sub { font-size: 12px; color: var(--mute); margin: 0 0 14px; font-family: var(--font-mono); }
+
+  /* Digest content (shared) */
+  .digest-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px; }
+  .digest-glyph { width: 36px; height: 36px; background: oklch(72% 0.14 195 / 0.14); border-radius: var(--r-2); display: flex; align-items: center; justify-content: center; color: var(--accent); flex-shrink: 0; }
+  .digest-glyph [data-lucide] { width: 18px; height: 18px; }
+  .digest-meta { flex: 1; min-width: 0; }
+  .digest-title { font-size: 15px; font-weight: 500; color: var(--ink); margin: 0 0 1px; }
+  .digest-time { font-family: var(--font-mono); font-size: 12px; color: var(--mute); }
+  .digest-summary { font-size: 13px; color: var(--mute); margin: 0 0 12px; }
+  .digest-summary strong { color: var(--ink); }
+
+  .setup-list { display: flex; flex-direction: column; gap: 8px; }
+  .setup-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 10px 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .setup-row .sym { font-family: var(--font-mono); font-size: 13px; color: var(--ink); width: 56px; flex-shrink: 0; }
+  .setup-row .desc { flex: 1; font-size: 12px; color: var(--mute); }
+  .setup-row .desc .strong { color: var(--ink); }
+  .setup-row .sparkline { width: 60px; height: 22px; flex-shrink: 0; }
+  .setup-row .citation { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: var(--r-1); border: 1px solid var(--accent); color: var(--accent); font-size: 11px; background: oklch(72% 0.14 195 / 0.10); cursor: pointer; font-family: var(--font-mono); flex-shrink: 0; }
+  .setup-row .citation [data-lucide] { width: 11px; height: 11px; }
+
+  /* Modal */
+  .modal-backdrop { position: absolute; inset: 0; background: oklch(0% 0 0 / 0.6); display: flex; align-items: center; justify-content: center; padding: 32px; z-index: 2; }
+  .modal-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-3); width: 480px; max-width: 100%; padding: 20px 24px; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .modal-head h2 { margin: 0; font-size: 15px; color: var(--ink); }
+  .modal-close { background: transparent; border: 1px solid var(--border); border-radius: var(--r-1); padding: 4px 8px; color: var(--mute); cursor: pointer; font-family: var(--font-mono); font-size: 11px; }
+
+  /* Drawer (option D) */
+  .drawer-backdrop { position: absolute; inset: 0; background: oklch(0% 0 0 / 0.55); z-index: 1; }
+  .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 480px; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -8px 0 24px oklch(0% 0 0 / 0.4); z-index: 2; overflow-y: auto; padding: 18px 22px; }
+  .drawer__head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .drawer__head h2 { margin: 0; font-size: 15px; color: var(--ink); }
+  .drawer__close { background: transparent; border: 1px solid var(--border); border-radius: var(--r-1); padding: 4px 8px; color: var(--mute); cursor: pointer; font-family: var(--font-mono); font-size: 11px; display: inline-flex; align-items: center; gap: 4px; }
+  .drawer__close [data-lucide] { width: 11px; height: 11px; }
+
+  /* Banner (option C) — collapsible */
+  .banner {
+    background: oklch(72% 0.14 195 / 0.10);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-2);
+    padding: 10px 12px;
+    margin-bottom: 14px;
+  }
+  .banner__head { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .banner__title { font-size: 13px; color: var(--ink); font-weight: 500; }
+  .banner__time { font-family: var(--font-mono); font-size: 11px; color: var(--mute); margin-left: auto; }
+  .banner__chevron { color: var(--mute); }
+  .banner__body { padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--accent); }
+
+  /* Alerts list (option A and D) */
+  .alerts-list { display: flex; flex-direction: column; gap: 0; }
+  .alert-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    cursor: pointer;
+    margin-bottom: 6px;
+  }
+  .alert-row.unread { border-left: 3px solid var(--accent); }
+  .alert-row.selected { background: var(--surface-2); border-color: var(--accent); }
+  .alert-row .glyph { width: 28px; height: 28px; border-radius: var(--r-1); background: oklch(72% 0.14 195 / 0.14); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .alert-row .glyph [data-lucide] { width: 14px; height: 14px; }
+  .alert-row .body { flex: 1; min-width: 0; }
+  .alert-row .title { font-size: 13px; color: var(--ink); font-weight: 500; }
+  .alert-row .sub { font-size: 11px; color: var(--mute); font-family: var(--font-mono); }
+  .alert-row .time { font-size: 11px; color: var(--mute); font-family: var(--font-mono); }
+
+  /* Sparkline SVG inline */
+  .spark-up { stroke: var(--success); }
+  .spark-down { stroke: var(--destructive); }
+  .spark-flat { stroke: var(--mute); }
+
+  .crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mute); margin-bottom: 12px; font-family: var(--font-mono); }
+  .crumbs a { color: var(--accent); text-decoration: none; }
+  .crumbs [data-lucide] { width: 12px; height: 12px; }
+
+  /* Comparison */
+  .comparison { background: var(--surface); border-radius: var(--r-3); padding: 20px; margin-top: 32px; max-width: 1500px; }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .opt { border: 1px solid var(--border); border-radius: var(--r-2); padding: 12px; }
+  .opt h4 { margin: 0 0 6px; font-size: 13px; color: var(--accent); font-weight: 500; }
+  .opt ul { margin: 0; padding-left: 16px; font-size: 12px; color: var(--mute); }
+  .opt ul li { margin-bottom: 3px; }
+  .opt.recommended { border-color: var(--accent); background: oklch(72% 0.14 195 / 0.06); }
+  .opt.recommended h4::after { content: ' ← my read'; color: var(--mute); font-size: 11px; font-weight: 400; }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · Routine digest surface</h1>
+<div class="meta">
+  <strong>Decision:</strong> J3-1 — where do users read routine digest output (premarket scan, midday, postmarket reconciliation)?
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked · <strong>Icons:</strong> Lucide
+  &nbsp;·&nbsp;
+  <strong>Scenario rendered:</strong> premarket scan at 09:00 EDT identifies 3 setups (AAPL breakout retest, MSFT pullback, NVDA failed breakout)
+</div>
+
+<p>The same digest content rendered three ways (the original options Arturo flagged) plus a fourth hybrid — modal-route over <code>/alerts</code> list — that follows the pattern just locked in J1-3.</p>
+
+<h2>The three originals (A / B / C)</h2>
+
+<div class="grid-3">
+
+  <!-- =========== A: DEDICATED ROUTE =========== -->
+  <div class="surface-frame">
+    <div class="surface-frame__title muted">A — dedicated route</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/alerts/dgst_premkt_2026-05-05</code></div>
+    <div class="surface-frame__body">
+      <div class="shell">
+        <aside class="sidebar-mini">
+          <span class="sb-mark">i</span>
+          <div class="sb-icon"><i data-lucide="briefcase"></i></div>
+          <div class="sb-icon"><i data-lucide="bell"></i></div>
+          <div class="sb-icon active"><i data-lucide="megaphone"></i><span class="badge">3</span></div>
+          <div class="sb-icon"><i data-lucide="gauge"></i></div>
+          <div class="sb-icon"><i data-lucide="settings"></i></div>
+        </aside>
+        <main class="main">
+          <div class="crumbs"><a href="#">Alerts</a> <i data-lucide="chevron-right"></i> <span>dgst_premkt_2026-05-05</span></div>
+          <div class="digest-head">
+            <div class="digest-glyph"><i data-lucide="sunrise"></i></div>
+            <div class="digest-meta">
+              <h2 class="digest-title">Premarket scan · 2026-05-05</h2>
+              <div class="digest-time">2026-05-05T09:00:12.481-04:00 (EDT)</div>
+            </div>
+          </div>
+          <p class="digest-summary"><strong>3 setups</strong> identified across 12 watchlist symbols. Cost: <strong>$0.41</strong> · model: claude-sonnet-4-6.</p>
+
+          <div class="setup-list">
+            <div class="setup-row">
+              <span class="sym">AAPL</span>
+              <span class="desc"><span class="strong">Breakout retest</span> — 178.40 prior breakout, now retesting from above with declining volume.</span>
+              <svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,18 8,16 16,14 24,12 32,10 40,8 48,9 60,7" fill="none" class="spark-up" stroke-width="1.4"/></svg>
+              <span class="citation"><i data-lucide="book-open"></i>v17</span>
+            </div>
+            <div class="setup-row">
+              <span class="sym">MSFT</span>
+              <span class="desc"><span class="strong">Pullback to MA50</span> — held the moving average; ATR-narrow.</span>
+              <svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,9 12,11 24,14 36,12 48,11 60,10" fill="none" class="spark-flat" stroke-width="1.4"/></svg>
+              <span class="citation"><i data-lucide="book-open"></i>v9</span>
+            </div>
+            <div class="setup-row">
+              <span class="sym">NVDA</span>
+              <span class="desc"><span class="strong">Failed breakout</span> — 822.00 high-low range pierced and rejected; risk-off signal.</span>
+              <svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,8 10,6 18,8 26,12 34,15 44,17 60,18" fill="none" class="spark-down" stroke-width="1.4"/></svg>
+              <span class="citation"><i data-lucide="book-open"></i>v22</span>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========== B: MODAL =========== -->
+  <div class="surface-frame">
+    <div class="surface-frame__title muted">B — modal interrupt</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/portfolio</code> &nbsp;<span style="color:var(--accent);">+ modal overlay</span></div>
+    <div class="surface-frame__body">
+      <div class="shell">
+        <aside class="sidebar-mini">
+          <span class="sb-mark">i</span>
+          <div class="sb-icon active"><i data-lucide="briefcase"></i></div>
+          <div class="sb-icon"><i data-lucide="bell"></i></div>
+          <div class="sb-icon"><i data-lucide="megaphone"></i><span class="badge">3</span></div>
+          <div class="sb-icon"><i data-lucide="gauge"></i></div>
+          <div class="sb-icon"><i data-lucide="settings"></i></div>
+        </aside>
+        <main class="main" style="filter:blur(0.4px);opacity:0.55;">
+          <h1 class="page-h">Portfolio</h1>
+          <p class="page-sub">live · last tick 2s ago</p>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-2);padding:14px;font-size:12px;color:var(--mute);font-family:var(--font-mono);">positions, equity curve, etc. (stubbed for mock)</div>
+        </main>
+      </div>
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h2>Premarket scan · 09:00 EDT</h2>
+            <button class="modal-close">Esc</button>
+          </div>
+          <p class="digest-summary"><strong>3 setups</strong> identified. Cost: $0.41.</p>
+          <div class="setup-list">
+            <div class="setup-row"><span class="sym">AAPL</span><span class="desc">Breakout retest</span><svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,18 8,16 16,14 24,12 32,10 40,8 48,9 60,7" fill="none" class="spark-up" stroke-width="1.4"/></svg></div>
+            <div class="setup-row"><span class="sym">MSFT</span><span class="desc">Pullback to MA50</span><svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,9 12,11 24,14 36,12 48,11 60,10" fill="none" class="spark-flat" stroke-width="1.4"/></svg></div>
+            <div class="setup-row"><span class="sym">NVDA</span><span class="desc">Failed breakout</span><svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,8 10,6 18,8 26,12 34,15 44,17 60,18" fill="none" class="spark-down" stroke-width="1.4"/></svg></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========== C: BANNER WITH COLLAPSIBLE BODY =========== -->
+  <div class="surface-frame">
+    <div class="surface-frame__title muted">C — banner (collapsible)</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/</code> (dashboard home)</div>
+    <div class="surface-frame__body">
+      <div class="shell">
+        <aside class="sidebar-mini">
+          <span class="sb-mark">i</span>
+          <div class="sb-icon active"><i data-lucide="briefcase"></i></div>
+          <div class="sb-icon"><i data-lucide="bell"></i></div>
+          <div class="sb-icon"><i data-lucide="megaphone"></i><span class="badge">3</span></div>
+          <div class="sb-icon"><i data-lucide="gauge"></i></div>
+          <div class="sb-icon"><i data-lucide="settings"></i></div>
+        </aside>
+        <main class="main">
+          <h1 class="page-h">Dashboard</h1>
+          <p class="page-sub">2026-05-05T14:32 EDT · markets open</p>
+
+          <div class="banner">
+            <div class="banner__head">
+              <i data-lucide="sunrise" style="color:var(--accent);"></i>
+              <span class="banner__title">Premarket scan · 3 setups</span>
+              <span class="banner__time">09:00 EDT (5h ago)</span>
+              <span class="banner__chevron"><i data-lucide="chevron-down"></i></span>
+            </div>
+            <div class="banner__body">
+              <div class="setup-list">
+                <div class="setup-row"><span class="sym">AAPL</span><span class="desc">Breakout retest</span><svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,18 8,16 16,14 24,12 32,10 40,8 48,9 60,7" fill="none" class="spark-up" stroke-width="1.4"/></svg></div>
+                <div class="setup-row"><span class="sym">MSFT</span><span class="desc">Pullback to MA50</span><svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,9 12,11 24,14 36,12 48,11 60,10" fill="none" class="spark-flat" stroke-width="1.4"/></svg></div>
+                <div class="setup-row"><span class="sym">NVDA</span><span class="desc">Failed breakout</span><svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,8 10,6 18,8 26,12 34,15 44,17 60,18" fill="none" class="spark-down" stroke-width="1.4"/></svg></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-2);padding:14px;font-size:12px;color:var(--mute);font-family:var(--font-mono);">equity curve, drawdown, top approvals (stubbed)</div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h2>Hybrid (D) — modal-route over <code>/alerts</code> list page</h2>
+
+<div class="grid-1">
+  <div class="surface-frame">
+    <div class="surface-frame__title">D — modal-route hybrid (recommendation)</div>
+    <div class="surface-frame__header"><code style="background:transparent;color:var(--mute);">/alerts?digest=dgst_premkt_2026-05-05</code></div>
+    <div class="surface-frame__body">
+      <div class="shell">
+        <aside class="sidebar-mini">
+          <span class="sb-mark">i</span>
+          <div class="sb-icon"><i data-lucide="briefcase"></i></div>
+          <div class="sb-icon"><i data-lucide="bell"></i></div>
+          <div class="sb-icon active"><i data-lucide="megaphone"></i><span class="badge">3</span></div>
+          <div class="sb-icon"><i data-lucide="gauge"></i></div>
+          <div class="sb-icon"><i data-lucide="settings"></i></div>
+        </aside>
+        <main class="main">
+          <h1 class="page-h">Alerts</h1>
+          <p class="page-sub">routine digests · 47 archived · 3 unread</p>
+
+          <div class="alerts-list">
+            <div class="alert-row unread selected">
+              <div class="glyph"><i data-lucide="sunrise"></i></div>
+              <div class="body">
+                <div class="title">Premarket scan · 3 setups identified</div>
+                <div class="sub">premarket · cost $0.41 · model claude-sonnet-4-6</div>
+              </div>
+              <div class="time">09:00 EDT</div>
+            </div>
+            <div class="alert-row unread">
+              <div class="glyph"><i data-lucide="sun"></i></div>
+              <div class="body">
+                <div class="title">Midday check · no new setups</div>
+                <div class="sub">midday · cost $0.18 · 12 symbols re-scanned</div>
+              </div>
+              <div class="time">12:00 EDT</div>
+            </div>
+            <div class="alert-row unread">
+              <div class="glyph"><i data-lucide="sunset"></i></div>
+              <div class="body">
+                <div class="title">Postmarket reconciliation · 4 fills · 1 partial</div>
+                <div class="sub">postmarket · broker=ibkr_paper · drift_check=ok</div>
+              </div>
+              <div class="time">16:00 EDT</div>
+            </div>
+            <div class="alert-row">
+              <div class="glyph"><i data-lucide="sunrise"></i></div>
+              <div class="body">
+                <div class="title">Premarket scan · 1 setup identified</div>
+                <div class="sub">premarket · cost $0.36 · 12 symbols scanned</div>
+              </div>
+              <div class="time">2026-05-04 09:00</div>
+            </div>
+            <div class="alert-row">
+              <div class="glyph"><i data-lucide="sunset"></i></div>
+              <div class="body">
+                <div class="title">Postmarket reconciliation · 0 fills</div>
+                <div class="sub">postmarket · broker=ibkr_paper · drift_check=ok</div>
+              </div>
+              <div class="time">2026-05-04 16:00</div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- Drawer (modal-route pattern from §0.4b) -->
+      <div class="drawer-backdrop"></div>
+      <div class="drawer">
+        <div class="drawer__head">
+          <h2>Premarket scan · 09:00 EDT</h2>
+          <button class="drawer__close"><i data-lucide="x"></i>Esc</button>
+        </div>
+        <div class="digest-head">
+          <div class="digest-glyph"><i data-lucide="sunrise"></i></div>
+          <div class="digest-meta">
+            <h2 class="digest-title">3 setups · 12 symbols</h2>
+            <div class="digest-time">2026-05-05T09:00:12.481-04:00</div>
+          </div>
+        </div>
+        <p class="digest-summary">Cost <strong>$0.41</strong> · model claude-sonnet-4-6 · prompt v3.2.</p>
+
+        <div class="setup-list">
+          <div class="setup-row">
+            <span class="sym">AAPL</span>
+            <span class="desc"><span class="strong">Breakout retest</span> — 178.40 prior breakout retesting from above.</span>
+            <svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,18 8,16 16,14 24,12 32,10 40,8 48,9 60,7" fill="none" class="spark-up" stroke-width="1.4"/></svg>
+            <span class="citation"><i data-lucide="book-open"></i>v17</span>
+          </div>
+          <div class="setup-row">
+            <span class="sym">MSFT</span>
+            <span class="desc"><span class="strong">Pullback to MA50</span> — held the moving average; ATR-narrow.</span>
+            <svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,9 12,11 24,14 36,12 48,11 60,10" fill="none" class="spark-flat" stroke-width="1.4"/></svg>
+            <span class="citation"><i data-lucide="book-open"></i>v9</span>
+          </div>
+          <div class="setup-row">
+            <span class="sym">NVDA</span>
+            <span class="desc"><span class="strong">Failed breakout</span> — 822.00 pierced and rejected; risk-off.</span>
+            <svg class="sparkline" viewBox="0 0 60 22"><polyline points="0,8 10,6 18,8 26,12 34,15 44,17 60,18" fill="none" class="spark-down" stroke-width="1.4"/></svg>
+            <span class="citation"><i data-lucide="book-open"></i>v22</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Four options compared</h2>
+
+<div class="comparison">
+  <div class="comparison-grid">
+    <div class="opt">
+      <h4>A — dedicated route</h4>
+      <ul>
+        <li>Each digest = its own URL.</li>
+        <li>Deep-linkable, shareable.</li>
+        <li>No archive view — just the per-digest page; user has to navigate elsewhere to find the list.</li>
+        <li>Going to the digest from <code>/portfolio</code> = full nav; back button leaves the dashboard surface.</li>
+      </ul>
+    </div>
+    <div class="opt">
+      <h4>B — modal interrupt</h4>
+      <ul>
+        <li>Digest fires while user is mid-task → modal pops over.</li>
+        <li>Premarket scan is NOT urgent — it's informational; modal interruption is annoying.</li>
+        <li>Closing dismisses it; no easy way to revisit.</li>
+        <li>Not deep-linkable; modal state evaporates.</li>
+        <li>Best fit for blocking decisions (kill-switch confirmations); wrong fit for routine output.</li>
+      </ul>
+    </div>
+    <div class="opt">
+      <h4>C — banner on dashboard home</h4>
+      <ul>
+        <li>Sticky at top of <code>/</code>; collapsible.</li>
+        <li>Lost when user leaves the home page (banner only renders on <code>/</code>).</li>
+        <li>Multiple routines stack the banners → clutter on busy days (premarket + midday + postmarket = 3 banners).</li>
+        <li>No archive of past digests beyond what's still active.</li>
+      </ul>
+    </div>
+    <div class="opt recommended">
+      <h4>D — modal-route over <code>/alerts</code> list</h4>
+      <ul>
+        <li><code>/alerts</code> = chronological archive route.</li>
+        <li>Each digest reached via <code>?digest=&lt;id&gt;</code> drawer (modal-route pattern from §0.4b).</li>
+        <li>Sidebar badge "Alerts (3)" = unread count, persistent.</li>
+        <li>Deep-link works (<code>/alerts?digest=&lt;id&gt;</code>); sharing works; back button works.</li>
+        <li>Archive + reading + freshness in one surface; no per-page banner clutter.</li>
+        <li>Reuses Drawer + Modal-route pattern just locked → catalogue consistency.</li>
+        <li>Cost: same as A (one route file) but cleaner because the route is the LIST, not the per-digest page.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>My read</h2>
+<p style="color:var(--ink);max-width:1500px;">A and D both create a dedicated surface; the difference is whether the route is the digest itself (A) or the list with a drawer (D). D wins because (a) the user usually wants the archive — "what was the postmarket reconciliation last Wednesday?" — and that requires a list view anyway; (b) modal-route preserves cross-page filters consistent with J1-3; (c) one surface (<code>/alerts</code>) instead of two (<code>/alerts</code> list + <code>/alerts/[id]</code> per-digest). B is wrong shape (digests aren't urgent). C alone fails on cross-page visibility + history.</p>
+
+<div class="comparison" style="background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent);">
+  <h3 style="color: var(--accent);">→ Recommendation: Option D — modal-route over <code>/alerts</code> list</h3>
+  <p style="color: var(--ink); margin: 0;"><code>/alerts</code> = chronological archive (filterable by routine type, date). Each digest opens in a drawer via <code>?digest=&lt;id&gt;</code> per the modal-route pattern (components.md §0.4b). Sidebar badge shows unread count; clearing happens when the drawer for that digest is opened. NO modal interruption (digests are informational, not urgent). NO banner on <code>/</code> dashboard (avoids per-routine-type banner clutter). Toast on dashboard if user is online when a digest fires (small, dismissable, with a "View" CTA that opens the drawer). Implementation lands in slice O2 (<code>orchestration-scheduler-routines</code>) which owns the routine pipeline; <code>/alerts</code> route + drawer in slice W1 / O2 split (TBD with slice authors).</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-j3-1-digest-surface.html</code>
+  <br><br>
+  <strong>Note:</strong> Toast for "digest just arrived" is a separate surface (<code>Toast.svelte</code> primitive, already canonical in components.md §5). It's complementary to the drawer — Toast = "hey, premarket just landed, click View to read it"; drawer = "now read it". Toast auto-dismisses after 8s; clicking View pushes <code>?digest=&lt;id&gt;</code>. If the user is on <code>/alerts</code> when the digest fires, no Toast — the list updates inline and the new row gets the unread border-left.
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>

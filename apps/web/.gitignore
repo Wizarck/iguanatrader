@@ -1,0 +1,13 @@
+node_modules
+.svelte-kit
+.env
+.env.*
+!.env.example
+build
+dist
+*.tsbuildinfo
+# Playwright artefacts (screenshots ARE checked in as visual baselines;
+# the report + test-results dirs are not).
+playwright-report
+test-results
+tests-e2e/.last-run.json

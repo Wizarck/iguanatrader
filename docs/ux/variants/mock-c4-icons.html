@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · C4 icon library comparison · Lucide vs Heroicons</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --accent-hover: oklch(76% 0.14 195);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-2: 8px;
+    --r-3: 12px;
+    --r-pill: 9999px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1400px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: var(--mute); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 800px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-3); padding: 16px; }
+  .col h3 { margin-top: 0; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; font-weight: 500; }
+  .col .sub { font-size: 12px; color: var(--mute); margin-bottom: 12px; }
+
+  /* Icon row: standalone 24px */
+  .icons-standalone { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .icons-standalone .item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .icons-standalone .item img { width: 24px; height: 24px; }
+  .icons-standalone .item .label { font-size: 10px; color: var(--mute); font-family: var(--font-mono); }
+
+  /* Lucide via CDN initialization */
+  .icons-standalone .item [data-lucide] { width: 24px; height: 24px; stroke: var(--ink); }
+
+  /* Filter SVGs for outline (heroicons) — they're black by default; invert to ink */
+  img.invert { filter: brightness(0) invert(1) brightness(0.93); }
+  img.invert-mute { filter: brightness(0) invert(1) brightness(0.7); }
+
+  /* Button context */
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: var(--r-2); font-family: var(--font-sans); font-size: 14px; font-weight: 500; border: 1px solid var(--border); background: transparent; color: var(--ink); cursor: pointer; }
+  .btn--primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn--destructive { background: var(--destructive); color: var(--ink); border-color: var(--destructive); }
+  .btn--ghost { background: transparent; color: var(--mute); border-color: transparent; }
+  .btn img, .btn svg { width: 16px; height: 16px; }
+  .btn--primary img.invert { filter: brightness(0); }
+  .btn--primary [data-lucide] { stroke: var(--accent-fg); }
+  .btn--destructive [data-lucide] { stroke: var(--ink); }
+
+  /* Sidebar nav context */
+  .sidebar-mock { background: var(--surface-2); border-radius: var(--r-2); padding: 8px; margin-top: 16px; max-width: 220px; }
+  .sidebar-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--r-2); color: var(--mute); font-size: 14px; cursor: pointer; }
+  .sidebar-row.active { background: var(--bg); color: var(--accent); }
+  .sidebar-row.active [data-lucide] { stroke: var(--accent); }
+  .sidebar-row [data-lucide] { width: 18px; height: 18px; stroke: currentColor; }
+  .sidebar-row img { width: 18px; height: 18px; }
+  .sidebar-row.active img.invert { filter: brightness(0) invert(1) sepia(1) saturate(5) hue-rotate(140deg) brightness(1.2); }
+
+  /* P&L example with dual-channel */
+  .pnl-row { display: flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; padding: 4px 0; }
+  .pnl-row [data-lucide] { width: 14px; height: 14px; }
+  .pnl-row img { width: 14px; height: 14px; }
+  .pnl-positive { color: var(--success); }
+  .pnl-negative { color: var(--destructive); }
+  .pnl-positive [data-lucide] { stroke: var(--success); }
+  .pnl-negative [data-lucide] { stroke: var(--destructive); }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .footnote a { color: var(--accent); }
+  .recommended { background: oklch(72% 0.14 195 / 0.12); border: 1px solid var(--accent); border-radius: var(--r-2); padding: 8px 12px; font-size: 13px; color: var(--accent); display: inline-block; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · Icon library comparison</h1>
+<div class="meta">
+  <strong>Decision:</strong> C4 — Sidebar, Button icon slot, EmptyState icon, MethodologyBadge
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Tokens:</strong> locked (see DESIGN.md §1)
+</div>
+
+<p>Same 12 icons rendered with the locked dark theme. Each column shows three contexts: <strong>standalone 24px</strong>, <strong>Button slot 16px</strong>, and <strong>Sidebar nav row 18px</strong>. P&L sample at the bottom shows the dual-channel (color + icon) safety net for color-blind readers. Resize the window — the grid stays at 3 columns until ≤900px.</p>
+
+<div class="grid-3">
+
+  <!-- ============ COLUMN 1: LUCIDE ============ -->
+  <div class="col">
+    <h3>Lucide (cherry-picked)</h3>
+    <div class="sub"><code>lucide-svelte</code> · ISC · 1.5px stroke · ~1500 icons</div>
+
+    <div class="icons-standalone">
+      <div class="item"><i data-lucide="trending-up"></i><span class="label">trending-up</span></div>
+      <div class="item"><i data-lucide="alert-triangle"></i><span class="label">alert-triangle</span></div>
+      <div class="item"><i data-lucide="lock"></i><span class="label">lock</span></div>
+      <div class="item"><i data-lucide="shield-check"></i><span class="label">shield-check</span></div>
+      <div class="item"><i data-lucide="octagon-x"></i><span class="label">octagon-x</span></div>
+      <div class="item"><i data-lucide="gauge"></i><span class="label">gauge</span></div>
+      <div class="item"><i data-lucide="briefcase"></i><span class="label">briefcase</span></div>
+      <div class="item"><i data-lucide="external-link"></i><span class="label">external-link</span></div>
+      <div class="item"><i data-lucide="search"></i><span class="label">search</span></div>
+      <div class="item"><i data-lucide="settings"></i><span class="label">settings</span></div>
+      <div class="item"><i data-lucide="bell"></i><span class="label">bell</span></div>
+      <div class="item"><i data-lucide="clock"></i><span class="label">clock</span></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn--primary"><i data-lucide="check"></i>Approve</button>
+      <button class="btn btn--destructive"><i data-lucide="x"></i>Reject</button>
+      <button class="btn"><i data-lucide="external-link"></i>Open trade</button>
+      <button class="btn btn--ghost"><i data-lucide="search"></i>Filter</button>
+    </div>
+
+    <div class="sidebar-mock">
+      <div class="sidebar-row active"><i data-lucide="briefcase"></i>Portfolio</div>
+      <div class="sidebar-row"><i data-lucide="bell"></i>Approvals <span style="margin-left:auto;font-family:var(--font-mono);font-size:11px;">3</span></div>
+      <div class="sidebar-row"><i data-lucide="gauge"></i>Risk</div>
+      <div class="sidebar-row"><i data-lucide="settings"></i>Settings</div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <div class="pnl-row pnl-positive"><i data-lucide="trending-up"></i>+ $1,247.30</div>
+      <div class="pnl-row pnl-negative"><i data-lucide="trending-down"></i>− $823.10</div>
+    </div>
+  </div>
+
+  <!-- ============ COLUMN 2: HEROICONS OUTLINE ============ -->
+  <div class="col">
+    <h3>Heroicons (outline)</h3>
+    <div class="sub"><code>@steeze-ui/heroicons</code> · MIT · 1.5px stroke · 316 × 3 variants</div>
+
+    <div class="icons-standalone">
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/arrow-trending-up.svg" alt="trending-up"><span class="label">trending-up</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/exclamation-triangle.svg" alt="alert"><span class="label">exclamation-tri</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/lock-closed.svg" alt="lock"><span class="label">lock-closed</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/shield-check.svg" alt="shield"><span class="label">shield-check</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/no-symbol.svg" alt="no-symbol"><span class="label">no-symbol*</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/chart-bar.svg" alt="chart-bar"><span class="label">chart-bar*</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/briefcase.svg" alt="briefcase"><span class="label">briefcase</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/arrow-top-right-on-square.svg" alt="ext-link"><span class="label">arrow-top-right</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/magnifying-glass.svg" alt="search"><span class="label">magnifying-glass</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/cog-6-tooth.svg" alt="settings"><span class="label">cog-6-tooth</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/bell.svg" alt="bell"><span class="label">bell</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/clock.svg" alt="clock"><span class="label">clock</span></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn--primary"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/check.svg" alt="">Approve</button>
+      <button class="btn btn--destructive"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/x-mark.svg" alt="">Reject</button>
+      <button class="btn"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/arrow-top-right-on-square.svg" alt="">Open trade</button>
+      <button class="btn btn--ghost"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/magnifying-glass.svg" alt="">Filter</button>
+    </div>
+
+    <div class="sidebar-mock">
+      <div class="sidebar-row active"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/briefcase.svg" alt="">Portfolio</div>
+      <div class="sidebar-row"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/bell.svg" alt="">Approvals <span style="margin-left:auto;font-family:var(--font-mono);font-size:11px;">3</span></div>
+      <div class="sidebar-row"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/chart-bar.svg" alt="">Risk</div>
+      <div class="sidebar-row"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/cog-6-tooth.svg" alt="">Settings</div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <div class="pnl-row pnl-positive" style="--svg-color: var(--success)"><img src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/arrow-trending-up.svg" alt="" style="filter:brightness(0) invert(1) sepia(1) hue-rotate(70deg) saturate(4)">+ $1,247.30</div>
+      <div class="pnl-row pnl-negative"><img src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/arrow-trending-down.svg" alt="" style="filter:brightness(0) invert(1) sepia(1) hue-rotate(330deg) saturate(5)">− $823.10</div>
+    </div>
+
+    <div class="sub" style="margin-top:12px;">* No native <code>octagon-x</code> kill-switch icon (closest = <code>no-symbol</code>); no <code>gauge</code> (closest = <code>chart-bar</code>).</div>
+  </div>
+
+  <!-- ============ COLUMN 3: HEROICONS SOLID ============ -->
+  <div class="col">
+    <h3>Heroicons (solid)</h3>
+    <div class="sub"><code>@steeze-ui/heroicons</code> · MIT · filled · 316 × 3 variants</div>
+
+    <div class="icons-standalone">
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/arrow-trending-up.svg" alt="trending-up"><span class="label">trending-up</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/exclamation-triangle.svg" alt="alert"><span class="label">exclamation-tri</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/lock-closed.svg" alt="lock"><span class="label">lock-closed</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/shield-check.svg" alt="shield"><span class="label">shield-check</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/no-symbol.svg" alt="no-symbol"><span class="label">no-symbol*</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/chart-bar.svg" alt="chart-bar"><span class="label">chart-bar*</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/briefcase.svg" alt="briefcase"><span class="label">briefcase</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/arrow-top-right-on-square.svg" alt="ext-link"><span class="label">arrow-top-right</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/magnifying-glass.svg" alt="search"><span class="label">magnifying-glass</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/cog-6-tooth.svg" alt="settings"><span class="label">cog-6-tooth</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/bell.svg" alt="bell"><span class="label">bell</span></div>
+      <div class="item"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/clock.svg" alt="clock"><span class="label">clock</span></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn--primary"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/check.svg" alt="">Approve</button>
+      <button class="btn btn--destructive"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/x-mark.svg" alt="">Reject</button>
+      <button class="btn"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/arrow-top-right-on-square.svg" alt="">Open trade</button>
+      <button class="btn btn--ghost"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/magnifying-glass.svg" alt="">Filter</button>
+    </div>
+
+    <div class="sidebar-mock">
+      <div class="sidebar-row active"><img class="invert" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/briefcase.svg" alt="">Portfolio</div>
+      <div class="sidebar-row"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/bell.svg" alt="">Approvals <span style="margin-left:auto;font-family:var(--font-mono);font-size:11px;">3</span></div>
+      <div class="sidebar-row"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/chart-bar.svg" alt="">Risk</div>
+      <div class="sidebar-row"><img class="invert-mute" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/cog-6-tooth.svg" alt="">Settings</div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <div class="pnl-row pnl-positive"><img src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/arrow-trending-up.svg" alt="" style="filter:brightness(0) invert(1) sepia(1) hue-rotate(70deg) saturate(4)">+ $1,247.30</div>
+      <div class="pnl-row pnl-negative"><img src="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/solid/arrow-trending-down.svg" alt="" style="filter:brightness(0) invert(1) sepia(1) hue-rotate(330deg) saturate(5)">− $823.10</div>
+    </div>
+
+    <div class="sub" style="margin-top:12px;">* Same coverage gaps as outline.</div>
+  </div>
+
+</div>
+
+<h2>My read</h2>
+
+<div style="background: var(--surface); border-radius: var(--r-3); padding: 16px; max-width: 800px;">
+  <p style="color: var(--ink);"><strong>Lucide</strong> — 1.5px stroke matches the operational/Bloomberg lineage; native <code>octagon-x</code> for kill-switch and <code>gauge</code> for Risk Cockpit; tree-shakes per import; ISC license.</p>
+  <p style="color: var(--ink);"><strong>Heroicons outline</strong> — same stroke weight, looks tighter (more rounded corners), but missing <code>octagon-x</code> (we'd substitute <code>no-symbol</code> which is a circular "Ø" — wrong semantic for kill-switch) and <code>gauge</code> (closest is <code>chart-bar</code> — generic).</p>
+  <p style="color: var(--ink);"><strong>Heroicons solid</strong> — fills feel heavy on dark; clashes with the "fine instrument" reading the catalogue is going for. Risk: P&L delta arrow looks like a chunky badge instead of a directional cue.</p>
+  <div class="recommended">→ My recommendation: <strong>Lucide cherry-picked</strong></div>
+</div>
+
+<div class="footnote">
+  <strong>Notes</strong>: Lucide loaded via <code>https://unpkg.com/lucide@latest</code> + <code>lucide.createIcons()</code>; Heroicons loaded as <code>&lt;img&gt;</code> tags from jsDelivr. The CSS <code>filter</code> chain on Heroicons is a mock-only hack to recolour SVG-image fills — production code would inline the SVGs as Svelte components and use <code>currentColor</code>. P&L colour mapping in the mock is approximate (CSS filter cannot perfectly mimic the OKLCH success/destructive); production renders real <code>fill="currentColor"</code> SVG.
+  <br><br>
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-c4-icons.html</code>
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({
+        attrs: { 'stroke-width': 1.5 }
+      });
+    }
+  });
+</script>
+
+</body>
+</html>

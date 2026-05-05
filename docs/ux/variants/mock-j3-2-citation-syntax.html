@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>iguanatrader · J3-2 — Citation marker syntax</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: oklch(18% 0.02 250);
+    --surface: oklch(22% 0.02 250);
+    --surface-2: oklch(26% 0.02 250);
+    --ink: oklch(95% 0.005 250);
+    --mute: oklch(70% 0.012 250);
+    --border: oklch(32% 0.02 250);
+    --accent: oklch(72% 0.14 195);
+    --accent-fg: oklch(15% 0.02 250);
+    --success: oklch(72% 0.16 145);
+    --destructive: oklch(64% 0.20 25);
+    --warn-bg: oklch(78% 0.14 80);
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-3: 12px;
+    --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); margin: 0; padding: 0; }
+  body { padding: 32px; max-width: 1700px; margin: 0 auto; line-height: 1.5; }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--accent); font-weight: 500; }
+  p { color: var(--mute); font-size: 14px; margin: 0 0 16px; max-width: 1100px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--surface-2); padding: 2px 6px; border-radius: var(--r-1); color: var(--accent); }
+
+  .meta { font-size: 12px; color: var(--mute); margin-bottom: 24px; }
+  .meta strong { color: var(--ink); font-weight: 500; }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .surface-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface-frame__title {
+    background: var(--surface-2);
+    color: var(--mute);
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .surface-frame__title.recommended { background: var(--accent); color: var(--accent-fg); }
+  .surface-frame__body {
+    flex: 1;
+    background: var(--bg);
+    padding: 14px;
+    min-height: 540px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .panel__h {
+    font-size: 10px;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .panel__h [data-lucide] { width: 12px; height: 12px; }
+
+  /* Raw source panel */
+  .raw-source {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .raw-source .marker { color: var(--accent); background: oklch(72% 0.14 195 / 0.10); padding: 0 2px; border-radius: 2px; }
+  .raw-source .meta-block { color: var(--mute); }
+  .raw-source .json-key { color: var(--accent); }
+  .raw-source .json-string { color: var(--success); }
+  .raw-source .json-num { color: var(--warn-bg); }
+
+  /* Rendered output */
+  .rendered {
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.65;
+  }
+  .citation-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: var(--r-1);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 11px;
+    background: oklch(72% 0.14 195 / 0.10);
+    font-family: var(--font-mono);
+    cursor: pointer;
+    margin: 0 1px;
+    vertical-align: middle;
+  }
+  .citation-chip [data-lucide] { width: 10px; height: 10px; }
+  .citation-chip:hover { background: oklch(72% 0.14 195 / 0.18); }
+
+  /* Footnote-style superscript (option B native render) */
+  .footnote-sup {
+    color: var(--accent);
+    font-size: 0.75em;
+    vertical-align: super;
+    cursor: pointer;
+    padding: 0 1px;
+  }
+  .footnote-sup:hover { background: oklch(72% 0.14 195 / 0.10); border-radius: 2px; }
+
+  /* JSON sidecar shadow overlay (option C) */
+  .json-overlay {
+    background: oklch(64% 0.20 25 / 0.10);
+    border: 1px dashed var(--destructive);
+    border-radius: var(--r-1);
+    padding: 6px 8px;
+    font-size: 11px;
+    color: var(--destructive);
+    font-family: var(--font-mono);
+    margin-top: 4px;
+  }
+  .json-overlay [data-lucide] { width: 11px; height: 11px; vertical-align: middle; }
+
+  .complexity {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--mute);
+    padding: 6px 0 0;
+    border-top: 1px dashed var(--border);
+    margin-top: 8px;
+  }
+  .complexity .ok { color: var(--success); }
+  .complexity .warn { color: var(--warn-bg); }
+  .complexity .bad { color: var(--destructive); }
+
+  /* Comparison table */
+  .comparison { background: var(--surface); border-radius: var(--r-3); padding: 20px; margin-top: 24px; max-width: 1500px; }
+  .comparison h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 16px; margin-top: 0; }
+  .comparison-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  .comparison-table th, .comparison-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .comparison-table th { color: var(--mute); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .comparison-table td { color: var(--ink); }
+  .comparison-table tr.head th { background: var(--surface-2); }
+  .comparison-table .col-b { color: var(--accent); font-weight: 500; }
+  .ok { color: var(--success); }
+  .no { color: var(--destructive); }
+  .meh { color: var(--warn-bg); }
+
+  .rec-box { background: oklch(72% 0.14 195 / 0.06); border: 1px solid var(--accent); border-radius: var(--r-3); padding: 16px 20px; margin-top: 16px; }
+  .rec-box h3 { margin: 0 0 6px; color: var(--accent); font-size: 16px; }
+  .rec-box p { color: var(--ink); margin: 0; max-width: 1500px; }
+
+  .footnote { color: var(--mute); font-size: 12px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>iguanatrader · Brief citation marker syntax</h1>
+<div class="meta">
+  <strong>Decision:</strong> J3-2 — how does the LLM mark citations inline in the synthesised brief body?
+  &nbsp;·&nbsp;
+  <strong>Date:</strong> 2026-05-05
+  &nbsp;·&nbsp;
+  <strong>Surface:</strong> the brief-body renderer at [j3.md](../j3.md) §3 Step 2 (`/research/[symbol]`)
+  &nbsp;·&nbsp;
+  <strong>Sample:</strong> 2 sentences citing 4 facts (NVDA fundamentals)
+</div>
+
+<p>The LLM (research_brief_generator) outputs synthesised prose. Each numeric assertion must cite the fact it relies on. The question: <strong>how</strong>. Three encodings — same prose, same 4 facts, three syntaxes. The renderer in <code>apps/web/src/lib/research/render-brief.ts</code> parses the marker; the user sees the same rendered chip regardless.</p>
+
+<div class="grid-3">
+
+  <!-- ============ A: [fact:<id>] inline ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title recommended">A — <code style="background:var(--surface);">[fact:&lt;id&gt;]</code> inline</div>
+    <div class="surface-frame__body">
+      <div class="panel">
+        <div class="panel__h"><i data-lucide="braces"></i>Raw source from LLM</div>
+        <div class="raw-source">EPS TTM is $3.18 <span class="marker">[fact:f_eps_aapl_q1_2026]</span>, beating consensus by $0.18 <span class="marker">[fact:f_eps_surprise_q1_2026]</span>. FY estimate revised up to $3.62 <span class="marker">[fact:f_fyest_aapl_2026]</span>; analyst price target consensus moved to $920 <span class="marker">[fact:f_target_aapl_2026_05]</span>.</div>
+      </div>
+      <div class="panel">
+        <div class="panel__h"><i data-lucide="eye"></i>Rendered (what the user sees)</div>
+        <div class="rendered">EPS TTM is $3.18 <span class="citation-chip"><i data-lucide="book-open"></i>eps_q1</span>, beating consensus by $0.18 <span class="citation-chip"><i data-lucide="book-open"></i>surprise</span>. FY estimate revised up to $3.62 <span class="citation-chip"><i data-lucide="book-open"></i>fy_est</span>; analyst price target consensus moved to $920 <span class="citation-chip"><i data-lucide="book-open"></i>target</span>.</div>
+        <div class="complexity">
+          renderer: 1 regex pass · prompt complexity: <span class="ok">low</span> · LLM stability across regen: <span class="ok">high</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ B: [^id] markdown footnote ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">B — <code style="background:var(--surface-2);">[^id]</code> markdown footnote-style</div>
+    <div class="surface-frame__body">
+      <div class="panel">
+        <div class="panel__h"><i data-lucide="braces"></i>Raw source from LLM</div>
+        <div class="raw-source">EPS TTM is $3.18<span class="marker">[^eps_q1]</span>, beating consensus by $0.18<span class="marker">[^surprise]</span>. FY estimate revised up to $3.62<span class="marker">[^fy_est]</span>; analyst price target consensus moved to $920<span class="marker">[^target]</span>.
+
+<span class="meta-block">[^eps_q1]: f_eps_aapl_q1_2026
+[^surprise]: f_eps_surprise_q1_2026
+[^fy_est]: f_fyest_aapl_2026
+[^target]: f_target_aapl_2026_05</span></div>
+      </div>
+      <div class="panel">
+        <div class="panel__h"><i data-lucide="eye"></i>Rendered native (what GitHub / Pandoc would do)</div>
+        <div class="rendered">EPS TTM is $3.18<span class="footnote-sup">eps_q1</span>, beating consensus by $0.18<span class="footnote-sup">surprise</span>. FY estimate revised up to $3.62<span class="footnote-sup">fy_est</span>; analyst price target consensus moved to $920<span class="footnote-sup">target</span>.</div>
+        <p style="font-size:11px;color:var(--mute);margin-top:8px;font-family:var(--font-mono);">↑ native footnote render = superscript link → scroll-to-bottom. <span class="bad" style="color:var(--destructive);">Wrong UX</span>: we want inline chips with fact tooltip, not jump-to-footnotes.</p>
+
+        <div class="panel__h" style="margin-top:14px;"><i data-lucide="eye"></i>Rendered with custom override</div>
+        <div class="rendered">EPS TTM is $3.18<span class="citation-chip"><i data-lucide="book-open"></i>eps_q1</span>, beating consensus by $0.18<span class="citation-chip"><i data-lucide="book-open"></i>surprise</span>. FY estimate revised up to $3.62<span class="citation-chip"><i data-lucide="book-open"></i>fy_est</span>; analyst price target consensus moved to $920<span class="citation-chip"><i data-lucide="book-open"></i>target</span>.</div>
+        <div class="complexity">
+          renderer: 2 passes (parse refs + resolve map) · prompt complexity: <span class="warn">medium</span> (LLM must keep map consistent) · LLM stability: <span class="warn">medium</span> (map drift on regen)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ C: JSON sidecar ============ -->
+  <div class="surface-frame">
+    <div class="surface-frame__title">C — JSON sidecar (positions)</div>
+    <div class="surface-frame__body">
+      <div class="panel">
+        <div class="panel__h"><i data-lucide="braces"></i>Raw source from LLM (prose only)</div>
+        <div class="raw-source">EPS TTM is $3.18, beating consensus by $0.18. FY estimate revised up to $3.62; analyst price target consensus moved to $920.</div>
+      </div>
+      <div class="panel">
+        <div class="panel__h"><i data-lucide="braces"></i>Sidecar (separate file / column)</div>
+        <div class="raw-source">{
+  <span class="json-key">"citations"</span>: [
+    { <span class="json-key">"start"</span>: <span class="json-num">14</span>, <span class="json-key">"end"</span>: <span class="json-num">19</span>, <span class="json-key">"fact_id"</span>: <span class="json-string">"f_eps_aapl_q1_2026"</span> },
+    { <span class="json-key">"start"</span>: <span class="json-num">48</span>, <span class="json-key">"end"</span>: <span class="json-num">53</span>, <span class="json-key">"fact_id"</span>: <span class="json-string">"f_eps_surprise_q1_2026"</span> },
+    { <span class="json-key">"start"</span>: <span class="json-num">81</span>, <span class="json-key">"end"</span>: <span class="json-num">86</span>, <span class="json-key">"fact_id"</span>: <span class="json-string">"f_fyest_aapl_2026"</span> },
+    { <span class="json-key">"start"</span>: <span class="json-num">132</span>, <span class="json-key">"end"</span>: <span class="json-num">136</span>, <span class="json-key">"fact_id"</span>: <span class="json-string">"f_target_aapl_2026_05"</span> }
+  ]
+}</div>
+      </div>
+      <div class="panel">
+        <div class="panel__h"><i data-lucide="eye"></i>Rendered (after position-based overlay)</div>
+        <div class="rendered">EPS TTM is $3.18<span class="citation-chip"><i data-lucide="book-open"></i>eps_q1</span>, beating consensus by $0.18<span class="citation-chip"><i data-lucide="book-open"></i>surprise</span>. FY estimate revised up to $3.62<span class="citation-chip"><i data-lucide="book-open"></i>fy_est</span>; analyst price target consensus moved to $920<span class="citation-chip"><i data-lucide="book-open"></i>target</span>.</div>
+        <div class="json-overlay">
+          <i data-lucide="alert-triangle"></i> <strong>Fragile.</strong> If the LLM rewrites by 1 char on regen ("$3.18" → "$3.180"), all subsequent offsets shift; sidecar must be regenerated atomically. No overlay survives partial edits.
+        </div>
+        <div class="complexity">
+          renderer: position overlay walk · prompt complexity: <span class="bad">high</span> (LLM must emit prose+sidecar atomically) · LLM stability: <span class="bad">low</span> (offset drift kills citations)
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<h2>Three encodings compared</h2>
+
+<div class="comparison">
+  <table class="comparison-table">
+    <thead>
+      <tr class="head">
+        <th>Dimension</th>
+        <th>A · <code>[fact:&lt;id&gt;]</code></th>
+        <th class="col-b">A — recommended</th>
+        <th>B · <code>[^id]</code> footnote</th>
+        <th>C · JSON sidecar</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>LLM prompt complexity</td><td colspan="2" class="col-b"><span class="ok">low</span> — "cite using <code>[fact:&lt;id&gt;]</code> with the exact fact_id"</td><td><span class="meh">medium</span> — must maintain footnote map alongside refs</td><td><span class="no">high</span> — must emit prose + sidecar atomically</td></tr>
+      <tr><td>Renderer parse</td><td colspan="2" class="col-b">1 regex pass: <code>/\[fact:([^\]]+)\]/g</code></td><td>2 passes: parse refs, resolve map</td><td>walk prose + apply offsets</td></tr>
+      <tr><td>Source of truth for citation</td><td colspan="2" class="col-b">single — at the marker</td><td>split — marker + footnote def</td><td>split — prose + sidecar JSON</td></tr>
+      <tr><td>Robust to LLM regeneration</td><td colspan="2" class="col-b"><span class="ok">yes</span> — markers travel with prose</td><td><span class="meh">partial</span> — refs and defs can drift</td><td><span class="no">no</span> — char offsets shift on any edit</td></tr>
+      <tr><td>Native markdown render (GitHub / Pandoc)</td><td colspan="2" class="col-b">unknown text — graceful fallback (raw <code>[fact:id]</code> visible but no link)</td><td>superscript link to bottom — wrong UX, must override</td><td>plain prose only (sidecar invisible)</td></tr>
+      <tr><td>Raw markdown legibility</td><td colspan="2" class="col-b"><span class="meh">medium</span> — IDs visible inline (acceptable; users read rendered)</td><td><span class="ok">high</span> — short superscripts</td><td><span class="ok">high</span> — prose untouched</td></tr>
+      <tr><td>PDF export complexity (FR44)</td><td colspan="2" class="col-b">simple — same regex pass on the prose</td><td>medium — Pandoc default would render footnotes; we need an override anyway</td><td>complex — must encode positions in PDF layout</td></tr>
+      <tr><td>Hindsight recall toggle (FR81) — strip future facts</td><td colspan="2" class="col-b">trivial — drop or replace markers whose fact_id post-dates as_of</td><td>trivial — same</td><td>complex — must update positions when stripping</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>My read</h2>
+<p style="color:var(--ink);max-width:1500px;">C is fragile (offset drift on regen kills citations); we'd be re-deriving the sidecar every time the LLM touches the prose, which makes B+C indistinguishable but with extra bookkeeping. B's "standard markdown" advantage evaporates because the native footnote render is the wrong UX (superscript jump-to-bottom) — we'd override the renderer anyway, at which point the "standardness" gives us nothing. A is the simplest: marker travels with prose, single source of truth, one regex parse. The "raw markdown is noisier" cost is real but minor — users read rendered briefs, not raw. If we ever export raw .md (e.g. for pasting into Obsidian / Logseq), the markers degrade gracefully into visible text — no broken state.</p>
+
+<div class="rec-box">
+  <h3>→ Recommendation: A — <code>[fact:&lt;id&gt;]</code> inline</h3>
+  <p>LLM is given a JSON list of facts in the prompt with their IDs; instructed to cite inline using <code>[fact:&lt;id&gt;]</code> with the exact ID. Renderer parses with <code>/\[fact:([^\]]+)\]/g</code> and substitutes <code>CitationLink</code> components resolving against the brief's facts payload (server-supplied alongside the prose, no offset bookkeeping). Hindsight recall toggle (FR81) drops or replaces markers post-dating the as_of timestamp — same regex pass with a filter. PDF export reuses the same parser. Implementation lands in slice R5 (<code>research-brief-synthesis</code>): prompt template + renderer in <code>apps/web/src/lib/research/render-brief.ts</code>.</p>
+</div>
+
+<div class="footnote">
+  Open in browser: <code>file:///c:/Projects/iguanatrader/docs/ux/variants/mock-j3-2-citation-syntax.html</code>
+  <br><br>
+  <strong>Note:</strong> the <code>CitationLink</code> chip in the rendered output truncates the fact_id to a short label (<code>eps_q1</code>, <code>surprise</code>) — this is a render-side cosmetic via a slug map (server provides each fact's <code>display_label</code> alongside its <code>id</code>). The full <code>fact_id</code> appears on hover tooltip + on the FactTimeline target row.
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    }
+  });
+</script>
+
+</body>
+</html>
