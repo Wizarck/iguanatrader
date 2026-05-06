@@ -1,0 +1,26 @@
+# Local dev cluster overrides for openbb-sidecar.
+#
+# Used when Fleet targets a `local` k3s cluster (kind/k3d/Rancher Desktop)
+# for solo dev iteration. Loosens resource requests since dev machines
+# have less spare RAM than the VPS.
+
+image:
+  pullPolicy: Always
+  tag: "dev"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 750m
+    memory: 1.5Gi
+
+env:
+  OPENBB_SIDECAR_LOG_LEVEL: "DEBUG"
+
+readinessProbe:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6

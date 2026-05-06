@@ -1,0 +1,36 @@
+# fleet-gitrepo.yaml — Fleet GitRepo CR for iguanatrader Helm bundles.
+#
+# Mirrors the eligia-core/deploy/fleet-gitrepo.yaml pattern. Apply once to
+# the management cluster (where Fleet runs — host k3s in
+# cattle-fleet-local-system / fleet-local). After apply, Fleet polls
+# this repo and reconciles every chart under `paths:` into the
+# downstream cluster matched by each chart's fleet.yaml targetCustomizations.
+#
+# This file is NOT processed by Fleet itself (it's not under `paths:`).
+# It's a one-time bootstrap manifest. Apply with:
+#
+#   ssh root@<rancher-host> \
+#     "KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+#        kubectl apply -f /tmp/iguanatrader-fleet-gitrepo.yaml"
+#
+# Auth: iguanatrader is a private repo. Create a `kubernetes.io/basic-auth`
+# Secret named `iguanatrader-git` in the same namespace as this GitRepo
+# (`fleet-local`) carrying a GitHub PAT with repo:read scope. Construct
+# the Secret WITHOUT echoing the PAT — see eligia-core's
+# runbooks/fleet-gitrepo-setup.md for the canonical procedure (mirrors).
+#
+# Authored 2026-05-06 with R4 (openbb-sidecar-container). Future slices add
+# new entries under `paths:` for additional Helm bundles (api chart, etc.).
+
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: iguanatrader
+  namespace: fleet-local
+spec:
+  repo: https://github.com/Wizarck/iguanatrader
+  branch: main
+  paths:
+    - helm/openbb-sidecar
+  pollingInterval: 60s
+  clientSecretName: iguanatrader-git

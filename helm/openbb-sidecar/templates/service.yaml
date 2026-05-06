@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openbb-sidecar.fullname" . }}
+  namespace: {{ include "openbb-sidecar.namespace" . }}
+  labels:
+    {{- include "openbb-sidecar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openbb-sidecar
+spec:
+  type: {{ .Values.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "openbb-sidecar.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openbb-sidecar
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ .Values.service.port | default 8765 }}
+      targetPort: http

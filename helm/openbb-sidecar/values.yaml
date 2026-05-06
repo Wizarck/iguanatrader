@@ -1,0 +1,90 @@
+# openbb-sidecar — Helm chart default values.
+#
+# Override per-cluster in values-vps.yaml (production cluster) or
+# values-local.yaml (test cluster). The VPS overrides set the canonical
+# resource caps from docs/architecture-decisions.md §"OpenBB Sidecar
+# Topology" L428.
+
+namespace: iguanatrader
+
+# Ship as ClusterIP (no NodePort, no LoadBalancer): the sidecar is
+# reachable ONLY from inside the cluster, never from the host. This
+# preserves the AGPL boundary — outside callers cannot reach the
+# sidecar without going through the iguanatrader monolith first.
+service:
+  type: ClusterIP
+  port: 8765
+
+image:
+  repository: ghcr.io/wizarck/openbb-sidecar
+  tag: "0.1.0"
+  # Pin a digest in values-vps.yaml for reproducible production deploys.
+  # digest: ""
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+resources:
+  # Idle profile: ~400-600 MB; peaks ~1.5 GB during heavy fundamental pulls.
+  # Per arch-decisions §"OpenBB Sidecar Topology".
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+# Liveness keeps the container running; readiness controls Service routing.
+# Both target /health which NEVER returns 5xx (per design D8) — instead
+# the response body's `openbb_loadable` flag indicates SDK readiness.
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+env:
+  OPENBB_SIDECAR_HOST: "0.0.0.0"
+  OPENBB_SIDECAR_PORT: "8765"
+  OPENBB_SIDECAR_LOG_LEVEL: "INFO"
+
+# Pod security: non-root + read-only filesystem + drop all capabilities.
+# OpenBB SDK shouldn't need write access except /tmp (mounted as emptyDir).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Label that pinns the AGPL boundary visibly on every Pod.
+extraLabels:
+  iguanatrader.dev/license-zone: "agpl-isolated"
+
+# Auto-create the namespace as part of the chart install. Disable this in
+# clusters where the namespace is managed externally (e.g. Rancher Project).
+createNamespace: true
+
+# NetworkPolicy: ingress restricted to the iguanatrader monolith Pod by
+# label match. Disable for clusters whose CNI does not enforce NetworkPolicies
+# (e.g. Calico-less k3s default install).
+networkPolicy:
+  enabled: true

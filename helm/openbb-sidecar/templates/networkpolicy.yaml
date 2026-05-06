@@ -1,0 +1,37 @@
+{{- if .Values.networkPolicy.enabled | default true }}
+# NetworkPolicy: only the iguanatrader monolith Pod (matched by label
+# `app.kubernetes.io/component=api`) can reach the sidecar on 8765.
+# Egress is allowed everywhere because openbb fetches data from public
+# upstream APIs (yfinance, fred.stlouisfed.org, etc.).
+#
+# This is the k8s-side equivalent of "no host port binding" in compose:
+# the sidecar is reachable only from the monolith inside the cluster,
+# never from outside or from arbitrary cluster pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "openbb-sidecar.fullname" . }}
+  namespace: {{ include "openbb-sidecar.namespace" . }}
+  labels:
+    {{- include "openbb-sidecar.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "openbb-sidecar.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: openbb-sidecar
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+              app.kubernetes.io/part-of: iguanatrader
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port | default 8765 }}
+  egress:
+    # Allow all egress — openbb hits external APIs (FRED, yfinance, etc.).
+    - {}
+{{- end }}

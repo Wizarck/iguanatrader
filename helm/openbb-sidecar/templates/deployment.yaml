@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openbb-sidecar.fullname" . }}
+  namespace: {{ include "openbb-sidecar.namespace" . }}
+  labels:
+    {{- include "openbb-sidecar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openbb-sidecar
+spec:
+  replicas: {{ .Values.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "openbb-sidecar.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: openbb-sidecar
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "openbb-sidecar.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: openbb-sidecar
+        {{- range $k, $v := .Values.extraLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      terminationGracePeriodSeconds: 30
+      restartPolicy: Always
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: openbb-sidecar
+          image: {{ include "openbb-sidecar.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port | default 8765 }}
+              protocol: TCP
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          volumeMounts:
+            # /tmp is writeable for openbb scratch (HTTP cache, etc.)
+            # while the rest of the rootfs stays read-only.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
