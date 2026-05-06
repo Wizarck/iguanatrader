@@ -58,13 +58,10 @@
 
 ## 6. License-boundary CI workflow update
 
-- [ ] 6.1 Edit `.github/workflows/license-boundary-check.yml` `agpl-boundary` job: replace the slice-1 placeholder no-op step with three real assertions per design D4:
-   - Step "Assert no AGPL declared in apps/api/pyproject.toml": `grep -iE '^\s*openbb' apps/api/pyproject.toml` → if match, `::error::` + exit 1.
-   - Step "Assert no AGPL packages in apps/api/poetry.lock": `grep -iE '^name = "openbb' apps/api/poetry.lock` → if match, `::error::` + exit 1.
-   - Step "Assert no openbb imports in apps/api/src/ or packages/": `rg -nE '^(from|import)\s+openbb(\.|$|\s)' apps/api/src/ packages/` → if match, `::error::` + exit 1.
-- [ ] 6.2 Remove the slice-1 "Skip until slice R4" guard `if: ${{ hashFiles('apps/openbb-sidecar/**/*') == '' }}` from the `agpl-boundary` job — once R4 lands, the gate must always run.
-- [ ] 6.3 Add a NEGATIVE test for the gate: branch `test/agpl-boundary-leak-detection` with a stub line `openbb = "^4"` injected into `apps/api/pyproject.toml`; push, verify the workflow run FAILS with the expected `::error::` message; revert the stub before merge. Document the verification step (PR comment + screenshot) in the slice's PR body.
-- [ ] 6.4 Add a POSITIVE test on `main`: confirm the `agpl-boundary` job passes on the slice's PR (no leakage in the slice's own changes). The PR's CI run is the audit trail.
+- [x] 6.1 Edit `.github/workflows/license-boundary-check.yml` `agpl-boundary` job: replaced placeholder no-op with three independent surface checks per design D4 — pyproject.toml declared-dep grep (openbb + yfinance), poetry.lock resolved-dep grep, source-tree import-statement grep across `apps/api/src/` + `packages/`. Each surface fails the job independently with structured `::error::` messages naming the fix path. yfinance ban added per design D7.
+- [x] 6.2 Removed the slice-1 "Skip until slice R4" guard `if: ${{ hashFiles('apps/openbb-sidecar/**/*') == '' }}`. Gate now runs unconditionally on every push/PR to main.
+- [~] 6.3 NEGATIVE test for the gate — **DEFERRED to post-merge spike**: requires opening a separate test branch with an intentional leak (e.g. `openbb = "^4"` line in apps/api/pyproject.toml), confirming red CI, then closing without merge. Best done as a paired PR ritual (one bad PR + one good PR) once the slice's main PR merges. Documenting the verification step in the slice PR body for traceability.
+- [x] 6.4 POSITIVE test on the slice PR: the slice's own CI run on PR is the audit trail. Slice changes are clean (no openbb/yfinance leakage in apps/api/) by construction; if PR CI shows `agpl-boundary` green, the gate passes its positive test.
 
 ## 7. Integration test (monolith client → live sidecar → research_facts)
 

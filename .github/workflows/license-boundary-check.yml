@@ -64,13 +64,82 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Skip until slice R4
-        if: ${{ hashFiles('apps/openbb-sidecar/**/*') == '' }}
+
+      # Three independent surface checks (per slice R4 design D4). Each
+      # surface MUST be clean for the gate to pass. They do not overlap
+      # — covering different leakage paths:
+      #   1. declared dep in pyproject.toml → catches `poetry add openbb`
+      #   2. resolved dep in poetry.lock → catches transitive AGPL drag-in
+      #   3. import statement in source → catches a hand-edit that
+      #      bypasses the dep manager
+      # Failure of any one prints `::error::` + non-zero exit.
+      #
+      # The gate also asserts that yfinance is NOT a direct dep — the
+      # canonical access path is through the sidecar (R4 design D7).
+      # An explicit `pip install yfinance` in apps/api would defeat the
+      # license boundary even though yfinance is Apache-2.0, because the
+      # whole point of the sidecar is keeping the openbb provider chain
+      # behind the HTTP boundary.
+
+      - name: Surface 1 — no AGPL/yfinance declared in apps/api/pyproject.toml
         run: |
-          echo "::notice::n/a — apps/openbb-sidecar/ not present yet (slice R4 lands the AGPL container)"
-      - name: Verify no AGPL imports leaked into apps/api/
-        if: ${{ hashFiles('apps/openbb-sidecar/**/*') != '' }}
+          set -euo pipefail
+          target="apps/api/pyproject.toml"
+          if [[ ! -f "$target" ]]; then
+            echo "::warning::$target not present yet — skipping declared-dep check"
+            exit 0
+          fi
+          if grep -iE '^\s*openbb' "$target"; then
+            echo "::error::$target declares an AGPL dependency (openbb*)."
+            echo "AGPL packages must live in apps/openbb-sidecar/ only; the monolith"
+            echo "must reach openbb exclusively over HTTP via the sidecar Service."
+            exit 1
+          fi
+          if grep -iE '^\s*yfinance' "$target"; then
+            echo "::error::$target declares yfinance as a direct dep."
+            echo "Per slice R4 design D7, yfinance access goes through the sidecar"
+            echo "via YFinanceProxySource. Do NOT add yfinance as an apps/api dep."
+            exit 1
+          fi
+          echo "✓ apps/api/pyproject.toml surface clean."
+
+      - name: Surface 2 — no AGPL packages resolved in apps/api/poetry.lock
         run: |
-          # Slice R4 implementation: scan apps/api/src/ + packages/ for
-          # any imports of openbb modules (must talk via HTTP only).
-          echo "Slice R4 implementation pending — placeholder no-op."
+          set -euo pipefail
+          target="apps/api/poetry.lock"
+          if [[ ! -f "$target" ]]; then
+            echo "::warning::$target not present yet — skipping resolved-dep check"
+            exit 0
+          fi
+          if grep -iE '^name = "openbb' "$target"; then
+            echo "::error::$target resolves to AGPL openbb package(s)."
+            echo "Likely cause: a transitive dependency drags openbb in. Inspect"
+            echo "the lock for the transitive chain and pin it out, or relocate"
+            echo "the consumer to apps/openbb-sidecar."
+            exit 1
+          fi
+          echo "✓ apps/api/poetry.lock surface clean."
+
+      - name: Surface 3 — no openbb imports in apps/api/src/ or packages/
+        run: |
+          set -euo pipefail
+          # Use grep -RnE rather than ripgrep (rg may not be present on the runner).
+          if grep -RnE '^(from|import)\s+openbb(\.|$|\s)' apps/api/src/ packages/ 2>/dev/null; then
+            echo "::error::Found openbb imports in apps/api/src/ or packages/."
+            echo "The monolith must NEVER import openbb directly. Use the"
+            echo "OpenBBSidecarSource HTTP adapter at"
+            echo "apps/api/src/iguanatrader/contexts/research/sources/openbb_sidecar.py"
+            echo "instead."
+            exit 1
+          fi
+          # yfinance import surface check (same rationale as pyproject yfinance check)
+          if grep -RnE '^(from|import)\s+yfinance(\.|$|\s)' apps/api/src/ packages/ 2>/dev/null; then
+            echo "::error::Found yfinance imports in apps/api/src/ or packages/."
+            echo "yfinance access goes through YFinanceProxySource → sidecar."
+            exit 1
+          fi
+          echo "✓ apps/api/src/ + packages/ import surface clean."
+
+      - name: Notice — AGPL gate green
+        run: |
+          echo "::notice::AGPL boundary intact across all three surfaces (declared, resolved, imported)."
