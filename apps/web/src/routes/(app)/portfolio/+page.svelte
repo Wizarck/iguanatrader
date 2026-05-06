@@ -1,47 +1,38 @@
-<script lang="ts">
-  import { page } from '$app/state';
-
-  // Stub portfolio page — slice W1 + slice T4 (trading-routes) layer
-  // the actual portfolio rendering. Slice 4 lands this stub so the
-  // login redirect-to flow has a concrete target.
-  const user = $derived(page.data.user);
+<script lang="ts" module>
+  // Route metadata — consumed by the dynamic Sidebar
+  // (apps/web/src/lib/components/nav/Sidebar.svelte) via the
+  // import.meta.glob anti-collision pattern (slice W1 design D2).
+  //
+  // Slice T4 (trading-routes-and-daemon) replaces the body of this
+  // page with the J1 dashboard summary. The meta export STAYS — the
+  // sidebar entry should not move when content lands.
+  export const meta = {
+    label: 'Portfolio',
+    icon: 'briefcase',
+    order: 10
+  } as const;
 </script>
 
 <svelte:head>
   <title>Portfolio · iguanatrader</title>
 </svelte:head>
 
-<main>
+<section aria-busy="true" aria-live="polite">
   <h1>Portfolio</h1>
-  <p>Stub page. Real portfolio surface lands in slice T4 (trading-routes-and-daemon).</p>
-  {#if user}
-    <p>Signed in as <strong>{user.email}</strong> ({user.role}).</p>
-  {/if}
-</main>
+  <p>loading…</p>
+</section>
 
 <style>
-  main {
-    background: oklch(18% 0.02 250);
-    color: oklch(95% 0.005 250);
-    min-height: 100vh;
-    padding: 32px;
-    font-family:
-      'Inter Variable',
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      sans-serif;
+  section {
+    color: var(--ink);
   }
   h1 {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 600;
     margin: 0 0 8px;
   }
   p {
-    color: oklch(70% 0.012 250);
-    margin: 0 0 12px;
-  }
-  strong {
-    color: oklch(95% 0.005 250);
+    color: var(--mute);
+    margin: 0;
   }
 </style>

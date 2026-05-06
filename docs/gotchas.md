@@ -744,6 +744,71 @@ WHERE id = ?;
 
 ---
 
+## 70. `import.meta.glob` resolves at compile time in Vite — adding routes requires a dev-server reload
+
+**Surfaced**: 2026-05-06 (slice W1 `dashboard-svelte-skeleton`, group 3).
+
+**Symptom**: After dropping a new `apps/web/src/routes/(app)/<name>/+page.svelte` file the Sidebar (which enumerates routes via `import.meta.glob('/src/routes/(app)/*/+page.svelte', { eager: true })`) does NOT show the new entry until a hard browser reload — sometimes a soft HMR refresh isn't enough.
+
+**Root cause**: Vite's `import.meta.glob` is a build-time macro. The set of matched files is baked into the compiled module at first eval. Vite HMR DOES patch the glob result on file additions in dev mode, but the patch arrives via a hot module update event — if the consuming component (`Sidebar.svelte`) doesn't re-evaluate (e.g., the user is mid-navigation), the new file may not appear until the next route change or a full reload.
+
+**Workaround**: hard-reload the dev server (`Ctrl-Shift-R`) after adding a new `(app)/<name>/+page.svelte`. In production builds (`pnpm build`) the glob is fully resolved at build time — no surprise edges. The slice W1 Playwright spec `sidebar-dynamic.spec.ts` exercises both meta-export and fallback paths via `test.beforeAll` fixture writes followed by a fresh navigation, which triggers the re-evaluation correctly.
+
+**Status**: known behaviour of Vite's `import.meta.glob`. Documented per W1 design D2 risk register.
+
+## 71. `packages/shared-types/src/index.ts` is a placeholder until typegen bot first regenerates
+
+**Surfaced**: 2026-05-06 (slice W1 `dashboard-svelte-skeleton`, group 2).
+
+**Symptom**: Importing types from `@iguanatrader/shared-types` (e.g., `import type { components } from '@iguanatrader/shared-types';`) resolves `components` to `unknown`, which type-errors any `components['schemas']['Problem']` reference. svelte-check fails on `apps/web/src/routes/+error.svelte` if it imports the Problem type from shared-types directly.
+
+**Root cause**: per slice 5 archive task 4.3, `packages/shared-types/src/index.ts` is committed as `export {};` placeholder. The CI workflow `.github/workflows/openapi-types.yml` regenerates it on every backend push that touches DTOs (boots FastAPI, fetches `/openapi.json`, runs `openapi-typescript`, bot-commits the diff). Until that bot commit lands, the package contains no exports.
+
+**Workaround**: slice W1 ships a defensive local fallback in `apps/web/src/lib/types/problem.ts` matching slice 5's `Problem` Pydantic schema field-for-field. The `+error.svelte` imports from the local fallback. Once the typegen bot lands real types, the local fallback becomes a structural alias for `components['schemas']['Problem']` (TypeScript structural compatibility) and the fallback file becomes a no-op pointer (or is deleted — caller imports from shared-types directly).
+
+**Status**: ⚠️ active — resolves automatically when the next backend push to a slice/** branch triggers the typegen bot. Tracked in W1 design D3.
+
+## 72. Tailwind 4.x uses Vite plugin (`@tailwindcss/vite`) — no `tailwind.config.ts`, no PostCSS config
+
+**Surfaced**: 2026-05-06 (slice W1 `dashboard-svelte-skeleton`, group 1).
+
+**Symptom**: A dev coming from Tailwind 3.x looks for `tailwind.config.ts` or `postcss.config.cjs` in `apps/web/` and finds neither. Adding a `tailwind.config.ts` doesn't take effect; PostCSS plugin lookup fails.
+
+**Root cause**: Tailwind 4.x is Vite-native — the `@tailwindcss/vite` plugin (registered in `apps/web/vite.config.ts`) replaces both PostCSS config and the JavaScript config file. Tokens cascade via CSS custom properties under `:root[data-theme='dark']` in `apps/web/src/app.css`; class-based utilities resolve via the plugin's static analysis of the source tree. Tailwind 3.x patterns (e.g., `theme.extend.colors.accent`) don't exist in 4.x.
+
+**Workaround**: define design tokens as CSS custom properties in `apps/web/src/app.css` under `:root[data-theme='dark']`. Use them in components via `bg-[var(--bg)]` / `color: var(--accent)`. The OKLCH token set is locked in `docs/ux/components.md` §0.3 + `docs/ux/DESIGN.md` §1.
+
+**Status**: by-design for Tailwind 4.x. Documented in W1 design D10.
+
+## 73. `useSSE` backoff `[3, 6, 12, 24, 48]` mirrors slice 2's HeartbeatMixin — frontend retry only fires on `EventSource` `error` event
+
+**Surfaced**: 2026-05-06 (slice W1 `dashboard-svelte-skeleton`, group 5).
+
+**Symptom**: Devs may worry that frontend reconnect storms collide with the backend's HeartbeatMixin server-side reconnect — both sides retrying at `[3, 6, 12, 24, 48]` seconds.
+
+**Root cause**: the two reconnect paths run on independent layers:
+
+- Backend `HeartbeatMixin` (slice 2): server-side, retries the upstream SSE feed (e.g., broker websocket, exchange feed).
+- Frontend `useSSE` (W1): client-side, reconnects the browser `EventSource` to `/api/v1/stream/<name>` on its `error` event.
+
+The frontend's retry only fires when the browser's `EventSource` emits `error` (connection drop from the server's perspective). The backend's retry runs server-side independently — the browser doesn't see backend upstream blips, only the SvelteKit dev server / FastAPI keep-alives. The two layers don't race; they're orthogonal.
+
+**Workaround**: none needed — the contract is "frontend reconnect ONLY runs on `EventSource` `error` event; backend reconnect is independent". The exact-match backoff sequence is intentional symmetry so a developer reading both sides sees the same `[3, 6, 12, 24, 48]` numbers.
+
+**Status**: by-design. Documented in W1 design D5 + spec scenario "SSE drop triggers reconnect with backoff".
+
+## 74. Light-mode CSS variants deferred to a follow-up slice — `themeStore` may report `'light'` while page renders dark
+
+**Surfaced**: 2026-05-06 (slice W1 `dashboard-svelte-skeleton`, group 5).
+
+**Symptom**: A user sets system preference to light or clicks the TopBar theme toggle to "light"; `localStorage['iguanatrader:theme']` reads `'light'`; `<html data-theme="light">` is set; but the page still renders with dark colors.
+
+**Root cause**: per W1 design D10 + components.md §0.3 ("Tailwind dark mode + system preference desde MVP — *availability* MVP, *toggle UI* W1"), W1 ships the `theme` store + system-pref reader + a `data-theme` attribute, but only the dark-variant CSS custom properties are declared in `app.css`. Light variant requires a deliberate OKLCH inverse for every token (every surface, every text color, every accent), which is a non-trivial re-tonification — deferred to a follow-up slice.
+
+**Workaround**: none needed — the contract is preserved (theme attribute exists, system preference is read, localStorage persists). When the light-variant CSS vars land in a follow-up slice, the user-facing visual difference appears without any code edit beyond the `app.css` additions.
+
+**Status**: ⚠️ deferred — light-mode CSS variants tracked as a W1 follow-up. The `theme.svelte.ts` store has a TODO inline marker at the apply point.
+
 ## Format for new entries
 
 ```markdown

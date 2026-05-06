@@ -135,7 +135,7 @@ jobs:
           fi
 
   lighthouse:
-    name: Lighthouse CI (a11y >= 90)
+    name: Lighthouse CI (a11y >= 95)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -152,12 +152,56 @@ jobs:
       - name: Install pnpm deps
         run: pnpm install --frozen-lockfile
 
-      - name: Run Lighthouse CI against pnpm dev
+      - name: Boot mock-fastapi for authenticated lhci runs
+        # Slice W1 (design D9) extended the lhci URL list to include
+        # authenticated-shell stubs. The cookie hook in
+        # apps/web/src/hooks.server.ts gates `(app)/*` routes; without
+        # a valid session, lhci would land on /login and the audited
+        # surface wouldn't reflect the dashboard skeleton.
+        #
+        # Pattern (mirrors apps/web/playwright.config.ts):
+        # 1) boot mock-fastapi.mjs on :9999 in the background;
+        # 2) login via curl to capture iguana_session;
+        # 3) point pnpm dev at the mock via IGUANATRADER_API_BASE_URL;
+        # 4) pass the cookie to lhci via --collect.headers.
+        run: |
+          node apps/web/tests-e2e/mock-fastapi.mjs > /tmp/mock-fastapi.log 2>&1 &
+          echo $! > /tmp/mock-fastapi.pid
+          sleep 2
+          # Capture the session cookie value.
+          COOKIE_VALUE=$(curl -fsS -i \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"alice@example.com","password":"correct horse battery staple"}' \
+            http://127.0.0.1:9999/api/v1/auth/login \
+            | grep -i '^Set-Cookie:' \
+            | sed -E 's/.*iguana_session=([^;]+).*/\1/' \
+            | tr -d '\r\n')
+          if [ -z "$COOKIE_VALUE" ]; then
+            echo "::error::Failed to capture iguana_session cookie from mock-fastapi"
+            cat /tmp/mock-fastapi.log
+            exit 1
+          fi
+          echo "LHCI_AUTH_COOKIE=iguana_session=$COOKIE_VALUE" >> $GITHUB_ENV
+        env:
+          MOCK_API_PORT: "9999"
+
+      - name: Run Lighthouse CI against pnpm dev (with auth cookie)
         # @lhci/cli's `autorun` boots the configured `startServerCommand`,
         # waits for the URL to respond, runs Lighthouse, and asserts the
         # thresholds defined in lighthouserc.cjs. Fails only when a11y
-        # drops below 90; perf / best-practices / seo are informational.
-        run: pnpm exec lhci autorun
+        # drops below 0.95; perf / best-practices / seo are informational
+        # (slice W1 design D9).
+        env:
+          # SvelteKit dev server proxies to the mock for /api/v1/auth/me.
+          IGUANATRADER_API_BASE_URL: "http://127.0.0.1:9999"
+        run: pnpm exec lhci autorun --collect.headers="Cookie=$LHCI_AUTH_COOKIE"
+
+      - name: Stop mock-fastapi
+        if: always()
+        run: |
+          if [ -f /tmp/mock-fastapi.pid ]; then
+            kill "$(cat /tmp/mock-fastapi.pid)" || true
+          fi
 
       - name: Upload Lighthouse artefacts
         if: always()

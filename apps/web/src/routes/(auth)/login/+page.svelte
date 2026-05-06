@@ -2,7 +2,19 @@
   import { onMount } from 'svelte';
   import { enhance } from '$app/forms';
 
-  let { form } = $props();
+  // Slice W1 type-tightening: the form-action's discriminated union
+  // (slice 4 +page.server.ts) only declares `retry_after` on the 429
+  // failure branch; the other branches' inferred shapes lack it.
+  // Narrow with a small type guard so svelte-check stays green without
+  // changing the form-action contract.
+  type LoginFormResult = {
+    alert_variant?: 'destructive' | 'warn' | 'info';
+    message?: string;
+    detail?: string;
+    retry_after?: number;
+  };
+
+  let { form }: { form?: LoginFormResult } = $props();
 
   let countdown = $state<number>(form?.retry_after ?? 0);
   let interval: ReturnType<typeof setInterval> | null = null;

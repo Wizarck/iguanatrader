@@ -1,0 +1,70 @@
+/*
+ * Global stylesheet — slice W1 (`dashboard-svelte-skeleton`).
+ *
+ * OKLCH design tokens locked in `docs/ux/components.md` §0.3 +
+ * `docs/ux/DESIGN.md` §1. Dark-only at MVP (light variant CSS vars
+ * deferred — see design D10 + gotcha #34).
+ *
+ * Tailwind 4.x: import via `@import 'tailwindcss';` (no config file —
+ * the Vite plugin in `vite.config.ts` does the rest).
+ */
+
+@import 'tailwindcss';
+
+:root[data-theme='dark'] {
+  /* Surfaces */
+  --bg: oklch(18% 0.02 250);
+  --surface: oklch(22% 0.02 250);
+  --surface-2: oklch(26% 0.02 250);
+
+  /* Text */
+  --ink: oklch(95% 0.005 250);
+  --mute: oklch(70% 0.012 250);
+
+  /* Borders + lines */
+  --border: oklch(32% 0.02 250);
+
+  /* Accents */
+  --accent: oklch(72% 0.14 195);
+  --accent-fg: oklch(15% 0.02 250);
+  --accent-hover: oklch(76% 0.14 195);
+
+  /* Semantic */
+  --success: oklch(72% 0.16 145);
+  --destructive: oklch(64% 0.2 25);
+  --warn-bg: oklch(78% 0.14 80);
+  --info: oklch(72% 0.14 230);
+
+  /* Focus */
+  --focus-ring: oklch(72% 0.14 195 / 0.45);
+
+  /* Radii */
+  --r-1: 4px;
+  --r-2: 8px;
+  --r-3: 12px;
+  --r-pill: 9999px;
+
+  /* Type */
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
+}
+
+html {
+  background: var(--bg);
+  color: var(--ink);
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}

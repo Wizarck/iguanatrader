@@ -24,15 +24,11 @@ const VALID_EMAIL = 'alice@example.com';
 const VALID_PASSWORD = 'correct horse battery staple';
 
 test.describe('login → redirect-after-login', () => {
-  test('cold visit to /portfolio redirects to /login with redirect_to', async ({
-    page
-  }) => {
+  test('cold visit to /portfolio redirects to /login with redirect_to', async ({ page }) => {
     await page.goto('/portfolio?range=last-7d');
 
     // hooks.server.ts must 302 us to /login?redirect_to=<encoded>.
-    await expect(page).toHaveURL(
-      /\/login\?redirect_to=%2Fportfolio%3Frange%3Dlast-7d/
-    );
+    await expect(page).toHaveURL(/\/login\?redirect_to=%2Fportfolio%3Frange%3Dlast-7d/);
 
     // Login card renders with the OKLCH-token brand.
     await expect(page.getByText('iguanatrader').first()).toBeVisible();
@@ -41,13 +37,11 @@ test.describe('login → redirect-after-login', () => {
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/01-login-cold-visit.png',
-      fullPage: true
+      fullPage: true,
     });
   });
 
-  test('valid credentials → portfolio with cookie + email visible', async ({
-    page
-  }) => {
+  test('valid credentials → portfolio with cookie + email visible', async ({ page }) => {
     // Cold visit (gets us to /login?redirect_to=%2Fportfolio).
     await page.goto('/portfolio');
     await expect(page).toHaveURL(/\/login\?redirect_to=%2Fportfolio/);
@@ -58,12 +52,12 @@ test.describe('login → redirect-after-login', () => {
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/02-login-form-filled.png',
-      fullPage: true
+      fullPage: true,
     });
 
     await Promise.all([
       page.waitForURL('**/portfolio', { timeout: 10_000 }),
-      page.getByRole('button', { name: /sign in/i }).click()
+      page.getByRole('button', { name: /sign in/i }).click(),
     ]);
 
     // Land on /portfolio with the user's email rendered in the stub.
@@ -79,13 +73,11 @@ test.describe('login → redirect-after-login', () => {
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/03-portfolio-after-login.png',
-      fullPage: true
+      fullPage: true,
     });
   });
 
-  test('wrong password → destructive Alert + stays on /login', async ({
-    page
-  }) => {
+  test('wrong password → destructive Alert + stays on /login', async ({ page }) => {
     await page.goto('/login');
 
     await page.getByLabel('Email').fill(VALID_EMAIL);
@@ -98,7 +90,7 @@ test.describe('login → redirect-after-login', () => {
 
     await page.screenshot({
       path: 'tests-e2e/screenshots/04-login-wrong-password.png',
-      fullPage: true
+      fullPage: true,
     });
   });
 });
