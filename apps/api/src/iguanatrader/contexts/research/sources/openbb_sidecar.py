@@ -25,10 +25,10 @@ from typing import Any
 
 import httpx
 
-from iguanatrader.contexts.research.ports import ResearchFactDraft, SourcePort
+from iguanatrader.contexts.research.ports import ResearchFactDraft
 from iguanatrader.shared.backoff import backoff_seconds
 from iguanatrader.shared.errors import IntegrationError
-from iguanatrader.shared.time import utc_now
+from iguanatrader.shared.time import now as utc_now
 
 logger = logging.getLogger(__name__)
 

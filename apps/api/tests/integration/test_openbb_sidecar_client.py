@@ -8,7 +8,6 @@ which CI runs in a separate job after `docker compose up -d openbb_sidecar`.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from typing import Any
 from unittest.mock import patch

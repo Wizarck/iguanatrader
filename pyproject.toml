@@ -183,6 +183,12 @@ exclude = [
     "^skills/",
     "^\\.claude/",
     "^\\.gemini/",
+    # apps/openbb-sidecar/ has its own pyproject.toml with a sidecar-local mypy
+    # config (and a Python pin <3.13 due to openbb-equity). The sidecar's CI
+    # job runs mypy from inside that subdir; the root-level `mypy .` MUST NOT
+    # walk into it (the sidecar's tests/__init__.py collides with apps/api/
+    # tests/__init__.py as duplicate "tests" module).
+    "^apps/openbb-sidecar/",
 ]
 
 [tool.pytest.ini_options]
