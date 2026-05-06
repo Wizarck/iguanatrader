@@ -68,10 +68,13 @@ jobs:
           git reset --hard "origin/${GITHUB_REF#refs/heads/}"
           # Re-run lock against the freshly-pulled state.
           (cd "${WORKDIR}" && poetry lock --no-cache)
-          if ! git diff --quiet "${WORKDIR}/poetry.lock"; then
+          # Stage the lock — this catches BOTH new (untracked) files and modifications.
+          # Earlier version used `git diff --quiet` which silently passed on untracked
+          # files (the bug that left openbb-sidecar/poetry.lock unborn on first run).
+          git add "${WORKDIR}/poetry.lock"
+          if ! git diff --cached --quiet -- "${WORKDIR}/poetry.lock"; then
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git config user.name "github-actions[bot]"
-            git add "${WORKDIR}/poetry.lock"
             git commit -m "chore(deps): regenerate ${LABEL} poetry.lock to match pyproject.toml"
             # Retry push up to 3 times in case sibling matrix job races.
             for i in 1 2 3; do
