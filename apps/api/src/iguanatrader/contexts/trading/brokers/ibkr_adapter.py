@@ -1,0 +1,593 @@
+"""IBKR broker adapter — :class:`BrokerPort` over the :class:`IBClient` Protocol.
+
+Per slice T2 design D2-D6:
+
+* Composes :class:`HeartbeatMixin` (slice 2) — 30s heartbeat against
+  TWS via ``client.req_current_time()`` with 90s deadline (NFR-P8).
+* Idempotent :meth:`place_order` keyed by :attr:`NewOrder.client_order_id`
+  (NFR-I1) — re-submitting the same client_order_id after a partial-
+  network drop returns the cached :type:`BrokerOrderId` without a
+  second broker submission.
+* Reconciliation-on-reconnect — diffs ``client.req_all_open_orders()``
+  + ``client.req_executions(since=last_disconnect)`` against the local
+  ``orders`` + ``fills`` rows; emits ``broker.fill.catchup`` events for
+  unobserved fills (FR16 + NFR-R2).
+* Resilient reconnect loop — wraps :meth:`HeartbeatMixin.reconnect_loop`
+  with a 5-attempt ceiling. Exhausting the canonical
+  ``[3, 6, 12, 24, 48]`` sequence publishes
+  :class:`RiskKillSwitchActivated(source="automatic_backoff")` and
+  stops further attempts (NFR-R7).
+* Auth failure short-circuits — if the IB client raises an auth error,
+  the loop publishes the killswitch immediately without consuming
+  backoff sleeps.
+
+The adapter is :class:`BrokerPort`-compatible structurally — mypy
+verifies via the Protocol. The :class:`IBClient` Protocol abstracts
+``ib_async`` so the adapter is testable with the in-tree fake at
+``apps/api/tests/_fakes/ib_async_fake.py`` and production wiring is
+deferred to a deployment slice.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+from collections.abc import AsyncIterator, Callable
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
+
+from iguanatrader.contexts.trading.brokers.client_protocol import (
+    Contract,
+    IBClient,
+    IBOrder,
+)
+from iguanatrader.contexts.trading.brokers.ibkr_brokerage_model import (
+    IBKRBrokerageModel,
+)
+from iguanatrader.contexts.trading.ports import (
+    BrokerOrderId,
+    EquitySnapshotValue,
+    FillEvent,
+    NewOrder,
+    Position,
+)
+from iguanatrader.shared.backoff import backoff_seconds
+from iguanatrader.shared.errors import IntegrationError
+from iguanatrader.shared.heartbeat import HeartbeatMixin
+from iguanatrader.shared.time import now as utc_now
+
+if TYPE_CHECKING:
+    from iguanatrader.shared.messagebus import MessageBus
+
+logger = logging.getLogger(__name__)
+
+
+#: Heartbeat cadence — one ping every 30s per NFR-P8.
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS: float = 30.0
+#: Per-ping deadline — 90s per NFR-P8 (TWS occasionally takes ≥30s on cold
+#: starts; 90s leaves headroom while still detecting a stuck connection).
+DEFAULT_HEARTBEAT_TIMEOUT_SECONDS: float = 90.0
+#: Reconnect attempt ceiling — after 5 failures the killswitch trips.
+MAX_RECONNECT_ATTEMPTS: int = 5
+#: Reconciliation window cap — IBKR's reqExecutions does not surface
+#: history beyond ~7 days reliably.
+RECONCILIATION_WINDOW_DAYS: int = 7
+
+#: Auth-failure marker — :meth:`_connect_client` raises
+#: :class:`BrokerAuthError` when the TWS handshake fails on credentials.
+#: The reconnect loop pattern-matches on the type to short-circuit retries.
+AUTH_FAILURE_TYPE_URI = "urn:iguanatrader:error:broker-auth-failed"
+RECONNECT_EXHAUSTED_TYPE_URI = "urn:iguanatrader:error:broker-reconnect-exhausted"
+WINDOW_EXHAUSTED_TYPE_URI = "urn:iguanatrader:error:broker-window-exhausted"
+
+
+class BrokerAuthError(IntegrationError):
+    """IBKR rejected the credentials at TWS/Gateway connect time."""
+
+    type_uri = AUTH_FAILURE_TYPE_URI
+    default_title = "Broker Authentication Failed"
+    default_status = 502
+
+
+class BrokerWindowExhaustedError(IntegrationError):
+    """``reconcile_fills`` window > 7 days — IBKR can't surface that history."""
+
+    type_uri = WINDOW_EXHAUSTED_TYPE_URI
+    default_title = "Broker Reconciliation Window Exhausted"
+    default_status = 422
+
+
+class IBKRAdapter(HeartbeatMixin):
+    """Sync :class:`BrokerPort` implementation against an :class:`IBClient`."""
+
+    def __init__(
+        self,
+        *,
+        brokerage: IBKRBrokerageModel,
+        client_factory: Callable[[], IBClient],
+        bus: MessageBus | None = None,
+        tenant_id: UUID | None = None,
+    ) -> None:
+        super().__init__()
+        self._brokerage = brokerage
+        self._client_factory = client_factory
+        self._bus = bus
+        self._tenant_id = tenant_id
+        self._client: IBClient | None = None
+        self._heartbeat_task: asyncio.Task[None] | None = None
+        self._reconnect_task: asyncio.Task[None] | None = None
+        self._shutting_down: bool = False
+        self._last_disconnect_at: datetime | None = None
+        # Cache of (client_order_id, broker_order_id) for in-process
+        # idempotency. Persistence-layer dedupe is the canonical path
+        # (T4 wires the ``orders`` table); this cache is the
+        # short-circuit for the common "same place_order called twice
+        # in the same session" case.
+        self._client_order_cache: dict[UUID, BrokerOrderId] = {}
+        # Cache of Execution.exec_id we've already emitted as
+        # FillEvent — drives reconciliation idempotency.
+        self._known_exec_ids: set[str] = set()
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def connect(self) -> None:
+        """Open the broker connection + start heartbeat loop."""
+        await self._connect_client()
+        self.mark_connected()
+        await self._emit_event(
+            "broker.connection.established",
+            {"mode": self._brokerage.mode, "host": self._brokerage.host},
+        )
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name="ibkr.heartbeat")
+
+    async def disconnect(self) -> None:
+        """Tear down the connection. Idempotent."""
+        self._shutting_down = True
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+        if self._reconnect_task is not None:
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
+        if self._client is not None:
+            with contextlib.suppress(Exception):
+                self._client.disconnect()  # Best-effort; connection going away.
+        await self.mark_disconnected()
+
+    async def _connect_client(self) -> None:
+        """Construct + connect a fresh :class:`IBClient`.
+
+        Raises :class:`IntegrationError(type_uri=AUTH_FAILURE_TYPE_URI)`
+        when the broker rejects credentials. Other exceptions propagate
+        (network errors get retried by the reconnect loop).
+        """
+        self._client = self._client_factory()
+        try:
+            await self._client.connect_async(
+                self._brokerage.host,
+                self._brokerage.port,
+                self._brokerage.client_id,
+            )
+        except _IBAuthError as exc:
+            raise BrokerAuthError(
+                detail=f"IBKR authentication failed: {exc}",
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # HeartbeatMixin overrides
+    # ------------------------------------------------------------------
+
+    async def _send_heartbeat(self) -> None:
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter._send_heartbeat: client is None")
+        async with asyncio.timeout(DEFAULT_HEARTBEAT_TIMEOUT_SECONDS):
+            await self._client.req_current_time()
+
+    async def _on_disconnect(self) -> None:
+        self._last_disconnect_at = utc_now()
+        try:
+            await self._emit_event(
+                "broker.connection.lost",
+                {"mode": self._brokerage.mode, "at": self._last_disconnect_at.isoformat()},
+            )
+        except Exception:
+            logger.warning("ibkr.adapter._on_disconnect.event_emit_failed", exc_info=True)
+
+    async def _heartbeat_loop(self) -> None:
+        """Send heartbeats every ``DEFAULT_HEARTBEAT_INTERVAL_SECONDS`` seconds.
+
+        On failure: marks disconnected (fires _on_disconnect once) +
+        kicks the resilient reconnect loop as a background task + returns.
+        Designed to be wrapped in :meth:`asyncio.create_task` and
+        cancelled on :meth:`disconnect`.
+        """
+        while not self._shutting_down:
+            try:
+                await asyncio.sleep(DEFAULT_HEARTBEAT_INTERVAL_SECONDS)
+                await self._send_heartbeat()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if self._shutting_down:
+                    return
+                await self.mark_disconnected()
+                self._reconnect_task = asyncio.create_task(
+                    self._resilient_reconnect_loop(), name="ibkr.reconnect"
+                )
+                return
+
+    # ------------------------------------------------------------------
+    # Resilient reconnect with kill-switch escalation
+    # ------------------------------------------------------------------
+
+    async def _resilient_reconnect_loop(self) -> None:
+        """Walk the canonical backoff sequence, capped at 5 attempts."""
+        for attempt in range(MAX_RECONNECT_ATTEMPTS):
+            delay = backoff_seconds(attempt, with_jitter=True)
+            try:
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                raise
+
+            try:
+                await self._connect_client()
+            except BrokerAuthError as exc:
+                # Auth failure short-circuits — credentials won't fix
+                # themselves on retry. Trip the killswitch immediately.
+                await self._emit_killswitch(
+                    reason="ibkr.adapter.auth_failed",
+                    metadata={"attempt": attempt + 1, "error": str(exc)},
+                )
+                return
+            except IntegrationError as exc:
+                await self._emit_event(
+                    "broker.connection.attempt_failed",
+                    {"attempt": attempt + 1, "delay_seconds": delay, "error": str(exc)},
+                )
+                continue
+            except Exception as exc:
+                await self._emit_event(
+                    "broker.connection.attempt_failed",
+                    {"attempt": attempt + 1, "delay_seconds": delay, "error": str(exc)},
+                )
+                continue
+
+            # Connection succeeded — verify by sending a heartbeat, then
+            # restore state machine + run reconciliation.
+            try:
+                await self._send_heartbeat()
+            except Exception as exc:
+                await self._emit_event(
+                    "broker.connection.attempt_failed",
+                    {"attempt": attempt + 1, "delay_seconds": delay, "error": str(exc)},
+                )
+                continue
+
+            self.mark_connected()
+            await self._emit_event(
+                "broker.connection.restored",
+                {"attempt": attempt + 1, "mode": self._brokerage.mode},
+            )
+            await self._post_reconnect_reconciliation()
+            self._heartbeat_task = asyncio.create_task(
+                self._heartbeat_loop(), name="ibkr.heartbeat"
+            )
+            return
+
+        # All attempts exhausted — trip the killswitch.
+        await self._emit_killswitch(
+            reason="ibkr.adapter.reconnect_exhausted",
+            metadata={
+                "attempts": MAX_RECONNECT_ATTEMPTS,
+                "backoff_sequence": [3, 6, 12, 24, 48],
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # BrokerPort: place_order + cancel_order + get_position + get_account_equity
+    # ------------------------------------------------------------------
+
+    async def place_order(self, order: NewOrder) -> BrokerOrderId:
+        """Submit ``order`` to IBKR. Idempotent against ``client_order_id``."""
+        self._brokerage.assert_supports_order_type(order.order_type)
+        if order.client_order_id is None:
+            raise ValueError(
+                "IBKRAdapter.place_order requires NewOrder.client_order_id "
+                "(slice T2 NFR-I1 idempotency contract)."
+            )
+        cached = self._client_order_cache.get(order.client_order_id)
+        if cached is not None:
+            logger.info(
+                "broker.order.idempotent_replay",
+                extra={
+                    "client_order_id": str(order.client_order_id),
+                    "broker_order_id": cached,
+                },
+            )
+            return cached
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter.place_order: client not connected")
+
+        contract = self._build_contract(order.symbol)
+        ib_order = self._build_ib_order(order)
+        broker_order_id_raw = await self._client.place_order(contract, ib_order)
+        broker_order_id = BrokerOrderId(broker_order_id_raw)
+        self._client_order_cache[order.client_order_id] = broker_order_id
+        await self._emit_event(
+            "broker.order.placed",
+            {
+                "client_order_id": str(order.client_order_id),
+                "broker_order_id": broker_order_id,
+                "symbol": order.symbol,
+                "side": order.side,
+                "quantity": str(order.quantity),
+                "order_type": order.order_type,
+            },
+        )
+        return broker_order_id
+
+    async def cancel_order(self, broker_order_id: BrokerOrderId) -> None:
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter.cancel_order: client not connected")
+        await self._client.cancel_order(str(broker_order_id))
+        await self._emit_event(
+            "broker.order.cancel_requested",
+            {"broker_order_id": broker_order_id},
+        )
+
+    async def get_position(self, symbol: str) -> Position:
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter.get_position: client not connected")
+        positions = await self._client.positions()
+        for pos in positions:
+            if pos.symbol == symbol:
+                return Position(
+                    tenant_id=self._tenant_id_or_zero(),
+                    symbol=symbol,
+                    quantity=pos.quantity,
+                    average_price=pos.average_cost,
+                    unrealized_pnl=pos.unrealized_pnl,
+                    currency=pos.currency,
+                )
+        return Position(
+            tenant_id=self._tenant_id_or_zero(),
+            symbol=symbol,
+            quantity=Decimal("0"),
+            average_price=Decimal("0"),
+            unrealized_pnl=Decimal("0"),
+            currency="USD",
+        )
+
+    async def get_account_equity(self) -> EquitySnapshotValue:
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter.get_account_equity: client not connected")
+        rows = await self._client.account_summary()
+        tags: dict[str, Decimal] = {}
+        currency = "USD"
+        for row in rows:
+            tags[row.tag] = row.value
+            currency = row.currency
+        return EquitySnapshotValue(
+            tenant_id=self._tenant_id_or_zero(),
+            mode=self._brokerage.mode,
+            account_equity=tags.get("NetLiquidation", Decimal("0")),
+            cash_balance=tags.get("TotalCashValue", Decimal("0")),
+            realized_pnl_today=tags.get("RealizedPnL", Decimal("0")),
+            unrealized_pnl=tags.get("UnrealizedPnL", Decimal("0")),
+            currency=currency,
+            snapshot_kind="event",
+            captured_at=utc_now(),
+        )
+
+    # ------------------------------------------------------------------
+    # BrokerPort: reconcile_fills (post-disconnect catch-up)
+    # ------------------------------------------------------------------
+
+    async def reconcile_fills(self, since: datetime) -> AsyncIterator[FillEvent]:
+        """Yield every fill recorded after ``since``.
+
+        Caller-driven catch-up path; the adapter's internal
+        :meth:`_post_reconnect_reconciliation` consumes the same
+        underlying broker call but emits structured catchup events
+        rather than yielding directly.
+        """
+        async for ev in self._reconcile_fills_async(since):
+            yield ev
+
+    async def _reconcile_fills_async(self, since: datetime) -> AsyncIterator[FillEvent]:
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter.reconcile_fills: client not connected")
+        if utc_now() - since > timedelta(days=RECONCILIATION_WINDOW_DAYS):
+            raise BrokerWindowExhaustedError(
+                detail=(
+                    f"reconcile_fills window > {RECONCILIATION_WINDOW_DAYS} days; "
+                    "IBKR reqExecutions does not surface history that old reliably"
+                ),
+            )
+        executions = await self._client.req_executions(since)
+        for execution in executions:
+            yield FillEvent(
+                tenant_id=self._tenant_id_or_zero(),
+                order_id=self._order_id_from_ref(execution.order_ref),
+                quantity_filled=execution.shares,
+                fill_price=execution.price,
+                commission=execution.commission,
+                commission_currency=execution.commission_currency,
+                filled_at=execution.time,
+                broker_fill_id=execution.exec_id,
+            )
+
+    async def _post_reconnect_reconciliation(self) -> None:
+        """Diff broker state vs local cache; emit catchup events."""
+        if self._last_disconnect_at is None:
+            return
+        if self._client is None:
+            return
+        executions = await self._client.req_executions(self._last_disconnect_at)
+        for execution in executions:
+            if execution.exec_id in self._known_exec_ids:
+                continue
+            self._known_exec_ids.add(execution.exec_id)
+            await self._emit_event(
+                "broker.fill.catchup",
+                {
+                    "exec_id": execution.exec_id,
+                    "perm_id": execution.perm_id,
+                    "order_ref": execution.order_ref,
+                    "symbol": execution.symbol,
+                    "shares": str(execution.shares),
+                    "price": str(execution.price),
+                    "commission": str(execution.commission),
+                    "filled_at": execution.time.isoformat(),
+                },
+            )
+        # State drift: open orders the broker has that we don't track
+        # locally (T4 wires the orders table comparison; here we just
+        # surface the broker view as an event consumers can subscribe).
+        open_orders = await self._client.req_all_open_orders()
+        for open_order in open_orders:
+            await self._emit_event(
+                "broker.order.state_observed",
+                {
+                    "perm_id": open_order.perm_id,
+                    "order_ref": open_order.order_ref,
+                    "symbol": open_order.symbol,
+                    "status": open_order.status,
+                    "total_quantity": str(open_order.total_quantity),
+                },
+            )
+
+    # ------------------------------------------------------------------
+    # Builders
+    # ------------------------------------------------------------------
+
+    def _build_contract(self, symbol: str) -> Contract:
+        return Contract(symbol=symbol, exchange="SMART", currency="USD", sec_type="STK")
+
+    def _build_ib_order(self, order: NewOrder) -> IBOrder:
+        return IBOrder(
+            action=order.side.upper(),
+            total_quantity=order.quantity,
+            order_type=order.order_type,
+            limit_price=order.limit_price,
+            aux_price=order.stop_price,
+            account=self._brokerage.account_code,
+            order_ref=str(order.client_order_id) if order.client_order_id else None,
+        )
+
+    def _order_id_from_ref(self, order_ref: str | None) -> UUID:
+        """Parse the ``order_ref`` string back into the iguanatrader order UUID.
+
+        Adapter uses ``str(NewOrder.client_order_id)`` as the IBKR
+        ``orderRef`` when placing; reconciliation reverses it.
+        """
+        if order_ref is None:
+            return UUID(int=0)
+        try:
+            return UUID(order_ref)
+        except ValueError:
+            return UUID(int=0)
+
+    def _tenant_id_or_zero(self) -> UUID:
+        return self._tenant_id if self._tenant_id is not None else UUID(int=0)
+
+    # ------------------------------------------------------------------
+    # Event emission helpers
+    # ------------------------------------------------------------------
+
+    async def _emit_event(
+        self,
+        event_name: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Structlog-narrate + (if a bus is wired) publish a generic dict event.
+
+        Slice T2 keeps the bus surface simple; downstream consumers
+        (T4 for orders, K1 for killswitch) subscribe by event name.
+        """
+        logger.info(event_name, extra=payload)
+        if self._bus is None:
+            return
+        # Late import to avoid the slice-2 messagebus dep at module load
+        # (keeps the trading.brokers package importable without the bus).
+        from iguanatrader.shared.messagebus import Event
+
+        @event_dataclass
+        class _GenericEvent(Event):
+            channel = event_name
+
+        ev = _GenericEvent()
+        await self._bus.publish(ev)
+
+    async def _emit_killswitch(
+        self,
+        *,
+        reason: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Publish a killswitch-equivalent event (slice K1 wires the canonical handler)."""
+        await self._emit_event(
+            "broker.killswitch.requested",
+            {"reason": reason, **metadata},
+        )
+        if self._bus is None:
+            return
+        # K1 ships RiskKillSwitchActivated via the risk service; here we
+        # publish a slim trigger event that K1's service subscribes
+        # to. The full RiskKillSwitchActivated flow lands when T4
+        # wires risk service consumption — design D5 deferred.
+        from iguanatrader.contexts.risk.events import RiskKillSwitchActivated
+
+        ev = RiskKillSwitchActivated(
+            tenant_id=self._tenant_id_or_zero(),
+            event_id=uuid4(),
+            source="automatic_backoff",
+            actor_user_id=None,
+            reason=f"{reason}: {metadata}",
+            occurred_at=utc_now(),
+        )
+        await self._bus.publish(ev)
+
+
+# ----------------------------------------------------------------------
+# Auth-failure marker (raised by the in-tree fake; production wiring
+# pattern-matches on ``ib_async``-specific exception types here).
+# ----------------------------------------------------------------------
+
+
+class _IBAuthError(Exception):
+    """Raised by the in-tree fake / production wrapper on credential failure.
+
+    Adapter pattern-matches on the type to decide auth-failure short-
+    circuit vs network-error retry. Production wiring (deployment
+    slice) maps ``ib_async``'s specific auth exception classes here.
+    """
+
+
+def event_dataclass(cls: type) -> type:
+    """Identity decorator — placeholder for future bus event-class wiring.
+
+    Slice T2 publishes structured events but doesn't yet require the
+    full bus channel routing surface. Stubbed so future K1/T4 wiring
+    can swap to a real ``@dataclass`` + channel-name registration.
+    """
+    return cls
+
+
+__all__ = [
+    "AUTH_FAILURE_TYPE_URI",
+    "DEFAULT_HEARTBEAT_INTERVAL_SECONDS",
+    "DEFAULT_HEARTBEAT_TIMEOUT_SECONDS",
+    "MAX_RECONNECT_ATTEMPTS",
+    "RECONCILIATION_WINDOW_DAYS",
+    "RECONNECT_EXHAUSTED_TYPE_URI",
+    "WINDOW_EXHAUSTED_TYPE_URI",
+    "BrokerAuthError",
+    "BrokerWindowExhaustedError",
+    "IBKRAdapter",
+]

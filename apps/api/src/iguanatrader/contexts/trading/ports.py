@@ -50,6 +50,14 @@ class NewOrder:
     order_type: str
     limit_price: Decimal | None = None
     stop_price: Decimal | None = None
+    # Slice T2 (ibkr-adapter-resilient) — caller-supplied idempotency key.
+    # When set (UUIDv4), the broker adapter dedupes a duplicate
+    # ``place_order`` against the same ``client_order_id`` and returns the
+    # cached :type:`BrokerOrderId` without re-submitting. Old call sites
+    # that leave it ``None`` still work; T2's adapter raises
+    # ``ValueError`` if ``None`` because idempotency is non-negotiable
+    # for live broker integration. Documented in T2 retro carry-forward.
+    client_order_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
