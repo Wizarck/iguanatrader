@@ -39,7 +39,7 @@ from iguanatrader.migrations._research_trigger_helpers import (
 )
 from iguanatrader.migrations._research_trigger_helpers import SQLITE_TRIGGER_SQL
 
-revision: str = "0003"
+revision: str = "0003_research_tables"
 down_revision: str | None = "0002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
