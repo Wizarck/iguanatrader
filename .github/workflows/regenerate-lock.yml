@@ -1,8 +1,15 @@
 name: Regenerate poetry.lock
 
-# Manual trigger only. Use when pyproject.toml has been modified locally
-# without a working poetry available to regenerate the lock. Workflow
-# resolves dependencies on the runner and commits the updated lock back.
+# Manual trigger or path-filter trigger. Use when pyproject.toml has been
+# modified locally without a working poetry available to regenerate the lock.
+# Workflow resolves dependencies on the runner per matrix entry and commits
+# the updated lock back.
+#
+# Matrix: each consumer pyproject.toml has its own working-dir + Python
+# version. Add new entries when a new app subpath ships its own
+# pyproject.toml (e.g. apps/<name>/pyproject.toml). The Python version per
+# entry MUST match the project's `[tool.poetry.dependencies] python` pin
+# (apps/api uses 3.13, apps/openbb-sidecar pins <3.13 due to openbb-equity).
 
 on:
   workflow_dispatch:
@@ -14,6 +21,7 @@ on:
       - "feat/**"
     paths:
       - "pyproject.toml"
+      - "apps/openbb-sidecar/pyproject.toml"
       - ".github/workflows/regenerate-lock.yml"
 
 permissions:
@@ -22,6 +30,17 @@ permissions:
 jobs:
   regenerate-lock:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - working-directory: "."
+            python-version: "3.13"
+            label: "root"
+          - working-directory: "apps/openbb-sidecar"
+            python-version: "3.12"
+            label: "openbb-sidecar"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,25 +48,47 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ github.ref }}
 
-      - name: Setup Python
+      - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install poetry
         run: pip install poetry
 
-      - name: Regenerate lock
+      - name: Regenerate lock for ${{ matrix.label }}
+        working-directory: ${{ matrix.working-directory }}
         run: poetry lock --no-cache
 
-      - name: Commit + push lock if changed
+      - name: Commit + push lock if changed (${{ matrix.label }})
         run: |
-          if ! git diff --quiet poetry.lock; then
+          set -e
+          # Pull latest in case a sibling matrix job committed (avoid non-fast-forward).
+          git fetch origin "${GITHUB_REF#refs/heads/}"
+          git reset --hard "origin/${GITHUB_REF#refs/heads/}"
+          # Re-run lock against the freshly-pulled state.
+          (cd "${WORKDIR}" && poetry lock --no-cache)
+          # Stage the lock — this catches BOTH new (untracked) files and modifications.
+          # Earlier version used `git diff --quiet` which silently passed on untracked
+          # files (the bug that left openbb-sidecar/poetry.lock unborn on first run).
+          git add "${WORKDIR}/poetry.lock"
+          if ! git diff --cached --quiet -- "${WORKDIR}/poetry.lock"; then
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git config user.name "github-actions[bot]"
-            git add poetry.lock
-            git commit -m "chore(deps): regenerate poetry.lock to match pyproject.toml"
-            git push
+            git commit -m "chore(deps): regenerate ${LABEL} poetry.lock to match pyproject.toml"
+            # Retry push up to 3 times in case sibling matrix job races.
+            for i in 1 2 3; do
+              if git push; then
+                exit 0
+              fi
+              git fetch origin "${GITHUB_REF#refs/heads/}"
+              git rebase "origin/${GITHUB_REF#refs/heads/}"
+            done
+            echo "::error::Failed to push after 3 retries"
+            exit 1
           else
-            echo "poetry.lock already in sync — no changes."
+            echo "${LABEL} poetry.lock already in sync — no changes."
           fi
+        env:
+          WORKDIR: ${{ matrix.working-directory }}
+          LABEL: ${{ matrix.label }}
