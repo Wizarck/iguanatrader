@@ -14,7 +14,6 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-
 from iguanatrader.contexts.research.ports import ResearchFactDraft
 from iguanatrader.contexts.research.sources.openbb_sidecar import (
     MAX_RETRY_ATTEMPTS,

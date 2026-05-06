@@ -59,9 +59,9 @@ class OpenBBSidecarSource:
         client: httpx.Client | None = None,
         enabled: bool | None = None,
     ) -> None:
-        self._base_url = (base_url or os.environ.get("OPENBB_SIDECAR_URL", DEFAULT_BASE_URL)).rstrip(
-            "/"
-        )
+        self._base_url = (
+            base_url or os.environ.get("OPENBB_SIDECAR_URL", DEFAULT_BASE_URL)
+        ).rstrip("/")
         # Owned client by default; tests inject a fake.
         self._client = client or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)
         self._owns_client = client is None
@@ -82,9 +82,16 @@ class OpenBBSidecarSource:
     def fetch(
         self,
         symbol: str,
-        since: datetime | None,  # noqa: ARG002 — not used; sidecar always returns latest
+        since: datetime | None,
     ) -> Iterable[ResearchFactDraft]:
-        """Yield up to 3 drafts (fundamentals + ratings + ESG) for ``symbol``."""
+        """Yield up to 3 drafts (fundamentals + ratings + ESG) for ``symbol``.
+
+        ``since`` is part of the SourcePort contract but is not honoured by
+        this adapter — the sidecar always returns the latest snapshot. The
+        bitemporal `recorded_from`/`effective_from` columns on the persisted
+        rows preserve the per-fetch timestamps that downstream queries need.
+        """
+        del since  # See docstring; intentional no-op consumption.
         if not self._enabled:
             logger.info(
                 "research.openbb_sidecar.skipped_disabled",
@@ -129,11 +136,12 @@ class OpenBBSidecarSource:
             status = response.status_code
             if 200 <= status < 300:
                 try:
-                    return response.json()
+                    parsed: dict[str, Any] = response.json()
                 except json.JSONDecodeError as exc:
                     raise IntegrationError(
                         f"openbb-sidecar {name} returned non-JSON: {exc}"
                     ) from exc
+                return parsed
             if 400 <= status < 500:
                 # 404 = no data; 4xx in general = upstream rejection — skip + warn,
                 # do not retry. The caller iteration drops this endpoint.
@@ -143,9 +151,7 @@ class OpenBBSidecarSource:
                 )
                 return None
             # 5xx — transient; retry per backoff schedule.
-            last_exc = IntegrationError(
-                f"openbb-sidecar {name} returned HTTP {status}"
-            )
+            last_exc = IntegrationError(f"openbb-sidecar {name} returned HTTP {status}")
             self._sleep_for_attempt(attempt, name=name, exc=last_exc)
 
         # Exhausted retries.
