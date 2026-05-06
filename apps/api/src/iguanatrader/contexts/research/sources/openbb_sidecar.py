@@ -1,0 +1,228 @@
+"""OpenBB sidecar adapter — `SourcePort` implementation over HTTP.
+
+Per slice R4 design D3 + D7: the iguanatrader monolith reaches the
+AGPL-isolated OpenBB Platform sidecar exclusively over HTTP (compose-DNS
+in dev, k8s ClusterIP DNS in paper/live). This adapter wraps the
+:class:`SourcePort` contract from R1 and yields :class:`ResearchFactDraft`
+objects for the three equity surfaces the sidecar exposes (fundamentals,
+ratings, ESG).
+
+Liveness is NOT wired through ``HeartbeatMixin`` here — the k8s
+``livenessProbe`` + ``readinessProbe`` on the sidecar Pod (Service stops
+routing on unready Pods) cover the same role at the cluster layer.
+The HeartbeatMixin contract is async-only; ``SourcePort.fetch`` is sync.
+Deviation documented in tasks.md §5.2 + design.md D3.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from collections.abc import Iterable
+from datetime import datetime
+from typing import Any
+
+import httpx
+
+from iguanatrader.contexts.research.ports import ResearchFactDraft, SourcePort
+from iguanatrader.shared.backoff import backoff_seconds
+from iguanatrader.shared.errors import IntegrationError
+from iguanatrader.shared.time import utc_now
+
+logger = logging.getLogger(__name__)
+
+
+# Default URL points at the docker-compose service DNS in dev. In k8s
+# (paper/live) the helm chart sets ``OPENBB_SIDECAR_URL=http://openbb-sidecar:8765``
+# (Service DNS in the iguanatrader namespace). Either way, never localhost.
+DEFAULT_BASE_URL = "http://openbb_sidecar:8765"
+
+# How many transient-failure attempts before the per-fetch call gives up.
+# Each attempt sleeps ``backoff_seconds(attempt-1)`` from the canonical
+# ``[3, 6, 12, 24, 48]`` sequence — total max sleep 93s before raising.
+MAX_RETRY_ATTEMPTS = 5
+
+# Per-request HTTP timeout. The sidecar's openbb call can take 30-60s
+# on cold cache; allow plenty.
+DEFAULT_TIMEOUT_SECONDS = 90.0
+
+
+class OpenBBSidecarSource:
+    """:class:`SourcePort` bound to the AGPL-isolated OpenBB sidecar."""
+
+    SOURCE_ID = "openbb-sidecar"
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        client: httpx.Client | None = None,
+        enabled: bool | None = None,
+    ) -> None:
+        self._base_url = (base_url or os.environ.get("OPENBB_SIDECAR_URL", DEFAULT_BASE_URL)).rstrip(
+            "/"
+        )
+        # Owned client by default; tests inject a fake.
+        self._client = client or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)
+        self._owns_client = client is None
+        # Allow op-time disable via env without removing the adapter from
+        # the registry. Useful when openbb is broken upstream and we want
+        # the rest of the research pipeline to continue without it.
+        env_flag = os.environ.get("OPENBB_SIDECAR_ENABLED", "true").lower()
+        self._enabled = enabled if enabled is not None else env_flag != "false"
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
+
+    # ------------------------------------------------------------------
+    # SourcePort contract
+    # ------------------------------------------------------------------
+
+    def fetch(
+        self,
+        symbol: str,
+        since: datetime | None,  # noqa: ARG002 — not used; sidecar always returns latest
+    ) -> Iterable[ResearchFactDraft]:
+        """Yield up to 3 drafts (fundamentals + ratings + ESG) for ``symbol``."""
+        if not self._enabled:
+            logger.info(
+                "research.openbb_sidecar.skipped_disabled",
+                extra={"symbol": symbol},
+            )
+            return
+
+        endpoints = [
+            ("fundamentals", f"/v1/equity/fundamentals/{symbol}", "fundamentals"),
+            ("ratings", f"/v1/equity/ratings/{symbol}", "analyst_ratings"),
+            ("esg", f"/v1/equity/esg/{symbol}", "esg_score"),
+        ]
+        for name, path, fact_kind in endpoints:
+            payload = self._get_or_skip(symbol=symbol, name=name, path=path)
+            if payload is None:
+                continue
+            yield self._draft_from_payload(
+                symbol=symbol, fact_kind=fact_kind, name=name, payload=payload
+            )
+
+    # ------------------------------------------------------------------
+    # HTTP plumbing — backoff loop + 4xx/5xx routing
+    # ------------------------------------------------------------------
+
+    def _get_or_skip(self, *, symbol: str, name: str, path: str) -> dict[str, Any] | None:
+        """Issue GET to the sidecar with retries; return parsed JSON or None.
+
+        Returns ``None`` on 4xx (no-data / unsupported) — caller skips that
+        endpoint without aborting the rest of the fetch. Raises
+        :class:`IntegrationError` if all retries on transient errors fail.
+        """
+        url = f"{self._base_url}{path}"
+        last_exc: Exception | None = None
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            try:
+                response = self._client.get(url)
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                self._sleep_for_attempt(attempt, name=name, exc=exc)
+                continue
+
+            status = response.status_code
+            if 200 <= status < 300:
+                try:
+                    return response.json()
+                except json.JSONDecodeError as exc:
+                    raise IntegrationError(
+                        f"openbb-sidecar {name} returned non-JSON: {exc}"
+                    ) from exc
+            if 400 <= status < 500:
+                # 404 = no data; 4xx in general = upstream rejection — skip + warn,
+                # do not retry. The caller iteration drops this endpoint.
+                logger.warning(
+                    "research.openbb_sidecar.skipped_http_4xx",
+                    extra={"symbol": symbol, "endpoint": name, "status": status},
+                )
+                return None
+            # 5xx — transient; retry per backoff schedule.
+            last_exc = IntegrationError(
+                f"openbb-sidecar {name} returned HTTP {status}"
+            )
+            self._sleep_for_attempt(attempt, name=name, exc=last_exc)
+
+        # Exhausted retries.
+        logger.error(
+            "research.openbb_sidecar.unreachable",
+            extra={"symbol": symbol, "endpoint": name, "error": str(last_exc)},
+        )
+        raise IntegrationError(
+            f"openbb-sidecar unreachable for {symbol} {name}: {last_exc}"
+        ) from last_exc
+
+    @staticmethod
+    def _sleep_for_attempt(attempt: int, *, name: str, exc: Exception) -> None:
+        # Final attempt: don't sleep, let the caller raise.
+        if attempt >= MAX_RETRY_ATTEMPTS:
+            return
+        delay = backoff_seconds(attempt - 1, with_jitter=True)
+        logger.info(
+            "research.openbb_sidecar.retry",
+            extra={
+                "endpoint": name,
+                "attempt": attempt,
+                "delay_seconds": delay,
+                "error": str(exc),
+            },
+        )
+        # Sleep imported lazily so tests can monkeypatch via the time module.
+        import time
+
+        time.sleep(delay)
+
+    # ------------------------------------------------------------------
+    # Payload → draft mapping
+    # ------------------------------------------------------------------
+
+    def _draft_from_payload(
+        self,
+        *,
+        symbol: str,
+        fact_kind: str,
+        name: str,
+        payload: dict[str, Any],
+    ) -> ResearchFactDraft:
+        retrieved_at = utc_now()
+        # Per design D3: bitemporal `effective_from` = the upstream's
+        # as-of date when present; fall back to retrieval time when the
+        # endpoint does not surface one (sidecar's openbb wrappers may omit).
+        as_of = payload.get("as_of_date")
+        effective_from = _parse_as_of(as_of) or retrieved_at
+        source_url = f"{self._base_url}/v1/equity/{name}/{symbol}"
+        payload_bytes = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        draft = ResearchFactDraft(
+            source_id=self.SOURCE_ID,
+            fact_kind=fact_kind,
+            effective_from=effective_from,
+            recorded_from=retrieved_at,
+            source_url=source_url,
+            retrieval_method="http",
+            retrieved_at=retrieved_at,
+            value_jsonb=payload,
+            fact_metadata={
+                "endpoint": name,
+                "sidecar_url": self._base_url,
+            },
+        )
+        return draft.with_payload(payload_bytes)
+
+
+def _parse_as_of(value: Any) -> datetime | None:
+    """Best-effort coerce the sidecar's ``as_of_date`` to a UTC datetime."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
