@@ -103,6 +103,24 @@ class FactResponse(BaseModel):
     created_at: datetime
 
 
+class ResolvedCitationDetail(BaseModel):
+    """Slice R5 — citation enriched with the resolved fact's provenance.
+
+    Returned alongside :class:`BriefResponse` so the frontend renderer can
+    paint ``[fact:<uuid>]`` markers as clickable :class:`CitationLink`
+    components without an extra round-trip.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fact_id: UUID
+    source_id: str
+    source_url: str
+    source_label: str
+    retrieved_at: datetime
+    retrieval_method: str
+
+
 class BriefResponse(BaseModel):
     """API projection of :class:`ResearchBrief` with citations + audit trail.
 
@@ -132,24 +150,48 @@ class BriefResponse(BaseModel):
     llm_cache_hit_tokens: int
     partial: bool
     created_at: datetime
+    # Slice R5 (research-brief-synthesis) — additive fields. Old clients
+    # consuming the R1 shape ignore these gracefully (Pydantic ``extra="forbid"``
+    # but typegen now ships these in shared-types so the frontend is updated).
+    body_markdown: str | None = None
+    pillar_scores: dict[str, str] | None = None
+    audit_trail_summary: dict[str, int] | None = None
+    next_scheduled_refresh_at: datetime | None = None
+    last_fact_recorded_at: datetime | None = None
+    stale: bool = False
+    resolved_citations: list[ResolvedCitationDetail] = Field(default_factory=list)
 
 
 class BriefRefreshRequest(BaseModel):
     """Request body for ``POST /api/v1/research/briefs/{symbol}/refresh``.
 
-    R5 may add fields (e.g. ``methodology_override``); R1 lands the empty
-    body shape so the OpenAPI schema lists the endpoint as JSON-bodied.
-    The default is acceptable — a refresh with no override uses the
-    watchlist's configured methodology.
+    R5 adds an optional ``methodology`` override; default ``None`` falls
+    back to the watchlist's configured methodology. The OpenAPI schema
+    accepts an empty JSON body for backwards compatibility with R1's
+    contract.
     """
 
     model_config = ConfigDict(extra="forbid")
+    methodology: str | None = None
+
+
+class BriefRefreshProgressEvent(BaseModel):
+    """SSE payload for ``research.brief.refresh.progress`` (slice R5 D8)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    step: str
+    percent: int
+    brief_version_in_flight: int | None = None
 
 
 __all__ = [
     "AuditTrailEntry",
+    "BriefRefreshProgressEvent",
     "BriefRefreshRequest",
     "BriefResponse",
     "CitationDetail",
     "FactResponse",
+    "ResolvedCitationDetail",
 ]

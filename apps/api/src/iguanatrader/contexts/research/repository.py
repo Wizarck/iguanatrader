@@ -28,11 +28,12 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from iguanatrader.contexts.research.errors import (
-    MissingProvenanceError,
-    ResearchStubNotImplementedError,
+from iguanatrader.contexts.research.errors import MissingProvenanceError
+from iguanatrader.contexts.research.models import (
+    ResearchAuditTrail,
+    ResearchBrief,
+    ResearchFact,
 )
-from iguanatrader.contexts.research.models import ResearchBrief, ResearchFact
 from iguanatrader.contexts.research.ports import ResearchFactDraft
 from iguanatrader.shared.kernel import BaseRepository
 
@@ -294,11 +295,180 @@ class ResearchRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return result.scalars().first()
 
-    async def insert_brief(self, *args: Any, **kwargs: Any) -> ResearchBrief:
-        """STUB — ships in slice R5 (``research-brief-synthesis``)."""
-        raise ResearchStubNotImplementedError(
-            detail="ResearchRepository.insert_brief ships in slice R5",
+    async def insert_brief(
+        self,
+        *,
+        symbol_universe_id: UUID,
+        watchlist_config_id: UUID,
+        version: int,
+        methodology: str,
+        thesis_text: str,
+        score_overall: Any | None,
+        score_components: dict[str, Any] | None,
+        citations: list[dict[str, Any]],
+        audit_trail: list[dict[str, Any]],
+        llm_provider: str,
+        llm_model: str,
+        llm_input_tokens: int,
+        llm_output_tokens: int,
+        llm_cache_hit_tokens: int = 0,
+        partial: bool = False,
+    ) -> ResearchBrief:
+        """Insert a synthesised brief (slice R5; replaces R1 stub).
+
+        Caller is responsible for the retry-on-IntegrityError loop per
+        R1 design D5 — :class:`BriefService.refresh` wraps this with a
+        max-3-attempt retry on the unique-version constraint violation.
+        ``tenant_id`` is left unset so the slice-3 ``before_flush``
+        listener stamps it from the ContextVar.
+        """
+        instance = ResearchBrief(
+            id=uuid4(),
+            symbol_universe_id=symbol_universe_id,
+            watchlist_config_id=watchlist_config_id,
+            version=version,
+            methodology=methodology,
+            thesis_text=thesis_text,
+            score_overall=score_overall,
+            score_components=score_components,
+            citations=citations,
+            audit_trail=audit_trail,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_input_tokens=llm_input_tokens,
+            llm_output_tokens=llm_output_tokens,
+            llm_cache_hit_tokens=llm_cache_hit_tokens,
+            partial=partial,
         )
+        self._session.add(instance)
+        await self._session.flush()
+        return instance
+
+    async def latest_fact_by_kinds(
+        self,
+        *,
+        symbol: str,
+        fact_kinds: list[str],
+        since: datetime | None = None,
+        require_recorded_before: datetime | None = None,
+    ) -> ResearchFact | None:
+        """Return the most recent fact matching any of ``fact_kinds`` for ``symbol``.
+
+        Used by :class:`TierAFeatureProvider` and friends. ``since`` filters
+        on ``effective_from``; ``require_recorded_before`` (Tier-B safety)
+        filters on ``recorded_from <= require_recorded_before``.
+        """
+        from iguanatrader.contexts.research.models import SymbolUniverse
+
+        clauses = [
+            ResearchFact.fact_kind.in_(fact_kinds),
+            SymbolUniverse.symbol == symbol,
+        ]
+        if since is not None:
+            clauses.append(ResearchFact.effective_from >= since)
+        if require_recorded_before is not None:
+            clauses.append(ResearchFact.recorded_from <= require_recorded_before)
+        stmt = (
+            sa.select(ResearchFact)
+            .join(
+                SymbolUniverse,
+                ResearchFact.symbol_universe_id == SymbolUniverse.id,
+            )
+            .where(sa.and_(*clauses))
+            .order_by(ResearchFact.effective_from.desc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalars().first()
+
+    async def facts_by_ids(
+        self,
+        ids: list[UUID],
+    ) -> dict[UUID, ResearchFact]:
+        """Batch-fetch facts by id (slice R5 — citation_resolver consumer).
+
+        ``tenant_id`` is auto-injected by the slice-3 listener; cross-tenant
+        ids return empty (defence-in-depth — citation_resolver surfaces
+        the absence as ``broken_markers``).
+        """
+        if not ids:
+            return {}
+        stmt = sa.select(ResearchFact).where(ResearchFact.id.in_(ids))
+        result = await self._session.execute(stmt)
+        return {fact.id: fact for fact in result.scalars().all()}
+
+    async def facts_for_symbol(
+        self,
+        symbol: str,
+        *,
+        limit: int = 50,
+    ) -> list[ResearchFact]:
+        """Return the latest ``limit`` facts for ``symbol`` (slice R5)."""
+        from iguanatrader.contexts.research.models import SymbolUniverse
+
+        stmt = (
+            sa.select(ResearchFact)
+            .join(
+                SymbolUniverse,
+                ResearchFact.symbol_universe_id == SymbolUniverse.id,
+            )
+            .where(SymbolUniverse.symbol == symbol)
+            .order_by(ResearchFact.effective_from.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def insert_audit_trail_entry(
+        self,
+        *,
+        brief_id: UUID,
+        brief_version: int,
+        metric: str,
+        formula: str,
+        inputs: list[dict[str, Any]],
+        steps: list[dict[str, Any]],
+        final_output: str,
+        methodology: str,
+        llm_call_id: UUID | None = None,
+    ) -> ResearchAuditTrail:
+        """Insert one audit trail row (slice R5).
+
+        Idempotent at the DB level: callers should de-duplicate by
+        ``(brief_id, metric)`` if retry-safety is required. The append-only
+        L2 trigger from migration ``0009`` blocks any UPDATE/DELETE.
+        """
+        instance = ResearchAuditTrail(
+            id=uuid4(),
+            brief_id=brief_id,
+            brief_version=brief_version,
+            metric=metric,
+            formula=formula,
+            inputs=inputs,
+            steps=steps,
+            final_output=final_output,
+            methodology=methodology,
+            llm_call_id=llm_call_id,
+        )
+        self._session.add(instance)
+        await self._session.flush()
+        return instance
+
+    async def audit_trail_for_brief(
+        self,
+        brief_id: UUID,
+    ) -> list[ResearchAuditTrail]:
+        """Return all audit trail rows for ``brief_id`` (slice R5).
+
+        Order: ``created_at ASC, metric ASC`` (deterministic for snapshots).
+        """
+        stmt = (
+            sa.select(ResearchAuditTrail)
+            .where(ResearchAuditTrail.brief_id == brief_id)
+            .order_by(ResearchAuditTrail.created_at, ResearchAuditTrail.metric)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
 
 __all__ = [
