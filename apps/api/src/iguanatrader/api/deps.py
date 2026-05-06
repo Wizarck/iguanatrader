@@ -171,7 +171,20 @@ def is_secure_cookie() -> bool:
     Default ``True``. Dev-only override
     ``IGUANATRADER_DEV_INSECURE_COOKIE=1`` permits HTTP cookies on
     localhost — gotcha #25 documents the trade-off.
+
+    Slice-O1 carry-forward (D9 item b): when the dev override is set
+    AND ``IGUANATRADER_ENV=production``, raises :class:`ConfigError`
+    via :func:`iguanatrader.config.settings.enforce_dev_insecure_cookie_prod_guard`.
+    The guard is enforced on every cookie write, so any login attempt
+    on a misconfigured production deployment fails loudly with an
+    RFC 7807 500 response (instead of silently shipping a cookie
+    without the ``Secure`` flag — a security hole).
     """
+    from iguanatrader.config.settings import (  # local import: lifecycle isolation
+        enforce_dev_insecure_cookie_prod_guard,
+    )
+
+    enforce_dev_insecure_cookie_prod_guard()
     return os.getenv("IGUANATRADER_DEV_INSECURE_COOKIE") != "1"
 
 

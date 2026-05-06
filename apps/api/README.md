@@ -166,10 +166,44 @@ poetry run pytest apps/api/tests/ \
 | `IGUANATRADER_ARGON2_PARALLELISM` | `4` | Argon2id parallel lanes |
 | `IGUANATRADER_ARGON2_HASH_LEN` | `32` | Argon2id digest length (bytes) |
 | `IGUANATRADER_ARGON2_SALT_LEN` | `16` | Argon2id salt length (bytes) |
-| `IGUANATRADER_DEV_INSECURE_COOKIE` | unset | `=1` to drop the `Secure` flag (local HTTP only — see gotchas #25) |
+| `IGUANATRADER_DEV_INSECURE_COOKIE` | unset | `=1` to drop the `Secure` flag (local HTTP only — see gotchas #25). **Forbidden when `IGUANATRADER_ENV=production`** (slice O1 D9 boot guard). |
 | `IGUANA_DATABASE_URL` | `sqlite+aiosqlite:///./data/iguanatrader.db` | SQLAlchemy async DB URL |
 | `IGUANATRADER_API_HOST` | `127.0.0.1` | uvicorn bind host (smoke entry only) |
 | `IGUANATRADER_API_PORT` | `8000` | uvicorn bind port (smoke entry only) |
+| `IGUANATRADER_ENV` | `test` | `test` / `dev` / `paper` / `live` / `production` — drives structlog file rotation + env guards (slice O1) |
+| `IGUANATRADER_PERPLEXITY_MAX_RPM` | `60` | Perplexity sliding-window throttle limit (slice O1) |
+| `IGUANATRADER_LLM_REPLAY` | unset | `=1` to enter test-mode replay (slice O1; see `docs/runbooks/replay-cache-refresh.md`) |
+| `IGUANATRADER_LLM_REPLAY_RECORD` | unset | `=1` to refresh replay-cache fixtures by running against real LLMs (operator-gated) |
+| `IGUANATRADER_COST_SNAPSHOT_CADENCE_SECONDS` | `300` | Cost-dashboard publisher cadence (NFR-O4) |
+
+## Local development on Windows venv
+
+Slice O1 (D9 carry-forward item f) documents the workaround sequence for the persistent Windows `poetry install` failures (gotcha #18). The canonical CI lock regeneration is the `regenerate-lock.yml` workflow_dispatch run; for ad-hoc local installs:
+
+```powershell
+# 1. Refresh poetry itself (Windows package manager caches stale poetry-installer paths).
+poetry self update
+
+# 2. Force in-project venv so PowerShell + VS Code reliably activate it.
+poetry config virtualenvs.in-project true
+
+# 3. Install without root project (root pyproject is package-mode = false).
+poetry install --no-root --with dev
+
+# 4. Make `iguanatrader.*` importable for ad-hoc scripts. Required because
+#    we declare `pythonpath = ["apps/api/src"]` for pytest (root pyproject)
+#    but the poetry-managed venv doesn't put apps/api/src on sys.path
+#    outside pytest. The editable install resolves both.
+poetry run pip install -e apps/api
+```
+
+If that sequence still fails (poetry version drift, MSVC build chain hiccup, antivirus interference), fall back to **CI as the canonical test runner**:
+
+- Push the slice branch, watch the CI matrix.
+- The `lint` / `typecheck` / `test` jobs each spin a clean Linux env so any Windows-only flake (event-loop policy mismatches, file-handle quirks) is not in the critical path.
+- Use the `regenerate-lock.yml` workflow_dispatch to refresh `poetry.lock` from CI when local resolution diverges.
+
+Cross-reference: gotcha #18 (`poetry-installer-error-z3iomdfx.log` is a known Windows artefact; safe to delete).
 
 ## CLI — operator entrypoint
 
@@ -368,6 +402,69 @@ Multichannel approval surface for trade proposals — Telegram + Hermes/WhatsApp
 - `iguanatrader approval list` — list pending requests
 - `iguanatrader approval audit <request_id>` — full audit chain
 - `iguanatrader approval sweep-expired` — manual timeout sweeper (slice O2 will cron-schedule)
+
+## Observability — cost meter + budget + replay cache
+
+Slice O1 (`observability-cost-meter`) plants the `iguanatrader.contexts.observability` bounded context. Public surface for downstream slices:
+
+```python
+from iguanatrader.contexts.observability.cost_meter import cost_meter
+from iguanatrader.contexts.observability.llm_routing import TaskClass, route_llm
+from iguanatrader.contexts.observability.budget import check_budget
+from iguanatrader.contexts.observability.perplexity_throttle import get_throttle
+from iguanatrader.contexts.observability.replay_cache import replay_cache
+from iguanatrader.contexts.observability.otel import traced, metered
+```
+
+### `@cost_meter(provider, model)` — wrap every LLM call
+
+```python
+from iguanatrader.contexts.observability.cost_meter import cost_meter
+
+@cost_meter(provider="anthropic", model="claude-3-5-sonnet")
+async def synthesize_brief(prompt: str) -> LLMResponse:
+    # call Anthropic SDK; return an object exposing
+    # tokens_input / tokens_output / cached
+    ...
+```
+
+The decorator persists `ApiCostEvent` automatically when `tenant_id_var` is set + a session is bound. Async-aware: works for both sync and async functions. **Every** Anthropic / OpenAI / Perplexity call site MUST be wrapped (gotcha #60 — currently a contract, not a static lint).
+
+### `route_llm(task_class, tenant_id=...)` — model-tier routing
+
+```python
+from iguanatrader.contexts.observability.llm_routing import TaskClass, route_llm
+
+tier = await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=user.tenant_id)
+# tier is `claude-3-5-sonnet` normally; `claude-3-5-haiku` on WARN_80;
+# raises BudgetExceededError on BLOCK_100.
+```
+
+The function runs the budget gate and emits `observability.llm.route_chosen`.
+
+### `@traced(span_name)` / `@metered(metric_name, kind)` — OTEL stub
+
+```python
+from iguanatrader.contexts.observability.otel import traced, metered
+
+@traced("research.synthesize_brief")
+@metered("research.briefs_synthesized_total", kind="counter")
+async def synthesize_brief(...): ...
+```
+
+No-op MVP per design D7. v2 SaaS swaps the bodies for OTLP exporter wiring; caller-side `@traced(...)` usage is wire-stable.
+
+### `IGUANATRADER_LLM_REPLAY=1` — deterministic test mode
+
+```sh
+IGUANATRADER_LLM_REPLAY=1 pytest apps/api/tests/integration/test_replay_cache.py
+```
+
+Replay-cache fixtures live under `apps/api/tests/fixtures/replay_cache/<scenario>.json`. Refresh procedure: `docs/runbooks/replay-cache-refresh.md`.
+
+### `GET /api/v1/stream/costs/snapshots` — SSE cost dashboard
+
+The cost-dashboard publisher emits `CostSnapshotEvent`s every 5 minutes per tenant; the SSE endpoint forwards them filtered to the authenticated tenant. Slice W1 + later UI slice consume the stream.
 
 ## See also
 

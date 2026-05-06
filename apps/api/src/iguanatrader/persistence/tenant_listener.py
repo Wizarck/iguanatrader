@@ -57,6 +57,48 @@ def _is_tenant_scoped(cls: type) -> bool:
     return bool(getattr(cls, "__tenant_scoped__", True))
 
 
+def _column_descriptions(state: ORMExecuteState) -> list[dict[str, Any]]:
+    """Best-effort accessor for ``state.statement.column_descriptions``.
+
+    The SQLAlchemy 2.x ``ORMExecuteState.statement`` attribute is typed
+    as :class:`Executable`; only :class:`Select` (and a few related
+    classes) actually expose ``column_descriptions``. This helper does
+    a runtime ``getattr`` so the listener can introspect ORM SELECTs
+    without a static type-check failure.
+    """
+    raw = getattr(state.statement, "column_descriptions", None)
+    if raw is None:
+        return []
+    return list(raw)
+
+
+def _query_targets_only_unscoped_tables(state: ORMExecuteState) -> bool:
+    """True iff the query touches ONLY non-scoped mappers (or none).
+
+    Walks the statement's column descriptions / FROM mappers; if every
+    mapper opts out of tenant scoping (``__tenant_scoped__ = False`` or
+    no ``tenant_id`` column at all), the query is "unscoped-only" and
+    the listener has nothing to filter — the missing ``tenant_id_var``
+    is therefore not an error.
+
+    Used by the slice-O1 carry-forward fix (per design D9 item a +
+    gotcha #28): the slice-3 listener's original behaviour raised
+    :class:`TenantContextMissingError` for ANY ORM SELECT when
+    ``tenant_id_var`` was unset, even queries against ``tenants``
+    (which is itself non-scoped). Slice 4 worked around it with raw
+    SQL; this fix removes the workaround.
+    """
+    seen_any_mapper = False
+    for desc in _column_descriptions(state):
+        entity = desc.get("entity")
+        if entity is None or not isinstance(entity, type):
+            continue
+        seen_any_mapper = True
+        if _is_tenant_scoped(entity) and hasattr(entity, "tenant_id"):
+            return False
+    return seen_any_mapper
+
+
 def _inject_tenant_filter(state: ORMExecuteState) -> None:
     """``do_orm_execute`` handler — add ``WHERE tenant_id = :current`` to SELECTs.
 
@@ -64,6 +106,16 @@ def _inject_tenant_filter(state: ORMExecuteState) -> None:
     - Non-SELECT statements (handled by ``before_flush`` for INSERTs).
     - Raw SQL via ``execute(text(...))`` (``is_orm_statement`` is False).
     - Mapped classes whose ``__tenant_scoped__`` is False.
+    - Statements whose only mapped entities are non-scoped tables (per
+      slice-O1 design D9 item a — gotcha #28 fix). When ``tenant_id_var``
+      is unset AND the query targets only non-scoped tables, the listener
+      no longer raises; this lets the slice-4 raw-SQL bypass in
+      ``routes/auth.py::login`` collapse back to ORM in a follow-up.
+    - Statements that target the ``audit_log`` mapping with
+      ``tenant_id_var`` unset add ``WHERE tenant_id IS NULL`` (per
+      design D8 — cross-tenant ops-global rows). The ``audit_log``
+      mapping is tenant-scoped but its ``tenant_id`` column is nullable,
+      so a NULL-row read path needs an explicit IS NULL filter.
 
     Applied via :func:`with_loader_criteria` for each tenant-scoped mapper in the
     registry. SQLAlchemy is a no-op for mappers not referenced in the query.
@@ -71,7 +123,50 @@ def _inject_tenant_filter(state: ORMExecuteState) -> None:
     if not state.is_select or not state.is_orm_statement:
         return
 
-    tenant = _read_tenant_or_raise()
+    # Slice-O1 D9(a) carry-forward: when tenant_id_var is unset, only
+    # raise if the query references at least one tenant-scoped mapper.
+    # Pure non-scoped queries (e.g. ``select(Tenant)`` during the
+    # zero-tenant bootstrap guard) proceed without filter injection.
+    try:
+        tenant_value = tenant_id_var.get()
+    except LookupError:
+        tenant_value = None
+
+    if tenant_value is None:
+        if _query_targets_only_unscoped_tables(state):
+            return
+        # Slice-O1 D8 cross-tenant audit_log path: when the ONLY
+        # tenant-scoped mapper in the query is ``audit_log`` (whose
+        # tenant_id column is nullable), inject ``WHERE tenant_id IS NULL``
+        # instead of raising. Detected by name-match to keep this listener
+        # independent of the observability package import (avoids cycles).
+        scoped_mapper_names: set[str] = set()
+        for desc in _column_descriptions(state):
+            entity = desc.get("entity")
+            if entity is None or not isinstance(entity, type):
+                continue
+            if _is_tenant_scoped(entity) and hasattr(entity, "tenant_id"):
+                scoped_mapper_names.add(getattr(entity, "__tablename__", ""))
+
+        if scoped_mapper_names == {"audit_log"}:
+            for mapper in Base.registry.mappers:
+                cls = mapper.class_
+                if getattr(cls, "__tablename__", None) != "audit_log":
+                    continue
+                criteria = with_loader_criteria(
+                    cls,
+                    cls.tenant_id.is_(None),
+                    include_aliases=True,
+                )
+                state.statement = state.statement.options(criteria)
+            return
+
+        # Otherwise this is a real programming error — at least one
+        # tenant-scoped mapper participates and tenant_id_var is unset.
+        _read_tenant_or_raise()  # raises TenantContextMissingError
+        return
+
+    tenant = tenant_value
 
     # SA 2.x caches statements aggressively. Lambda-form criteria can capture
     # stale tenant values across test runs because the lambda identity is

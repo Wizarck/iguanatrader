@@ -678,6 +678,72 @@ from iguanatrader.migrations._research_trigger_helpers import SQLITE_TRIGGER_SQL
 
 ---
 
+## 60. Cost meter callsite enforcement is contract, not lint rule
+
+**Surfaced**: 2026-05-06 (slice O1, observability-cost-meter).
+
+**Symptom**: A new LLM-calling function ships without `@cost_meter(...)`; its calls are silently un-tracked in `api_cost_events`. The dashboard underreports spend; budget gates fire too late.
+
+**Root cause**: Slice O1 ships the decorator + an integration test (`test_cost_meter.py`) that introspects `inspect.stack()` to flag bare SDK calls. There is no static lint rule MVP — the contract is enforced at test time only. A custom `mypy` plugin or ruff rule could cover it; not in scope for slice O1.
+
+**Workaround**: Code review checklist + the test fixture. Every PR that touches an Anthropic / OpenAI / Perplexity SDK is reviewed for `@cost_meter` wrapping. Dev habit: when adding an LLM call, the first line is `@cost_meter(provider=..., model=...)` above the function `def`.
+
+**Status**: ⚠️ active — slice O2 (or later) may add a static lint rule under `tools/lint/` to make this a build-time check.
+
+---
+
+## 61. Default monthly LLM budget cap is $50/tenant
+
+**Surfaced**: 2026-05-06 (slice O1, observability-cost-meter).
+
+**Symptom**: New tenants hit `WARN_80` or `BLOCK_100` faster than expected on heavy research / proposal-authoring workloads.
+
+**Root cause**: `tenants.feature_flags["llm_budget_usd"]` defaults to $50/month per design D4 + Open Question Q3. This covers ~10 K Sonnet calls or ~50 K Haiku calls — sufficient for solo-trader MVP usage but not for batch-research scenarios.
+
+**Workaround**: Operators raise the cap explicitly via the slice O2 `iguanatrader admin set-budget <tenant> <usd>` CLI (planned). Until that lands, operators edit `tenants.feature_flags` directly:
+
+```sql
+UPDATE tenants
+SET feature_flags = json_set(feature_flags, '$.llm_budget_usd', 200)
+WHERE id = ?;
+```
+
+**Status**: known issue, addressed by slice O2 CLI.
+
+---
+
+## 62. Perplexity throttle is process-local — multi-worker uvicorn multiplies effective rate
+
+**Surfaced**: 2026-05-06 (slice O1, observability-cost-meter).
+
+**Symptom**: A multi-worker deployment (`uvicorn --workers 4`) effectively allows 4 × `IGUANATRADER_PERPLEXITY_MAX_RPM` requests / minute against the upstream API. Perplexity then returns 429s because each worker's window is independent.
+
+**Root cause**: Per design D3, the throttle is an in-process `collections.deque` + `asyncio.Lock` for the 60-second window. Process boundaries are invisible to the throttle.
+
+**Workaround**: MVP runs single-process (`--workers 1`) — documented in `docs/architecture-decisions.md`. Multi-worker deployments must wait for the v2 SaaS Redis-backed throttle migration (deferred).
+
+**Status**: ⚠️ active — v2 SaaS ADR-019 will add a Redis-backed window.
+
+---
+
+## 63. Slice O2 carry-forward: ORM-SELECT-in-`get_current_user` lint, Argon2 auto-rehash, L2 marker schema
+
+**Surfaced**: 2026-05-06 (slice O1, observability-cost-meter — D9 punted items).
+
+**Symptom**: Three retro carry-forward items from slice 5 do NOT land in slice O1 — they would surprise developers expecting them.
+
+**Root cause**: Per design D9, slice O1 took the items that fit "observability + boundary hardening" (listener fix, prod cookie guard, `--cov-fail-under=80`, Windows poetry doc); the rest were punted to slice O2 (`orchestration-scheduler-routines`) because they fit better with the scheduler entry-point lint surface area.
+
+**Workaround**: Track in slice O2 task list. Concretely:
+
+- **(c) ORM-SELECT-in-`get_current_user` lint rule** — slice O2 wires custom ruff rules for scheduler entry-points (lazy-import enforcement per gotcha #29); the ORM-SELECT lint is the same shape (custom ruff plugin) and lands together. Until then, gotcha #28 documents the bypass + the slice-O1 listener fix removed the need for the bypass (see task 2.4); a follow-up auth-hardening slice can collapse the slice-4 raw-SQL bypass back to ORM.
+- **(d) Argon2 auto-rehash on login when stored params drift** — auth-context concern; lives with whichever slice owns `routes/auth.py` next (auth-hardening slice, not yet scheduled).
+- **L2 marker schema discoverability** — release-management.md concern; tracked in the release-management backlog, not in O1 / O2 scope.
+
+**Status**: known issue, tracked for slice O2 + downstream.
+
+---
+
 ## Format for new entries
 
 ```markdown

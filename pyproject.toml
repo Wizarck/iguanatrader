@@ -35,6 +35,9 @@ slowapi = ">=0.1.9,<1.0"
 # Slice 5 (api-foundation-rfc7807) — Typer CLI auto-discovery scaffold.
 # Subcommands land in subsequent slices (T4 bootstrap-tenant, etc.).
 typer = ">=0.12,<1.0"
+# Slice O1 (observability-cost-meter) — OTEL port stub only (api package).
+# No SDK / no exporter MVP per design D7. v2 SaaS will swap in OTLP exporters.
+opentelemetry-api = ">=1.25,<2.0"
 
 [tool.poetry.scripts]
 # Slice 5 (api-foundation-rfc7807) — exposes the Typer auto-discovery CLI.
@@ -185,7 +188,13 @@ exclude = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 asyncio_mode = "auto"
-addopts = "-q --strict-markers"
+# Slice-O1 carry-forward (D9 item e): the slice-5 task 8.3 left
+# `--cov-fail-under=80` as a TODO. Slice O1 wires it; CI's pytest
+# invocation honours the option once the test job moves past
+# `--collect-only` (slice-5 placeholder). Until then the option is
+# inert (only fires when coverage data is collected). Local devs can
+# already opt in via `pytest --cov apps/api/src/iguanatrader`.
+addopts = "-q --strict-markers --cov-fail-under=80"
 testpaths = ["apps/api/tests", "tests"]
 # Same rationale as [tool.mypy].mypy_path — make `iguanatrader.*` importable
 # from tests without an installed wheel.
