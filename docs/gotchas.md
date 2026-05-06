@@ -638,6 +638,46 @@ from iguanatrader.migrations._research_trigger_helpers import SQLITE_TRIGGER_SQL
 
 ---
 
+## 50. Approval bot looks dead to non-whitelisted senders (silent-drop)
+
+**Surfaced**: 2026-05-06 (slice P1, group 7).
+
+**Symptom**: A user sends `/status` (or any other command) to the Telegram or WhatsApp bot and receives **no response whatsoever** — the bot looks like it's offline or broken.
+
+**Root cause**: Per design D6 + PRD account-takeover threat-model row + NFR-S3/S4: the channel adapter checks every inbound message against `authorized_senders(tenant_id, channel, external_id, enabled=TRUE)`. Non-matching senders are dropped silently — no echo, no error message, no "you're not authorized" reply. The intentional behaviour avoids enumeration of valid bot tokens and avoids confirming bot presence to attackers. The dispatcher is never called for such messages; only a structlog `approval.channel.sender_rejected` event with the SHA-256 hash of the external_id is emitted (server-side only).
+
+**Workaround / operational guidance**: when a legitimate user reports "the bot doesn't respond", instruct them to ask the tenant admin to add their Telegram user ID / WhatsApp phone number to the `authorized_senders` table. CLI helper for adding senders ships with slice O1; until then it's a direct DB INSERT or via the admin dashboard once slice W1 lands.
+
+**Tests**: `apps/api/tests/unit/contexts/approval/test_authorized_sender_guard.py` asserts the silent-drop on both Telegram and Hermes/WhatsApp.
+
+**Status**: by design — never to be "fixed". The behaviour is the security guarantee.
+
+## 51. Approval channel transports are stub-only in slice P1 (D8 deferred wire clients)
+
+**Surfaced**: 2026-05-06 (slice P1, group 7).
+
+**Symptom**: `apps/api/src/iguanatrader/contexts/approval/channels/transports/` ships only `FakeTelegramTransport` + `FakeHermesTransport`. There is no `python-telegram-bot` import, no Meta Cloud API client, no real bot tokens flowing through the system. Production deployment will see the FakeChannelPort's `pop_outbound` retain messages indefinitely with zero wire traffic.
+
+**Root cause**: Per design D8 — slice P1 ships the contract-level guarantees (idempotency, audit, heartbeat, dispatch) end-to-end exercised through the fakes; the real wire clients are deliberately scoped to a tightly-bounded follow-up slice `approval-channels-real-clients` to keep Wave 2's test surface fast and avoid pulling in `python-telegram-bot` + Hermes credentials before they're needed. CI is green at P1 but the actual wire path is unproven until the follow-up slice swaps the implementation behind the same Port.
+
+**Workaround**: do **not** flag P1 as production-ready for live trading. The follow-up slice is a 1-2 day swap (real Telegram Bot API client behind the existing `ChannelTransportPort`); the gating MUST happen before any live IBKR connection. Operations runbook `docs/runbooks/approval-channels-resilience.md` documents the activation steps.
+
+**Status**: known limitation; tracked in the project README's "post-Wave-2 follow-ups" section.
+
+## 52. The 17-command registry is the single source of truth — no per-channel command lists
+
+**Surfaced**: 2026-05-06 (slice P1, group 7).
+
+**Symptom**: A new contributor adds a command `/foo` to a transport adapter (e.g. `channels/telegram.py`) directly. The Hermes/WhatsApp + dashboard channels do not see the command; FR37 (cross-channel parity) is silently violated. CI may pass because the command is wired to one transport and that transport's tests cover it.
+
+**Root cause**: Per design D2 + spec ``approval`` Requirement 1: there is exactly ONE place where commands are declared — `apps/api/src/iguanatrader/contexts/approval/channels/commands/<name>.py` exporting `SPEC: CommandSpec`. The registry is built at import time via `pkgutil.iter_modules`. Adding a command is **a single new file under that directory**; no transport adapter is edited.
+
+**Workaround / contributor guidance**: the file `apps/api/src/iguanatrader/contexts/approval/channels/commands/__init__.py` exposes `assert_canonical()` which raises if the registry diverges from `CANONICAL_COMMAND_NAMES` (currently exactly 17). The unit test `test_command_registry.py` runs `assert_canonical()` and asserts each command's role + idempotency_key_source matches design D2. Anyone adding a command also updates `CANONICAL_COMMAND_NAMES` + `test_command_registry.py` — both diff-visible, both required to land green.
+
+**Status**: contract documented + enforced by tests; no per-channel drift surface possible by construction.
+
+---
+
 ## Format for new entries
 
 ```markdown
