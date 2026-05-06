@@ -809,6 +809,45 @@ The frontend's retry only fires when the browser's `EventSource` emits `error` (
 
 **Status**: ⚠️ deferred — light-mode CSS variants tracked as a W1 follow-up. The `theme.svelte.ts` store has a TODO inline marker at the apply point.
 
+## 75. OpenBB sidecar lazy-import: cold-start `/health` returns 200 with `openbb_loadable: false` for ~5-15s
+
+**Surfaced**: 2026-05-06 (slice R4 `openbb-sidecar-container`, group 2).
+
+**Symptom**: Container reports healthy in docker / Pod is Ready, but `curl /health` returns `{"openbb_loadable": false, "error": "..."}` for a few seconds after cold start. Adapter calls fail with `OpenBBFacadeError: openbb not loadable` until the lazy import completes.
+
+**Root cause**: Per design D5 + D8, the sidecar's `OpenBBFacade` lazy-imports `openbb` on first `is_ready()` call (heavy SDK load — ~5-15s on cold cache). `/health` always returns 200 (per D8: never 5xx, lest healthcheck restart-loop the container). The `openbb_loadable` flag in the body is the readiness signal.
+
+**Workaround**: Tune docker `HEALTHCHECK --start-period` and k8s `readinessProbe.initialDelaySeconds` to ≥30s so traffic does not route until openbb has imported. Defaults in this slice (start_period 60s, initialDelaySeconds 5-30s with retries) give the sidecar the warmup it needs.
+
+**Status**: by-design. The lazy-import is intentional — keeps cold-start fast and isolates openbb breakage to readiness rather than liveness.
+
+## 76. Sidecar `expose:` not `ports:` in compose; ClusterIP not NodePort in k8s — verify host port is NOT bound
+
+**Surfaced**: 2026-05-06 (slice R4 `openbb-sidecar-container`, group 4).
+
+**Symptom**: Operator misreads `expose: ["8765"]` as if it published the port to host, or assumes a typo, and edits to `ports:` — exposing the AGPL sidecar to the world. Equivalent k8s mistake: changing Service `type: ClusterIP` to `NodePort`/`LoadBalancer`.
+
+**Root cause**: Per slice R4 design D1 + ADR-015: the sidecar must be reachable ONLY from inside the compose network / k8s cluster, never from outside. Host-binding the port effectively makes the AGPL sidecar a public network service, which triggers AGPL §13's "service over a network" obligations against external users.
+
+**Workaround**:
+- **dev compose**: verify with `docker compose port openbb_sidecar 8765` — must return empty / `<no entry>`.
+- **paper/live k8s**: verify with `kubectl get svc -n iguanatrader openbb-sidecar -o yaml | grep type:` — must read `type: ClusterIP`. Also confirm `kubectl get svc -n iguanatrader openbb-sidecar -o jsonpath='{.spec.externalIPs}'` is empty.
+- **Defense-in-depth (k8s)**: the slice ships a NetworkPolicy restricting ingress to Pods labelled `app.kubernetes.io/component=api` + `app.kubernetes.io/part-of=iguanatrader`. Confirm the policy is honored (CNI must support NetworkPolicies — vanilla k3s default install does, flannel-only setups don't).
+
+**Status**: by-design. Operators MUST verify port-binding-isolation before merging changes to `docker-compose.yml` or `helm/openbb-sidecar/templates/service.yaml`.
+
+## 77. yfinance routes through the sidecar — `import yfinance` in `apps/api/` is forbidden by CI
+
+**Surfaced**: 2026-05-06 (slice R4 `openbb-sidecar-container`, group 6).
+
+**Symptom**: A future contributor wants to fetch yfinance fundamentals or ESG; the natural reflex is `pip install yfinance && import yfinance.Ticker(...)`. The license-boundary CI gate fails with `::error::` naming `YFinanceProxySource` as the canonical access path.
+
+**Root cause**: Per slice R4 design D7: yfinance is a runtime dependency of OpenBB Platform's default provider. Even though yfinance itself is Apache-2.0 (so a direct `import yfinance` would not violate AGPL on its own), keeping the dependency chain inside the sidecar is the boundary's whole purpose — the sidecar is "the place where AGPL-adjacent providers live". Letting yfinance leak into `apps/api/` erodes the boundary's reviewability.
+
+**Workaround**: use `iguanatrader.contexts.research.sources.yfinance_proxy.YFinanceProxySource` — same `SourcePort` contract, same drafts; the underlying transport is the sidecar (whose `equity_fundamentals`/`equity_esg` endpoints already proxy yfinance internally per D7).
+
+**Status**: by-design. Enforced by CI (`license-boundary-check.yml` `agpl-boundary` job, surface 1 + surface 3).
+
 ## Format for new entries
 
 ```markdown

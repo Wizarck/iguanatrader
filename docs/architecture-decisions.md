@@ -418,7 +418,7 @@ Specs concretos por NFR (canónicos para implementation):
 
 ### OpenBB Sidecar Topology (FR76)
 
-OpenBB Platform corre como **proceso isolated** preservando boundary AGPL-3.0 ↔ Apache-2.0+CC. Decisión cerrada per Gate A amendment 2026-04-28; ADR-015 documenta detalle.
+OpenBB Platform corre como **proceso isolated** preservando boundary AGPL-3.0 ↔ Apache-2.0+CC. Decisión cerrada per Gate A amendment 2026-04-28; ADR-015 documenta detalle. **Implementation status: ✅ R4 (2026-05-06)** — sidecar package + Helm chart + Fleet GitRepo + monolith client + 3-surface CI gate shipped.
 
 | Aspecto | Resolución |
 |---|---|
