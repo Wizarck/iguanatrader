@@ -1,8 +1,0 @@
-{{- if .Values.createNamespace | default true }}
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ include "openbb-sidecar.namespace" . }}
-  labels:
-    {{- include "openbb-sidecar.labels" . | nindent 4 }}
-{{- end }}

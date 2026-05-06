@@ -29,8 +29,8 @@ iguanatrader needs OpenBB's data surface (equity fundamentals, analyst estimates
 ### Boundary mechanics
 
 1. **Filesystem isolation**: the sidecar lives at `apps/openbb-sidecar/` with its own `pyproject.toml`, `poetry.lock`, `LICENSE` (AGPL-3.0 verbatim from gnu.org), `Dockerfile`. The monolith at `apps/api/` has its own dep tree; openbb is never declared, never resolved, never imported there.
-2. **Process isolation**: the sidecar is a separate container. In dev: `docker-compose` service `openbb_sidecar`. In paper/live: a Helm-deployed Pod (`helm/openbb-sidecar/`) managed by Rancher Fleet. The sidecar's container image embeds the AGPL LICENSE per AGPL §13.
-3. **Network isolation**: HTTP-loopback only. Compose: `expose: ["8765"]`, no host port binding. k8s: `Service type: ClusterIP` (no NodePort/LoadBalancer) + a NetworkPolicy restricting ingress to the monolith Pod by label match. The sidecar is reachable from inside the cluster, never from outside.
+2. **Process isolation**: the sidecar is a separate container. In dev: `docker-compose` service `openbb_sidecar`. In paper/live: same container image, but orchestrated by k8s + Rancher Fleet once the `deployment-foundation` slice helmifies the whole stack (api + sidecar + litestream + frontend) together. Container image embeds the AGPL LICENSE per AGPL §13.
+3. **Network isolation**: HTTP-loopback only. Compose: `expose: ["8765"]`, no host port binding. When the k8s deployment slice lands the equivalent contract is `Service type: ClusterIP` + NetworkPolicy ingress restricted to the monolith Pod by label match. Either way: the sidecar is reachable only from the monolith, never from outside the runtime boundary.
 4. **Code isolation**: the iguanatrader monolith implements `OpenBBSidecarSource` (a `SourcePort` adapter) at `contexts/research/sources/openbb_sidecar.py`. It uses `httpx.Client` to call the sidecar's `/v1/equity/fundamentals/{symbol}` etc. — no `import openbb` anywhere in `apps/api/`.
 
 ### CI enforcement
@@ -66,14 +66,13 @@ Failure of any single surface fails the gate with `::error::` and a structured f
 - `apps/openbb-sidecar/` — sidecar code + Dockerfile + LICENSE.
 - `apps/api/src/iguanatrader/contexts/research/sources/openbb_sidecar.py` — monolith client.
 - `apps/api/src/iguanatrader/contexts/research/sources/yfinance_proxy.py` — yfinance access via sidecar.
-- `helm/openbb-sidecar/` — k8s deployment chart for paper/live (Rancher Fleet GitOps).
-- `deploy/fleet-gitrepo.yaml` — Fleet GitRepo bootstrap CR.
-- `docker-compose.yml` — dev profile (paper/live deploy via k8s, not compose).
+- `docker-compose.yml` — dev profile sidecar service.
 - `.github/workflows/license-boundary-check.yml` — CI gate (3 independent surfaces).
 - `docs/architecture-decisions.md` — §"OpenBB Sidecar Topology" + §"CD / deployment automation".
 - `docs/project-structure.md` §13 — directory layout.
 - `docs/gotchas.md` #75 (lazy-import readiness), #76 (port binding isolation), #77 (yfinance ban).
-- `openspec/changes/archive/2026-05-XX-openbb-sidecar-container/` — slice R4 implementation record (proposal + design + tasks + spec).
+- `openspec/changes/archive/2026-05-XX-openbb-sidecar-container/` — slice R4 implementation record.
+- Future `deployment-foundation` slice — will helmify api + sidecar + litestream + frontend together via Rancher Fleet (eligia-core/helm/eligia-stack pattern). Out of scope for R4.
 
 ## Original Stub (preserved)
 

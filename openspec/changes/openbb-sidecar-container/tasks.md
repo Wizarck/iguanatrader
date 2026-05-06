@@ -26,26 +26,16 @@
 - [x] 3.4 Create `apps/openbb-sidecar/tests/integration/test_routes.py`: 8 ASGITransport tests covering each endpoint with the facade methods mocked. Happy path + 404 + 502 for fundamentals; happy path each for ratings/esg/macro; 404 on unknown indicator. No network.
 - [~] 3.5 Smoke test against the live sidecar (manual or scripted) — **DEFERRED to Group 8 verification**: requires `docker compose up -d openbb_sidecar` from Group 4 + a live OpenBB SDK runtime which depends on the dev environment. Live capture of `aapl_fundamentals.json` happens in Group 8 §8.7 (`pytest -m sidecar_live`).
 
-## 4. Deployment topology — docker-compose (dev) + Helm/Fleet (paper/live)
+## 4. Deployment topology — docker-compose only (k8s/Fleet deferred)
 
-**Scope correction 2026-05-06**: original brief said "docker-compose for paper/live"; per architectural reality (Rancher Manager + Fleet GitOps over k3s) paper/live runs as Helm bundles. Docker-compose stays only for the dev profile (local-iteration loop). Architecture-decisions.md §"OpenBB Sidecar Topology" + §"CD / deployment automation" updated in this slice.
+**Scope correction 2026-05-06 (revised)**: original brief said docker-compose for paper/live. First pivot pulled paper/live to k8s+Fleet (Rancher reality). Second revision (this commit) reverts the Helm chart entirely — premature for a single component when no other component is k8s-deployed. The strategic target is still k3s+Rancher+Fleet (per arch-decisions §"CD / deployment automation"), but the wiring lands in a future `deployment-foundation` slice that helmifies all components together (api + sidecar + litestream + frontend), not piecemeal here. License boundary is preserved at the container level; works identically under compose or k8s.
 
 - [x] 4.1 Edit `docker-compose.yml` (dev): added `openbb_sidecar` service block — `build.context: ./apps/openbb-sidecar`, `image: iguanatrader/openbb-sidecar:dev`, `expose: ["8765"]` (no host port), `restart: unless-stopped`, healthcheck on `/health`. `api` service gains `depends_on: openbb_sidecar.condition: service_healthy`.
-- [x] 4.2 Create `helm/openbb-sidecar/` chart for paper/live deployment via Fleet:
-  - `Chart.yaml` — apiVersion v2, version 0.1.0, AGPL-isolation rationale
-  - `values.yaml` — defaults (ClusterIP Service port 8765, resource caps 500m-1cpu / 1-2Gi per arch-decisions, liveness+readiness probes /health, non-root pod security, NetworkPolicy ingress restricted to label `app.kubernetes.io/component=api`)
-  - `values-vps.yaml` — production overrides (log_level WARNING, longer readiness for openbb cold-start)
-  - `values-local.yaml` — dev cluster overrides (smaller resources, log DEBUG, image.tag dev)
-  - `fleet.yaml` — targetCustomizations matching `iguanatrader-prod`/`local` (vps overrides) and `iguanatrader-local`/`rancher-desktop` (local-dev overrides)
-  - `templates/_helpers.tpl` — name/fullname/chart/labels/selectorLabels/image helpers
-  - `templates/namespace.yaml` — gated by `createNamespace: true`
-  - `templates/deployment.yaml` — Deployment with /tmp emptyDir for read-only rootfs
-  - `templates/service.yaml` — ClusterIP Service, port 8765
-  - `templates/networkpolicy.yaml` — ingress restricted to monolith Pod label
-- [x] 4.3 Create `deploy/fleet-gitrepo.yaml` Fleet GitRepo CR (one-shot apply to management cluster) pointing at `helm/openbb-sidecar` paths. Mirrors eligia-core/deploy/fleet-gitrepo.yaml pattern. Auth via `iguanatrader-git` Secret (per ELIGIA fleet-gitrepo-setup runbook).
-- [x] 4.4 Do NOT edit `docker-compose.{paper,live,test}.yml` — paper/live deployment is k8s/Fleet-canonical now; test compose skips sidecar (mocked in unit tests).
-- [~] 4.5 Verify k8s deployment via `helm template helm/openbb-sidecar/` + apply to a kind/k3d local cluster — **DEFERRED to Group 8 verification** (smoke test §8.7) and to first Fleet sync once GitRepo CR is applied to the host k3s.
-- [~] 4.6 Verify boot order in dev compose: `docker compose up -d` → `openbb_sidecar (healthy)` then `api` started — **DEFERRED to Group 8 §8.9 manual smoke** (requires fully-built api image; api docker target ships in shared-primitives slice).
+- [~] 4.2 Helm chart `helm/openbb-sidecar/` — **REVERTED**: shipped initially, then deferred to a future `deployment-foundation` slice that brings ALL components onto k8s together (eligia-core/helm/eligia-stack pattern). Resource targets + NetworkPolicy intent + SecurityContext defaults are documented in `docs/architecture-decisions.md` §"OpenBB Sidecar Topology" so the future slice can lift them verbatim. Eligia-stack is the reference template.
+- [~] 4.3 `deploy/fleet-gitrepo.yaml` — **REVERTED**: pairs with the helm chart that's no longer present. Will land alongside the `deployment-foundation` slice's first GitRepo CR.
+- [x] 4.4 Do NOT edit `docker-compose.{paper,live,test}.yml` — paper/live compose files remain placeholders (slice 1 scaffolds); future `deployment-foundation` decides whether to delete or repurpose them as solo-rehearsal helpers.
+- [~] 4.5 Verify deployment via k8s — **DEFERRED to `deployment-foundation` slice** (pairs with 4.2 revert).
+- [~] 4.6 Verify dev compose boot order — **DEFERRED to Group 8 §8.9 manual smoke** (requires fully-built api image; api docker target ships in shared-primitives slice).
 
 ## 5. Monolith HTTP client (apps/api/contexts/research/sources/openbb_sidecar.py)
 
