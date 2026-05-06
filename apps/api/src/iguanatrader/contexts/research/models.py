@@ -642,9 +642,78 @@ class AnalystRating(Base):
     )
 
 
+class ResearchAuditTrail(Base):
+    """Per-metric audit trail for synthesised briefs (slice R5, design D5).
+
+    One row per computed metric inside a brief — formula + inputs +
+    intermediate steps + final output. Append-only L1 (this class sets
+    ``__tablename_is_append_only__``) + L2 (BEFORE UPDATE/DELETE
+    triggers from migration ``0009_research_audit_trail``).
+
+    The ``llm_call_id`` references O1's ``api_cost_events.id`` so each
+    audit row is one click from the per-call cost ledger. The FK is
+    declared but ``ondelete='RESTRICT'`` — once an audit row exists,
+    the cost event row that produced it is also append-only.
+    """
+
+    __tablename__ = "research_audit_trail"
+    __tablename_is_append_only__ = True
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    brief_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("research_briefs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    brief_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    metric: Mapped[str] = mapped_column(Text, nullable=False)
+    formula: Mapped[str] = mapped_column(Text, nullable=False)
+    inputs: Mapped[Any] = mapped_column(JSON, nullable=False)
+    steps: Mapped[Any] = mapped_column(JSON, nullable=False)
+    final_output: Mapped[str] = mapped_column(Text, nullable=False)
+    methodology: Mapped[str] = mapped_column(Text, nullable=False)
+    llm_call_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_research_audit_trail_tenant_id_brief_id",
+            "tenant_id",
+            "brief_id",
+        ),
+        Index(
+            "ix_research_audit_trail_tenant_id_metric",
+            "tenant_id",
+            "metric",
+        ),
+        Index(
+            "ix_research_audit_trail_llm_call_id",
+            "llm_call_id",
+        ),
+        CheckConstraint(
+            "methodology IN ('three_pillar','canslim','magic_formula','qarp','multi_factor')",
+            name="audit_methodology_allowed",
+        ),
+        CheckConstraint(
+            "brief_version >= 1",
+            name="audit_brief_version_positive",
+        ),
+    )
+
+
 __all__ = [
     "AnalystRating",
     "CorporateEvent",
+    "ResearchAuditTrail",
     "ResearchBrief",
     "ResearchFact",
     "ResearchSource",

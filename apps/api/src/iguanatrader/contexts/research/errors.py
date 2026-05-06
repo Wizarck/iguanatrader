@@ -96,6 +96,32 @@ class RateLimitedError(RateLimitError):
     default_title: ClassVar[str] = "Research Source Rate Limited"
 
 
+class InvalidCitationError(IguanaError):
+    """LLM emitted a ``[fact:<uuid>]`` marker not present in the input bundle (R5).
+
+    Per design D3 step 6 + D10: every citation marker MUST resolve to a
+    fact id provided in the synthesizer's prompt context. An invented
+    UUID raises this error and the synthesis aborts (no brief persisted).
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:invalid-citation"
+    default_title: ClassVar[str] = "Invalid Citation"
+    default_status: ClassVar[int] = 502
+
+
+class BriefSynthesisShortError(IguanaError):
+    """Synthesised brief body is too short — likely LLM degenerated (R5 design Q3).
+
+    Pragmatic 100-word floor — adjustable in v1.5 based on observed
+    corpora. Surfaces as 502 because the synthesiser produced output
+    but the output is not usable.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:brief-too-short"
+    default_title: ClassVar[str] = "Brief Synthesis Too Short"
+    default_status: ClassVar[int] = 502
+
+
 class ConfigError(IguanaError):
     """Adapter failed init due to missing/malformed configuration (slice R2).
 
@@ -111,7 +137,9 @@ class ConfigError(IguanaError):
 
 
 __all__ = [
+    "BriefSynthesisShortError",
     "ConfigError",
+    "InvalidCitationError",
     "MissingProvenanceError",
     "RateLimitedError",
     "ResearchStubNotImplementedError",
