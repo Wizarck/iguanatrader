@@ -24,7 +24,12 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from iguanatrader.shared.errors import IguanaError, ValidationError
+from iguanatrader.shared.errors import (
+    IguanaError,
+    IntegrationError,
+    RateLimitError,
+    ValidationError,
+)
 
 
 class MissingProvenanceError(ValidationError):
@@ -65,7 +70,50 @@ class ResearchStubNotImplementedError(IguanaError):
     default_status: ClassVar[int] = 501
 
 
+class SourceUnavailableError(IntegrationError):
+    """Tier-A adapter exhausted retries against an upstream API (slice R2).
+
+    Distinct ``type`` URI from :class:`IntegrationError` so operators can
+    pattern-match on "this specific Tier-A source is unavailable" vs the
+    generic 502 lift used elsewhere. Default 503 (we *know* it is down for
+    now; an IBKR transient is 502 because we cannot tell).
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:source-unavailable"
+    default_title: ClassVar[str] = "Research Source Unavailable"
+    default_status: ClassVar[int] = 503
+
+
+class RateLimitedError(RateLimitError):
+    """Adapter response indicated the source rate-limited us (slice R2).
+
+    BLS' "200 OK + status=REQUEST_NOT_PROCESSED" is the canonical example.
+    Subclass of :class:`RateLimitError` so the slice-5 global handler still
+    surfaces 429; distinct ``type`` URI for source-side observability.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:research-rate-limited"
+    default_title: ClassVar[str] = "Research Source Rate Limited"
+
+
+class ConfigError(IguanaError):
+    """Adapter failed init due to missing/malformed configuration (slice R2).
+
+    Raised at :meth:`__init__` of every Tier-A adapter when its required
+    env var (``SEC_EDGAR_USER_AGENT``, ``FRED_API_KEY``, ``BLS_API_KEY``,
+    ``BEA_API_KEY``) is unset or fails format validation. Surfaces as RFC
+    7807 500 — operators must fix the env, not the caller.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:config"
+    default_title: ClassVar[str] = "Configuration Error"
+    default_status: ClassVar[int] = 500
+
+
 __all__ = [
+    "ConfigError",
     "MissingProvenanceError",
+    "RateLimitedError",
     "ResearchStubNotImplementedError",
+    "SourceUnavailableError",
 ]
