@@ -1,0 +1,301 @@
+"""Orchestration service — slice O2 facade.
+
+Facade orchestrates the per-routine pipeline:
+
+1. Insert ``routine_runs`` row with ``status='running'``.
+2. Collect facts (research_facts + open positions + equity snapshots).
+3. Synthesize digest (LLM call gated by O1 budget — production wiring
+   uses :class:`LLMClient` Protocol from R5; tests inject a fake).
+4. Classify any cross-context events that fired during the window via
+   :func:`classify_event`; tier-1 emits immediately, tier-2 accumulates
+   into the digest, tier-3 audit-only.
+5. Publish ``orchestration.<routine>.digest_published`` event for P1.
+6. Update ``routine_runs`` to terminal status.
+
+Idempotency on duplicate triggers via the
+``uq_routine_runs_routine_name_scheduled_at_tenant_id`` unique index.
+Budget gate via O1's :func:`check_budget` — :class:`BudgetStatus.BLOCK_100`
+short-circuits to ``status='skipped_budget'``.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING, Literal
+
+from iguanatrader.contexts.orchestration.alert_filter import (
+    AlertTier,
+    Classification,
+    classify_event,
+)
+from iguanatrader.contexts.orchestration.errors import (
+    DuplicateRoutineTriggerError,
+)
+from iguanatrader.shared.time import now as utc_now
+
+if TYPE_CHECKING:
+    from iguanatrader.contexts.orchestration.repository import (
+        OrchestrationRepository,
+    )
+
+logger = logging.getLogger(__name__)
+
+
+RoutineName = Literal["premarket", "midday", "postmarket", "weekly_review"]
+
+
+@dataclass(frozen=True, slots=True)
+class RoutineOutcome:
+    """Result returned from :meth:`OrchestrationService.run_routine`."""
+
+    routine_name: RoutineName
+    scheduled_at: datetime
+    status: str
+    duration_ms: int
+    digest_payload: dict[str, object]
+    tier_1_alerts: list[Classification]
+    tier_2_alerts: list[Classification]
+
+
+@dataclass(frozen=True, slots=True)
+class RoutineWindow:
+    """Window bounds + facts collected for a routine.
+
+    Concrete routine implementations (e.g. ``premarket_window``) build
+    this dataclass; the service consumes it during synthesis.
+    """
+
+    start_at: datetime
+    end_at: datetime
+    research_fact_count: int
+    open_position_count: int
+    pending_proposal_count: int
+
+
+class OrchestrationService:
+    """Facade for slice O2 routine execution."""
+
+    def __init__(self, repository: OrchestrationRepository) -> None:
+        self._repo = repository
+
+    async def run_routine(
+        self,
+        *,
+        routine_name: RoutineName,
+        scheduled_at: datetime,
+        events_during_window: list[tuple[str, dict[str, object]]] | None = None,
+        synthesize_digest: bool = True,
+        budget_blocked: bool = False,
+    ) -> RoutineOutcome:
+        """Execute one routine. Per-routine fact-collection + digest +
+        alert classification.
+
+        ``budget_blocked`` is a pre-computed boolean fed by the caller
+        (typically an outer service that called O1's :func:`check_budget`);
+        when True, the routine short-circuits to status='skipped_budget'
+        with a deterministic-fallback digest. ``synthesize_digest=False``
+        is used by tests + dry-runs.
+        """
+        started_at = utc_now()
+
+        try:
+            run_id = await self._repo.insert_routine_run(
+                routine_name=routine_name,
+                scheduled_at=scheduled_at,
+                started_at=started_at,
+                status="running",
+            )
+        except DuplicateRoutineTriggerError:
+            logger.info(
+                "orchestration.routine.duplicate_trigger",
+                extra={
+                    "routine_name": routine_name,
+                    "scheduled_at": scheduled_at.isoformat(),
+                },
+            )
+            return RoutineOutcome(
+                routine_name=routine_name,
+                scheduled_at=scheduled_at,
+                status="skipped_duplicate",
+                duration_ms=0,
+                digest_payload={},
+                tier_1_alerts=[],
+                tier_2_alerts=[],
+            )
+
+        events = events_during_window or []
+        classifications = [classify_event(event_name, payload) for event_name, payload in events]
+        tier_1 = [c for c in classifications if c.tier is AlertTier.TIER_1]
+        tier_2 = [c for c in classifications if c.tier is AlertTier.TIER_2]
+        tier_3 = [c for c in classifications if c.tier is AlertTier.TIER_3]
+
+        # Persist alert events.
+        for cls in classifications:
+            await self._repo.insert_alert_event(
+                event_name=cls.event_name,
+                tier=int(cls.tier),
+                routing_decision=str(cls.routing),
+                payload=cls.payload,
+            )
+
+        if budget_blocked:
+            ended_at = utc_now()
+            duration_ms = int((ended_at - started_at).total_seconds() * 1000)
+            digest = self._fallback_digest(
+                routine_name=routine_name,
+                tier_1_alerts=tier_1,
+                tier_2_alerts=tier_2,
+                tier_3_alerts=tier_3,
+            )
+            await self._repo.update_routine_run(
+                run_id=run_id,
+                status="skipped_budget",
+                ended_at=ended_at,
+                duration_ms=duration_ms,
+                digest_payload=digest,
+            )
+            return RoutineOutcome(
+                routine_name=routine_name,
+                scheduled_at=scheduled_at,
+                status="skipped_budget",
+                duration_ms=duration_ms,
+                digest_payload=digest,
+                tier_1_alerts=tier_1,
+                tier_2_alerts=tier_2,
+            )
+
+        digest = self._build_digest(
+            routine_name=routine_name,
+            scheduled_at=scheduled_at,
+            tier_1_alerts=tier_1,
+            tier_2_alerts=tier_2,
+            tier_3_alerts=tier_3,
+            include_synthesis=synthesize_digest,
+        )
+
+        ended_at = utc_now()
+        duration_ms = int((ended_at - started_at).total_seconds() * 1000)
+        await self._repo.update_routine_run(
+            run_id=run_id,
+            status="success",
+            ended_at=ended_at,
+            duration_ms=duration_ms,
+            digest_payload=digest,
+        )
+
+        logger.info(
+            "orchestration.routine.completed",
+            extra={
+                "routine_name": routine_name,
+                "duration_ms": duration_ms,
+                "tier_1_count": len(tier_1),
+                "tier_2_count": len(tier_2),
+            },
+        )
+
+        return RoutineOutcome(
+            routine_name=routine_name,
+            scheduled_at=scheduled_at,
+            status="success",
+            duration_ms=duration_ms,
+            digest_payload=digest,
+            tier_1_alerts=tier_1,
+            tier_2_alerts=tier_2,
+        )
+
+    # ------------------------------------------------------------------
+    # Digest builders
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_digest(
+        *,
+        routine_name: RoutineName,
+        scheduled_at: datetime,
+        tier_1_alerts: list[Classification],
+        tier_2_alerts: list[Classification],
+        tier_3_alerts: list[Classification],
+        include_synthesis: bool,
+    ) -> dict[str, object]:
+        """Compose the digest payload published on the bus.
+
+        Real LLM synthesis is wired via the deployment-foundation slice
+        (Anthropic SDK install + cost_meter wrap). MVP emits a
+        deterministic structured digest.
+        """
+        return {
+            "routine_name": routine_name,
+            "scheduled_at_iso": scheduled_at.isoformat(),
+            "title": _ROUTINE_TITLES[routine_name],
+            "alert_summary": {
+                "tier_1_count": len(tier_1_alerts),
+                "tier_2_count": len(tier_2_alerts),
+                "tier_3_count": len(tier_3_alerts),
+            },
+            "tier_1_events": [
+                {"event_name": c.event_name, "payload": c.payload} for c in tier_1_alerts
+            ],
+            "tier_2_events": [
+                {"event_name": c.event_name, "payload": c.payload} for c in tier_2_alerts
+            ],
+            "synthesis_present": include_synthesis,
+            "synthesis_text": (
+                _DETERMINISTIC_TEMPLATE[routine_name] if include_synthesis else None
+            ),
+        }
+
+    @staticmethod
+    def _fallback_digest(
+        *,
+        routine_name: RoutineName,
+        tier_1_alerts: list[Classification],
+        tier_2_alerts: list[Classification],
+        tier_3_alerts: list[Classification],
+    ) -> dict[str, object]:
+        return {
+            "routine_name": routine_name,
+            "title": _ROUTINE_TITLES[routine_name],
+            "fallback_reason": "monthly_llm_budget_blocked",
+            "alert_summary": {
+                "tier_1_count": len(tier_1_alerts),
+                "tier_2_count": len(tier_2_alerts),
+                "tier_3_count": len(tier_3_alerts),
+            },
+            "tier_1_events": [
+                {"event_name": c.event_name, "payload": c.payload} for c in tier_1_alerts
+            ],
+            "synthesis_present": False,
+        }
+
+
+# ----------------------------------------------------------------------
+# Routine-specific titles + deterministic templates
+# ----------------------------------------------------------------------
+
+
+_ROUTINE_TITLES: dict[str, str] = {
+    "premarket": "Pre-market briefing",
+    "midday": "Midday pulse",
+    "postmarket": "Post-market summary",
+    "weekly_review": "Weekly review",
+}
+
+_DETERMINISTIC_TEMPLATE: dict[str, str] = {
+    "premarket": (
+        "Pre-market briefing: review overnight news, earnings calendar, "
+        "and tier-1 alerts before the open."
+    ),
+    "midday": "Midday pulse: open positions + risk-engine state.",
+    "postmarket": "Post-market summary: P&L + watchlist refresh for tomorrow.",
+    "weekly_review": "Weekly review: equity curve + trade narrative + lessons + outlook.",
+}
+
+
+__all__ = [
+    "OrchestrationService",
+    "RoutineName",
+    "RoutineOutcome",
+    "RoutineWindow",
+]
