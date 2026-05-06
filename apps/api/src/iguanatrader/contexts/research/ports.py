@@ -66,6 +66,12 @@ class ResearchFactDraft:
     effective_to: datetime | None = None
     confidence: Decimal | None = None
     fact_metadata: dict[str, Any] | None = None
+    # Slice R2 (research-edgar-fred-adapters) — optional adapter-supplied
+    # natural primary key for cross-run idempotency. The repository persists
+    # it; the partial unique index in migration ``0008_research_dedupe_index``
+    # enforces ``(tenant_id, dedupe_key)`` uniqueness when set. Old drafts
+    # leave it ``None`` and are unaffected.
+    dedupe_key: str | None = None
     # Hybrid-payload dispatch fields. Adapters typically populate via
     # :meth:`with_payload` rather than touching these directly.
     raw_payload_inline: Any | None = None

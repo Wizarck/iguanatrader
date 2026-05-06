@@ -104,6 +104,24 @@ Until then:
 
 Live trading (`docker-compose.live.yml`) requires the operator to acknowledge risk via `--confirm-live --i-understand-the-risks` flag (per AGENTS.md §7 Override 1).
 
+## 4b. Tier-A research keys (slice R2)
+
+The four Tier-A native point-in-time research adapters require free API
+credentials. Each adapter fails fast at init via `ConfigError` if its
+env var is missing or malformed.
+
+| Adapter | Env var | Where to register | Notes |
+|---|---|---|---|
+| SEC EDGAR | `SEC_EDGAR_USER_AGENT` | No registration; format `<company> <email>` per [Fair Access policy](https://www.sec.gov/os/accessing-edgar-data) | Mandatory header; missing it returns HTML 403 not JSON. See gotcha #79. |
+| FRED | `FRED_API_KEY` | [research.stlouisfed.org/docs/api/api_key.html](https://research.stlouisfed.org/docs/api/api_key.html) | Free; 120 req/min. ALFRED vintage mode preserves revisions. |
+| BLS | `BLS_API_KEY` | [data.bls.gov/registrationEngine/](https://data.bls.gov/registrationEngine/) | Free registered tier (500 queries/day). Unregistered tier returns 200 + "REQUEST_NOT_PROCESSED" — see gotcha #80. |
+| BEA | `BEA_API_KEY` | [apps.bea.gov/API/signup/](https://apps.bea.gov/API/signup/) | Free; 100 req/min. Numeric values include thousands-separator commas — adapter strips them. See gotcha #81. |
+
+Add the four entries to your `.secrets/dev.env.enc` (encrypted with SOPS/age).
+Adapters are not invoked in v1 until O2's scheduler wires them — until then,
+absent env vars are non-blocking for `docker compose up` (the adapters are
+only instantiated by the scheduler that lands in O2).
+
 ## 5. What's next
 
 | Topic | Where |

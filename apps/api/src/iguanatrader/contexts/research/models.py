@@ -322,6 +322,12 @@ class ResearchFact(Base):
         JSON,
         nullable=True,
     )
+    # Slice R2 (research-edgar-fred-adapters) — optional adapter-supplied
+    # natural primary key for cross-run idempotency. Migration
+    # ``0008_research_dedupe_index`` adds the column + partial unique index
+    # on ``(tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL``. Old rows
+    # (R1) keep ``NULL`` and the partial-index predicate excludes them.
+    dedupe_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

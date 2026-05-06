@@ -848,6 +848,66 @@ The frontend's retry only fires when the browser's `EventSource` emits `error` (
 
 **Status**: by-design. Enforced by CI (`license-boundary-check.yml` `agpl-boundary` job, surface 1 + surface 3).
 
+## 78. Tier-A adapter rate-limit token buckets are class-level (single-process scope only)
+
+**Surfaced**: 2026-05-06 (slice R2 `research-edgar-fred-adapters`).
+
+**Symptom**: Two scheduler workers in the same process invoking `SECEdgarSource()` jointly stay under SEC's 10 req/s. But running two processes (e.g. uvicorn `--workers 2`) doubles the effective rate and risks a 403 ban from `data.sec.gov`.
+
+**Root cause**: The `TokenBucket` lives at `TierASourceAdapter._bucket` (class attribute, lazy-init via `_get_bucket()`). All instances of the same adapter class share one bucket within a Python process. There is no cross-process coordination — no Redis token store, no `multiprocessing.Manager`.
+
+**Workaround**: Run the research scheduler in a single process (default for v1; the APScheduler that O2 wires up is single-process). When/if v2 SaaS adds horizontal worker scale, lift the bucket to a Redis-backed `redis-rate-limiter` per gotcha #62's pattern.
+
+**Status**: by-design for v1 single-process scheduler.
+
+## 79. SEC EDGAR `User-Agent` is silently mandatory — missing it returns HTML 403, not JSON
+
+**Surfaced**: 2026-05-06 (slice R2).
+
+**Symptom**: `SECEdgarSource()` raises `ConfigError` at init if `SEC_EDGAR_USER_AGENT` env var is missing or doesn't contain a contact email. If the validation were skipped, the live adapter would receive HTML 403 from `data.sec.gov` and the JSON parser in `_request_json` would surface as `SourceUnavailableError("non-JSON response")`.
+
+**Root cause**: SEC's [Fair Access policy](https://www.sec.gov/os/accessing-edgar-data) requires every request to include a `User-Agent` header with company name + contact email. The format is informally documented; `SECEdgarSource` enforces a regex `^.+\s.+@.+\..+$`.
+
+**Workaround**: Set `SEC_EDGAR_USER_AGENT="iguanatrader-<env> <ops-email>@<domain>"` in the SOPS-encrypted env per environment. Documented in `apps/api/README.md` "Tier-A research keys".
+
+**Status**: by-design. Adapter fails fast at init; gotcha exists for the operator who turns the validation off in a fork.
+
+## 80. BLS unregistered tier signals "throttled" via JSON body, not HTTP status
+
+**Surfaced**: 2026-05-06 (slice R2).
+
+**Symptom**: Without `BLS_API_KEY`, calls to `api.bls.gov/publicAPI/v2/timeseries/data/` return HTTP 200 with body `{"status": "REQUEST_NOT_PROCESSED", "message": ["Threshold reached"], ...}`. A naive HTTP-status-only check would log success and persist zero rows silently.
+
+**Root cause**: BLS' free unregistered tier returns 200 OK regardless of whether the request was processed; the actual outcome lives in the JSON body's `status` field. `BLSSource` checks `status == "REQUEST_SUCCEEDED"` and raises `RateLimitedError` otherwise.
+
+**Workaround**: Always set `BLS_API_KEY` (registered tier, free, 500 queries/day). For local smoke tests sign up at `data.bls.gov/registrationEngine/` and store the key in `secrets/dev.env.enc`.
+
+**Status**: by-design. Adapter fails loudly; gotcha exists so log readers don't mistake `RateLimitedError` for a transient 429.
+
+## 81. BEA returns numeric strings with thousands-separator commas + "..." for missing values
+
+**Surfaced**: 2026-05-06 (slice R2).
+
+**Symptom**: A naïve `Decimal(row["DataValue"])` raises `InvalidOperation` for both `"23,456.7"` (commas) and `"..."` (BEA's missing-data sentinel). Adapter logs would surface the failure but the row would simply be dropped.
+
+**Root cause**: BEA's API formats numbers for display ("23,456.7" rather than "23456.7"). `BEASource._build_draft` strips commas before `Decimal(...)` parsing and treats `"..."` / empty values as `research.bea.skipped_missing`.
+
+**Workaround**: None needed in adapter — the parsing is correct. Documented here so future contributors don't refactor the `replace(",", "")` line away as "dead code".
+
+**Status**: by-design.
+
+## 82. Migration slot deviation — R2 lands as `0008`, not `0004`
+
+**Surfaced**: 2026-05-06 (slice R2).
+
+**Symptom**: `tasks.md` for `research-edgar-fred-adapters` calls for migration slot `0004`. By the time R2 was applied, slots `0004`-`0007` had been taken by the parallel Wave-3 slices (`0004_trading_tables`, `0005_risk_tables`, `0006_approval_tables`, `0007_observability_tables`). R2 ships as `0008_research_dedupe_index` with `down_revision="0007_observability_tables"`.
+
+**Root cause**: Wave 3 had multiple parallel slices touching different migration namespaces; the slice contract did not pre-allocate slots, so the order of merge → archive determines who claims each number. R4 `openbb-sidecar-container` did not need a migration; R2 did, and landed last.
+
+**Workaround**: Future cross-slice schema work should either (a) pre-reserve a migration slot in `docs/openspec-slice.md` per row, or (b) treat the slot as a free-run claim with explicit deviation documentation. R2 documented the choice in commit body + this gotcha.
+
+**Status**: process gotcha; resolved for R2.
+
 ## Format for new entries
 
 ```markdown

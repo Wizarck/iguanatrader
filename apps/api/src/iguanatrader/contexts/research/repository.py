@@ -226,6 +226,7 @@ class ResearchRepository(BaseRepository):
             raw_payload_size_bytes=draft.raw_payload_size_bytes,
             confidence=draft.confidence,
             fact_metadata=draft.fact_metadata,
+            dedupe_key=draft.dedupe_key,
         )
         self._session.add(instance)
         try:
