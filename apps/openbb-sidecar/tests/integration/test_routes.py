@@ -20,9 +20,7 @@ async def test_equity_fundamentals_route_happy_path() -> None:
         "dividend_yield": 0.005,
         "as_of_date": "2026-04-30",
     }
-    with patch(
-        "openbb_sidecar.routes.equity._facade.equity_fundamentals", return_value=canned
-    ):
+    with patch("openbb_sidecar.routes.equity._facade.equity_fundamentals", return_value=canned):
         app = create_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             response = await c.get("/v1/equity/fundamentals/AAPL")
