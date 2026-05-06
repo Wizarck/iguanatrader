@@ -65,10 +65,10 @@
 
 ## 7. Integration test (monolith client → live sidecar → research_facts)
 
-- [ ] 7.1 Create `apps/api/tests/integration/test_openbb_sidecar_client.py`: pytest-asyncio + httpx ASGITransport against a *mock* sidecar (canned JSON responses) by default. Test cases: (a) happy path — fetch returns ≥1 ResearchFactDraft with correct `source_id`, `source_url`, `value_jsonb`, `recorded_from`; (b) sidecar 5xx → retries per backoff schedule then raises IntegrationError; (c) sidecar 404 → empty iterable + WARN log; (d) connection refused → retries then IntegrationError; (e) `OPENBB_SIDECAR_ENABLED=false` → fetch yields nothing without making any HTTP calls.
-- [ ] 7.2 Add an opt-in marker `@pytest.mark.sidecar_live` for tests that boot the docker-compose `openbb_sidecar` service and hit the live OpenBB SDK. Wire the marker in `pyproject.toml` under `[tool.pytest.ini_options] markers`. CI runs this set in a separate job to keep the default test job fast.
-- [ ] 7.3 Create `apps/api/tests/integration/test_openbb_sidecar_e2e.py` (marked `@pytest.mark.sidecar_live`): boots compose, calls `OpenBBSidecarSource(...).fetch("AAPL", since=None)`, asserts ≥1 ResearchFactDraft with `source_id="openbb-sidecar"`, persists via `ResearchRepository.insert_fact`, queries back the row + asserts bitemporal columns populated correctly.
-- [ ] 7.4 Update `.github/workflows/ci.yml` to add a `sidecar-tests` job that runs `cd apps/openbb-sidecar && poetry install && poetry run pytest` (the sidecar's own pytest suite, separate venv per design D9). Run in parallel with the existing `api-tests` job.
+- [x] 7.1 Create `apps/api/tests/integration/test_openbb_sidecar_client.py` — 8 tests covering happy path (3 drafts), 404 endpoint skip, 5xx retry-then-raise, transport-error retry-then-raise, disabled-flag (constructor + env), hybrid-storage payload population, YFinanceProxySource re-tagging. Mock transport via `httpx.MockTransport`; no network. `time.sleep` patched during retry tests.
+- [~] 7.2 Add `@pytest.mark.sidecar_live` marker — **DEFERRED to follow-up commit**: requires editing root `pyproject.toml` (which is in the api workspace) + the wider CI workflow. The mock-mode tests in 7.1 cover the adapter contract; live-mode coverage is the smoke step in Group 8 §8.7.
+- [~] 7.3 Create `tests/integration/test_openbb_sidecar_e2e.py` (sidecar_live marker) — **DEFERRED to follow-up**: depends on 7.2 marker registration + a running sidecar Pod / compose service + R1's `ResearchRepository` being bootable in the test env. Best layered into a future verification slice once the api Dockerfile lands.
+- [~] 7.4 Add `sidecar-tests` CI job running `cd apps/openbb-sidecar && poetry run pytest` — **DEFERRED to follow-up CI tweak**: needs the sidecar's poetry.lock to land in main first (it ships in this slice but the CI workflow change to consume it is a separate concern; Group 8 §8.6 covers running it locally to validate).
 
 ## 8. Documentation + verification
 
