@@ -20,11 +20,11 @@
 
 ## 3. Sidecar routes /v1/equity/* + /v1/economy/*
 
-- [ ] 3.1 Create `apps/openbb-sidecar/src/openbb_sidecar/routes/equity.py` exporting `router: APIRouter` with prefix `/v1/equity`. Endpoints: `GET /fundamentals/{symbol}` → calls `OpenBBFacade().equity_fundamentals(symbol)`, returns 200 with at least `{symbol, pe_ratio, market_cap, dividend_yield, as_of_date}`; `GET /ratings/{symbol}` → returns `{symbol, consensus, target_price, analyst_count, as_of_date}`; `GET /esg/{symbol}` → returns `{symbol, esg_score, environmental_score, social_score, governance_score, as_of_date}`. On unknown symbol or upstream OpenBB error: 404 / 502 with structured detail. Wrap every facade call in try/except; let only HTTPException propagate.
-- [ ] 3.2 Create `apps/openbb-sidecar/src/openbb_sidecar/routes/economy.py` exporting `router: APIRouter` with prefix `/v1/economy`. Endpoint: `GET /macro/{indicator}` → calls `OpenBBFacade().economy_macro(indicator)`, returns 200 with `{indicator, series, unit, frequency}`. 404 on unknown indicator; 502 on upstream OpenBB error.
-- [ ] 3.3 Create `apps/openbb-sidecar/tests/unit/test_openbb_facade.py`: mocks the lazy openbb import; asserts each facade method maps inputs → expected output shapes; asserts errors propagate as expected exceptions (rather than crashing the process).
-- [ ] 3.4 Create `apps/openbb-sidecar/tests/integration/test_routes.py`: ASGITransport client tests for each endpoint with the facade methods mocked. Asserts route → facade → response shape end-to-end without hitting the real OpenBB SDK (CI-fast, no network).
-- [ ] 3.5 Smoke test against the live sidecar (manual or scripted): `docker compose up -d openbb_sidecar` (after section 4 lands), `curl http://localhost:8765/v1/equity/fundamentals/AAPL` returns 200 with sane numeric fields. Capture sample response into `apps/openbb-sidecar/tests/fixtures/aapl_fundamentals.json` for future contract tests.
+- [x] 3.1 Create `apps/openbb-sidecar/src/openbb_sidecar/routes/equity.py` exporting `router: APIRouter` with prefix `/v1/equity`. Endpoints: fundamentals/ratings/esg with route → facade → HTTP error mapping (404 no-data, 502 upstream).
+- [x] 3.2 Create `apps/openbb-sidecar/src/openbb_sidecar/routes/economy.py` exporting `router: APIRouter` with prefix `/v1/economy`. Macro endpoint with same 404/502 mapping.
+- [x] 3.3 Create `apps/openbb-sidecar/tests/unit/test_openbb_facade.py`: 7 tests mocking the lazy openbb import via injecting a fake `openbb` module into `sys.modules`. Covers is_ready True/False, all 4 data methods (happy path + no-data error path).
+- [x] 3.4 Create `apps/openbb-sidecar/tests/integration/test_routes.py`: 8 ASGITransport tests covering each endpoint with the facade methods mocked. Happy path + 404 + 502 for fundamentals; happy path each for ratings/esg/macro; 404 on unknown indicator. No network.
+- [~] 3.5 Smoke test against the live sidecar (manual or scripted) — **DEFERRED to Group 8 verification**: requires `docker compose up -d openbb_sidecar` from Group 4 + a live OpenBB SDK runtime which depends on the dev environment. Live capture of `aapl_fundamentals.json` happens in Group 8 §8.7 (`pytest -m sidecar_live`).
 
 ## 4. docker-compose integration
 
