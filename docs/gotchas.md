@@ -596,6 +596,48 @@ from iguanatrader.migrations._research_trigger_helpers import SQLITE_TRIGGER_SQL
 
 ---
 
+## 44. RiskEngine purity is enforced by `test_engine_purity.py` — do NOT import datetime/time inside engine.py
+
+**Surfaced**: 2026-05-05 (slice K1, group 7).
+
+**Symptom**: Adding `from datetime import datetime` (or any I/O-adjacent import) to `apps/api/src/iguanatrader/contexts/risk/engine.py` makes `pytest tests/unit/contexts/risk/test_engine_purity.py` fail the build with a printout listing the forbidden line. The Hypothesis property test in `tests/property/test_risk_caps_invariant.py` becomes flaky on engines that read the clock or the DB because the test cannot control those side-effects.
+
+**Root cause**: Slice K1 design D1 mandates `RiskEngine.evaluate()` as a pure function — `(Proposal, State, Caps) → Decision`, no I/O. The 200-example Hypothesis run is tractable only because there's no setup/teardown, no clock skew, no DB-state pollution. `test_engine_purity.py` ASTs the module and refuses any `import datetime`, `import time`, `import sqlalchemy`, `import requests`, `import httpx`, `import iguanatrader.persistence`, `import iguanatrader.shared.time`; it also refuses calls to `.now()`, `.utcnow()`, `.commit()`, `.execute()`, `.add()`, `.delete()`.
+
+**Workaround**: Push all I/O into `apps/api/src/iguanatrader/contexts/risk/service.py` (`RiskService`). The engine receives a snapshotted `RiskState` by value; the service is responsible for loading state, persisting evaluations, publishing events, and reading the clock. The same hygiene applies to every module under `protections/` (the AST inspector also walks them).
+
+**Status**: workaround in place 2026-05-05; the AST gate is the documented contract for any future engine refactor.
+
+---
+
+## 45. Kill-switch cache row + event log MUST be written in the same transaction
+
+**Surfaced**: 2026-05-05 (slice K1, group 4).
+
+**Symptom**: A partial commit between `kill_switch_events` INSERT and `kill_switch_state` UPSERT leaves the cache stale. NFR-R5's hot-path read (`SELECT is_active FROM kill_switch_state WHERE tenant_id=...`) returns a value that contradicts the latest event row.
+
+**Root cause**: Slice K1 design D4 makes the event log authoritative + the cache a denormalised fold. Without same-transaction writes, the recovery routine has to detect drift on every boot.
+
+**Workaround**: `RiskService.activate_kill_switch` and `deactivate_kill_switch` call `_repo.append_kill_switch_event` THEN `_repo.update_kill_switch_cache` THEN the caller's `session.commit()` happens once after both writes. The repository methods only `flush` (not commit) — commit is the caller's responsibility so multiple service calls can compose into a single transaction.
+
+**Status**: contract documented; NOT enforced statically — a future refactor that drops the same-transaction discipline can pass tests if the test session commits per-call. Reviewers should flag any change to the activate/deactivate sequencing.
+
+---
+
+## 46. Override `reason_text` 20-char floor is satisfiable with `"a" * 20`
+
+**Surfaced**: 2026-05-05 (slice K1, group 4).
+
+**Symptom**: An operator can game the audit field with junk like `"aaaaaaaaaaaaaaaaaaaa"` (20 chars, no semantic content) — the service-layer + DB CHECK both pass.
+
+**Root cause**: NFR-S5 requires ≥20 chars; it does NOT mandate semantic quality. Adding LLM-judged "is this a real reason?" check is out of scope for K1 (no LLM call sites in the risk engine).
+
+**Workaround**: Weekly review humans flag junk reasons during retrospectives. A future slice may add an LLM-judged reason quality check via the observability cost-meter (O1) — that work is gated by the cost-meter slice landing first.
+
+**Status**: known limitation; mitigated socially via weekly review.
+
+---
+
 ## Format for new entries
 
 ```markdown

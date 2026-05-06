@@ -213,6 +213,56 @@ class NotImplementedFeatureError(IguanaError):
     default_status: ClassVar[int] = 501
 
 
+# Added 2026-05-05 by slice K1 (risk-engine-protections) per tasks.md 1.4.
+# These three subclasses extend the project-wide ``IguanaError`` hierarchy
+# so the slice-5 global handler renders them as RFC 7807 ``application/
+# problem+json`` automatically — no per-route try/except wiring needed.
+class RiskCapBreachedError(IguanaError):
+    """Risk evaluation produced a non-allow Decision (HTTP 400).
+
+    Raised by service-layer / route helpers when a synchronous caller
+    asks "did this proposal pass?" and the engine returned reject /
+    clip. The ``detail`` carries the breached cap name + observed
+    utilisation. Auto-activation of the kill-switch (per design D6)
+    lives in ``RiskService``; this error class is only the wire shape.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:risk-cap-breached"
+    default_title: ClassVar[str] = "Risk Cap Breached"
+    default_status: ClassVar[int] = 400
+
+
+class KillSwitchActiveError(IguanaError):
+    """Caller attempted a trade-evaluation while kill-switch is active (HTTP 409).
+
+    Raised by ``RiskService.evaluate_proposal`` BEFORE the engine is
+    called, by reading the cached ``kill_switch_state.is_active`` flag.
+    The caller (TradingService / CLI / channel handler) surfaces this
+    as a uniform 409 + Problem body with the activation reason in
+    ``detail`` (when the operator supplied one).
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:risk-kill-switch-active"
+    default_title: ClassVar[str] = "Kill Switch Active"
+    default_status: ClassVar[int] = 409
+
+
+class OverrideAuditMissingError(ValidationError):
+    """Override audit fields missing or below NFR-S5 floor (HTTP 400).
+
+    Subclasses :class:`ValidationError` (per design D5 contract — the
+    20-char floor + mandatory recorded_by + mandatory confirmation_chain
+    are validation invariants) so existing 400-handlers continue to work.
+    The ``type_uri`` differentiates this from a generic field validation
+    failure so dashboards can surface a specific "audit fields missing"
+    UX hint without parsing ``detail``.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:risk-override-audit-missing"
+    default_title: ClassVar[str] = "Override Audit Missing"
+    default_status: ClassVar[int] = 400
+
+
 __all__ = [
     "AuthError",
     "BootstrapNotReadyError",
@@ -222,8 +272,11 @@ __all__ = [
     "IguanaError",
     "IntegrationError",
     "InternalError",
+    "KillSwitchActiveError",
     "NotFoundError",
     "NotImplementedFeatureError",
+    "OverrideAuditMissingError",
     "RateLimitError",
+    "RiskCapBreachedError",
     "ValidationError",
 ]

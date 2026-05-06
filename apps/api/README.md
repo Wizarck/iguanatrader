@@ -274,10 +274,54 @@ The L1 ORM listener + L2 BEFORE UPDATE/DELETE triggers enforce append-only on `r
 - `apps/api/src/iguanatrader/api/routes/research.py` — four endpoints, each currently raising 501 until R5 ships.
 - `apps/api/src/iguanatrader/migrations/versions/0003_research_tables.py` — schema migration.
 
+## Risk context (slice K1) — operator surface
+
+Slice K1 (`risk-engine-protections`) plants the bounded context under
+`src/iguanatrader/contexts/risk/`. Public API:
+
+- `RiskService.evaluate_proposal(proposal)` — kill-switch gate first, then pure-functional engine call, then persist + emit.
+- `RiskService.activate_kill_switch(...)` / `deactivate_kill_switch(...)` — lifecycle.
+- `RiskService.record_override(...)` — audit-quality persistence (≥20 char reason, FK to `users.id`, JSONB confirmation chain).
+- `iguanatrader.contexts.risk.engine.evaluate(...)` — pure function exported for property tests / future direct callers.
+
+CLI ops (auto-discovered by slice-5 loader):
+
+```sh
+# Kill-switch
+poetry run iguanatrader ops halt --reason "manual freeze: market dislocation observed"
+poetry run iguanatrader ops resume --reason "market normalised; resuming live trading"
+
+# Override audit (single-actor CLI flow)
+poetry run iguanatrader ops override \
+    --proposal-id <uuid> --risk-evaluation-id <uuid> \
+    --reason "earnings beat justifies one-off bypass for AAPL"
+```
+
+The `--reason` argument is mandatory and ≥20 chars; Typer rejects shorter values BEFORE the service is called. Set `IGUANATRADER_OPS_TENANT_ID` and `IGUANATRADER_OPS_ACTOR_USER_ID` env vars on the CLI host so single-tenant operators don't have to repeat them on every invocation.
+
+Cap defaults (env-overridable per-deployment):
+
+| Cap | Default | Env var |
+|---|---|---|
+| Per-trade % of capital | `0.02` (2%) | `IGUANATRADER_RISK_PER_TRADE_PCT` |
+| Daily loss % | `0.05` (5%) | `IGUANATRADER_RISK_DAILY_LOSS_PCT` |
+| Weekly loss % | `0.15` (15%) | `IGUANATRADER_RISK_WEEKLY_LOSS_PCT` |
+| Max open positions | `10` | `IGUANATRADER_RISK_MAX_OPEN_POSITIONS` |
+| Max drawdown % | `0.15` (15%) | `IGUANATRADER_RISK_MAX_DRAWDOWN_PCT` |
+
+Per-tenant cap overrides (via `risk_caps` config row + dashboard UI) are out of scope for K1; they land in a future slice.
+
+### CI gate — Hypothesis property test
+
+`apps/api/tests/property/test_risk_caps_invariant.py` is the **CI-blocking** gate (NFR-R6). It generates 200 arbitrary `(proposal, state, caps)` triples and asserts that every `outcome="allow"` decision satisfies every cap. Skipping it (e.g. `@pytest.mark.skip`) is a hard review fail — the marker `@pytest.mark.ci_blocking` flags the test as load-bearing.
+
+Engine purity is verified by `tests/unit/contexts/risk/test_engine_purity.py` — an AST inspector that fails the build if `engine.py` (or any protection module) imports `datetime`, `time`, `sqlalchemy`, `requests`, `httpx`, or calls `.now()` / `.utcnow()` / `.commit()` / `.execute()` / `.add()` / `.delete()`. See gotcha #44.
+
 ## See also
 
 - [`docs/architecture-decisions.md`](../../docs/architecture-decisions.md) — system-wide ADRs, including auth (D-Auth-1, D-Auth-2) + ADR-014 bitemporal research facts.
-- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#30 — slice 4 + slice 5 footguns; #40–#42 — slice R1 footguns.
+- [`docs/gotchas.md`](../../docs/gotchas.md) #24–#43 — slices 4-5 + R1 + T1 + K1 footguns.
+- [`docs/runbooks/risk-kill-switch.md`](../../docs/runbooks/risk-kill-switch.md) — operator playbook for kill-switch activation + recovery.
 - [`docs/runbooks/auth-secret-rotation.md`](../../docs/runbooks/auth-secret-rotation.md) — JWT secret rotation procedure.
 - [`docs/runbooks/api-foundation-typegen.md`](../../docs/runbooks/api-foundation-typegen.md) — recovery playbook when the openapi-types CI workflow fails.
 - [`openspec/changes/auth-jwt-cookie/`](../../openspec/changes/auth-jwt-cookie/) — slice 4 design + spec contract.
