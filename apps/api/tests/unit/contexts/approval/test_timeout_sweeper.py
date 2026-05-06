@@ -7,7 +7,7 @@ Per slice P1 task 6.10 + spec ``approval`` Requirement 5 scenario
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture(autouse=True)
-def _listeners() -> AsyncIterator[None]:
+def _listeners() -> Iterator[None]:
     register_global_listeners()
     try:
         yield

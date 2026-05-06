@@ -13,9 +13,10 @@ Per slice P1 task 6.3.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from uuid import uuid4
+from typing import cast
+from uuid import UUID, uuid4
 
 import pytest
 from iguanatrader.contexts.approval.bootstrap import get_message_bus
@@ -52,7 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture(autouse=True)
-def _listeners() -> AsyncIterator[None]:
+def _listeners() -> Iterator[None]:
     register_global_listeners()
     try:
         yield
@@ -119,7 +120,7 @@ async def test_happy_path_proposal_to_approve_emits_one_event(
     sf: async_sessionmaker[AsyncSession],
     seed_tenant: dict[str, object],
 ) -> None:
-    tid = seed_tenant["tenant_id"]
+    tid = cast(UUID, seed_tenant["tenant_id"])
     proposal_id = uuid4()
     bus = get_message_bus()
     received: list[ApprovalProposalApproved] = []
@@ -149,14 +150,14 @@ async def test_happy_path_proposal_to_approve_emits_one_event(
             repository=repo,
             service=service,
             message_bus=bus,
-            tenant_id=tid,  # type: ignore[arg-type]
+            tenant_id=tid,
         )
         wa_channel = HermesWhatsAppChannel(
             transport=wa_transport,
             repository=repo,
             service=service,
             message_bus=bus,
-            tenant_id=tid,  # type: ignore[arg-type]
+            tenant_id=tid,
         )
         await asyncio.gather(
             tg_channel.deliver_request(request, recipient="user-1"),
@@ -172,7 +173,7 @@ async def test_happy_path_proposal_to_approve_emits_one_event(
                 raw_args="",
                 sender_external_id="user-1",
                 channel="telegram",
-                tenant_id=tid,  # type: ignore[arg-type]
+                tenant_id=tid,
                 request_id=request.id,
             )
         )

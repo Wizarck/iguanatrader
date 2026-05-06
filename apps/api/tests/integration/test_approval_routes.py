@@ -8,7 +8,7 @@ channel or a different channel) raises
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -47,7 +47,7 @@ def _jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _listeners() -> AsyncIterator[None]:
+def _listeners() -> Iterator[None]:
     register_global_listeners()
     try:
         yield

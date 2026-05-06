@@ -53,7 +53,10 @@ async def test_telegram_reconnect_walks_canonical_backoff(
         _capture_sleep,
     )
     await channel.reconnect_loop()
-    assert channel.state is ConnectionState.CONNECTED
+    # mypy narrows ``state`` to DISCONNECTED from the prior assertion;
+    # reconnect_loop() mutates it at runtime so the comparison-overlap
+    # warning is a known-false-positive here.
+    assert channel.state is ConnectionState.CONNECTED  # type: ignore[comparison-overlap]
     # 3 failures → 3 sleeps. Canonical schedule [3, 6, 12] ± 20%.
     assert len(sleeps) == 3
     bases = [3.0, 6.0, 12.0]
