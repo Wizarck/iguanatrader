@@ -114,7 +114,7 @@ async def test_post_risk_override_201_persists_row(
     from sqlalchemy import text
 
     eval_id = uuid4()
-    factory = schema_session_factory  # type: ignore[assignment]
+    factory = schema_session_factory
     async with factory() as s:  # type: ignore[operator]
         await s.execute(
             text(

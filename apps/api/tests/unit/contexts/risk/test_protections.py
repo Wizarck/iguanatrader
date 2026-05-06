@@ -225,14 +225,14 @@ def test_max_drawdown_reject_above_cap() -> None:
     ],
 )
 def test_engine_short_circuits_on_first_breach(
-    state_kwargs: dict[str, object],
+    state_kwargs: dict[str, str | int],
     expected: str,
 ) -> None:
     """Engine returns the first non-allow Decision (per design D2)."""
     from iguanatrader.contexts.risk import engine
 
     caps = RiskCaps()
-    state = _make_state(**state_kwargs)
+    state = _make_state(**state_kwargs)  # type: ignore[arg-type]
     decision = engine.evaluate(_make_proposal("1000"), state, caps)
     assert decision.outcome == "reject"
     assert decision.cap_type_breached == expected
