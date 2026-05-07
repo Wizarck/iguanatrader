@@ -1,4 +1,4 @@
-# mypy: disable-error-code="no-any-unimported"
+# mypy: disable-error-code="no-any-unimported,no-untyped-call,attr-defined"
 """Production ``IBClient`` adapter wrapping the ``ib_async`` SDK.
 
 Resolves the deferred-install carry-forward from slice T2:
