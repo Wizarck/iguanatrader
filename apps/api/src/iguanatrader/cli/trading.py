@@ -53,9 +53,7 @@ def _parse_watchlist(raw: str | None) -> list[str]:
 
 @app.command("run")
 def run(
-    mode: str = typer.Option(
-        ..., "--mode", help=f"One of: {', '.join(_VALID_MODES)}."
-    ),
+    mode: str = typer.Option(..., "--mode", help=f"One of: {', '.join(_VALID_MODES)}."),
     tenant: str | None = typer.Option(
         None,
         "--tenant",

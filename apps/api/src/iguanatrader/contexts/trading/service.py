@@ -534,9 +534,7 @@ class TradingService:
         is_terminal = bool(Decimal(str(total_filled)) >= Decimal(str(order.quantity)))
         if is_terminal:
             closed_at = utc_now()
-            await trade_repo.update_state(
-                order.trade_id, state="closed", closed_at=closed_at
-            )
+            await trade_repo.update_state(order.trade_id, state="closed", closed_at=closed_at)
         else:
             await trade_repo.update_state(order.trade_id, state="partial")
 
