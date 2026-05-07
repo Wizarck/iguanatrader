@@ -401,5 +401,3 @@ async def test_register_subscriptions_wires_all_four_handlers(
     assert reasons == {"user_declined", "approval_timeout"}
 
     await bus.aclose()
-
-

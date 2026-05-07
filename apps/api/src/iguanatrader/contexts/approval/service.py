@@ -333,9 +333,7 @@ class ApprovalService:
             timeout_seconds=timeout_seconds,
         )
 
-    async def _bridge_to_trading_approved_handler(
-        self, event: ApprovalProposalApproved
-    ) -> None:
+    async def _bridge_to_trading_approved_handler(self, event: ApprovalProposalApproved) -> None:
         """Outbound bridge: ApprovalProposalApproved → trading.ProposalApproved.
 
         Tenant id is resolved from :data:`tenant_id_var` (slice 2 D2);
@@ -363,9 +361,7 @@ class ApprovalService:
             metadata={
                 "decision_id": str(event.decision_id),
                 "decided_at": (
-                    event.decided_at.isoformat()
-                    if event.decided_at is not None
-                    else None
+                    event.decided_at.isoformat() if event.decided_at is not None else None
                 ),
                 "decided_via_channel": event.decided_via_channel,
             },
@@ -378,9 +374,7 @@ class ApprovalService:
             decided_via_channel=event.decided_via_channel,
         )
 
-    async def _bridge_to_trading_rejected_handler(
-        self, event: ApprovalProposalRejected
-    ) -> None:
+    async def _bridge_to_trading_rejected_handler(self, event: ApprovalProposalRejected) -> None:
         """Outbound bridge: ApprovalProposalRejected → trading.ProposalRejected."""
         from iguanatrader.contexts.trading.events import ProposalRejected
         from iguanatrader.shared.contextvars import tenant_id_var
@@ -401,9 +395,7 @@ class ApprovalService:
             metadata={
                 "decision_id": str(event.decision_id),
                 "decided_at": (
-                    event.decided_at.isoformat()
-                    if event.decided_at is not None
-                    else None
+                    event.decided_at.isoformat() if event.decided_at is not None else None
                 ),
                 "decided_via_channel": event.decided_via_channel,
             },
@@ -416,9 +408,7 @@ class ApprovalService:
             reason=translated.reason,
         )
 
-    async def _bridge_to_trading_timeout_handler(
-        self, event: ApprovalProposalTimedOut
-    ) -> None:
+    async def _bridge_to_trading_timeout_handler(self, event: ApprovalProposalTimedOut) -> None:
         """Outbound bridge: ApprovalProposalTimedOut → trading.ProposalRejected.
 
         Collapses timeout to ``ProposalRejected(reason="approval_timeout")``
@@ -446,9 +436,7 @@ class ApprovalService:
             metadata={
                 "request_id": str(event.request_id),
                 "expired_at": (
-                    event.expired_at.isoformat()
-                    if event.expired_at is not None
-                    else None
+                    event.expired_at.isoformat() if event.expired_at is not None else None
                 ),
             },
         )
