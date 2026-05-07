@@ -14,7 +14,6 @@ Verifies that:
 from __future__ import annotations
 
 import pytest
-
 from iguanatrader.config.secrets import MissingSecretError, SecretEnv
 
 
@@ -56,9 +55,7 @@ def test_missing_required_raises_missing_secret(
     assert missing_var in str(exc_info.value)
 
 
-def test_blank_value_treated_as_missing(
-    env: SecretEnv, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_blank_value_treated_as_missing(env: SecretEnv, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
     with pytest.raises(MissingSecretError):
         _ = env.anthropic_api_key

@@ -201,6 +201,23 @@ exclude = [
     "^apps/openbb-sidecar/",
 ]
 
+# Slice deployment-foundation (Wave 4) — production SDKs ship without
+# type stubs (PEP 561 py.typed marker). Each is wrapped in a thin
+# adapter at apps/api/src/iguanatrader/contexts/**/, so the API surface
+# remains fully typed; the SDKs themselves are treated as untyped
+# imports inside their adapter modules only.
+[[tool.mypy.overrides]]
+module = [
+    "anthropic.*",
+    "ib_async.*",
+    "apscheduler.*",
+    "playwright.*",
+    "camoufox.*",
+    "reportlab.*",
+]
+ignore_missing_imports = true
+disallow_any_unimported = false
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 asyncio_mode = "auto"

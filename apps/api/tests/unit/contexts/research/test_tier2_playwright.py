@@ -37,9 +37,7 @@ def fake_playwright_module(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 @pytest.fixture
-def fresh_holder(
-    monkeypatch: pytest.MonkeyPatch, fake_playwright_module: dict[str, Any]
-) -> Any:
+def fresh_holder(monkeypatch: pytest.MonkeyPatch, fake_playwright_module: dict[str, Any]) -> Any:
     """Reset the module-singleton browser holder for each test."""
     from iguanatrader.contexts.research.scraping import tier2_playwright
 
@@ -81,9 +79,7 @@ async def test_fetch_returns_scrape_result_on_200(
         lambda url, ua: True,
     )
 
-    result = await tier2_playwright.fetch_tier2_playwright(
-        "https://example.com", user_agents
-    )
+    result = await tier2_playwright.fetch_tier2_playwright("https://example.com", user_agents)
 
     assert result.body == "<html>ok</html>"
     assert result.status_code == 200
@@ -115,10 +111,8 @@ async def test_fetch_raises_blocked_on_403(
         lambda url, ua: True,
     )
 
-    with pytest.raises(ScrapeBlockedError, match="status=403"):
-        await tier2_playwright.fetch_tier2_playwright(
-            "https://blocked.example", user_agents
-        )
+    with pytest.raises(ScrapeBlockedError, match=r"status=403"):
+        await tier2_playwright.fetch_tier2_playwright("https://blocked.example", user_agents)
 
 
 @pytest.mark.asyncio
@@ -133,7 +127,5 @@ async def test_fetch_respects_robots_txt(
         lambda url, ua: False,
     )
 
-    with pytest.raises(ScrapeBlockedError, match="robots.txt forbids"):
-        await tier2_playwright.fetch_tier2_playwright(
-            "https://disallowed.example", user_agents
-        )
+    with pytest.raises(ScrapeBlockedError, match=r"robots\.txt forbids"):
+        await tier2_playwright.fetch_tier2_playwright("https://disallowed.example", user_agents)

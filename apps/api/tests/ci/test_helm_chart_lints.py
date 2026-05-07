@@ -41,9 +41,9 @@ def test_chart_lint_exits_clean(helm_bin: str) -> None:
     )
 
     output = (result.stdout or "") + (result.stderr or "")
-    assert result.returncode == 0, (
-        f"`helm lint` failed (exit {result.returncode}). Output:\n{output}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"`helm lint` failed (exit {result.returncode}). Output:\n{output}"
 
 
 def test_chart_template_renders_valid_yaml(helm_bin: str) -> None:
@@ -63,9 +63,9 @@ def test_chart_template_renders_valid_yaml(helm_bin: str) -> None:
         text=True,
         check=False,
     )
-    assert result.returncode == 0, (
-        f"`helm template` failed (exit {result.returncode}):\n{result.stderr}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"`helm template` failed (exit {result.returncode}):\n{result.stderr}"
 
     docs = list(yaml.safe_load_all(result.stdout))
     assert len(docs) >= 5, f"Expected ≥5 K8s resources, got {len(docs)}"

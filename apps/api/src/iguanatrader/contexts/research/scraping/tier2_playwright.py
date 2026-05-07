@@ -80,10 +80,8 @@ class _PlaywrightBrowserHolder:
                         page.goto(url, wait_until="domcontentloaded"),
                         timeout=_TOTAL_TIMEOUT_S,
                     )
-                except (TimeoutError, asyncio.TimeoutError) as exc:
-                    raise ScrapeBlockedError(
-                        detail=f"tier-2 navigation timeout ({url})"
-                    ) from exc
+                except TimeoutError as exc:
+                    raise ScrapeBlockedError(detail=f"tier-2 navigation timeout ({url})") from exc
                 if response is None:
                     raise ScrapeBlockedError(detail=f"tier-2 no response from {url}")
                 status_code = response.status
@@ -141,4 +139,24 @@ async def shutdown_playwright() -> None:
     await _HOLDER.close()
 
 
-__all__ = ["fetch_tier2_playwright", "shutdown_playwright"]
+def bootstrap_production_tier2() -> None:
+    """Rebind the ladder's Tier-2 entry to the Playwright implementation.
+
+    Called from the FastAPI lifespan startup hook iff the env supports
+    a real browser launch (paper / live / production). Idempotent — a
+    second call is a no-op because the dict entry is already swapped.
+
+    The fake stub at :func:`fetch_tier2_stub` remains importable; tests
+    construct :class:`ScrapeLadder` with explicit `tier_fns=...` so this
+    bootstrap does not affect test isolation.
+    """
+    from iguanatrader.contexts.research.scraping import ladder
+
+    ladder._DEFAULT_TIER_FNS[ladder.ScrapeTier.TIER_2_PLAYWRIGHT] = fetch_tier2_playwright
+
+
+__all__ = [
+    "bootstrap_production_tier2",
+    "fetch_tier2_playwright",
+    "shutdown_playwright",
+]

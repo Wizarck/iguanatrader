@@ -1,3 +1,4 @@
+# mypy: disable-error-code="no-any-unimported"
 """Production :class:`SchedulerProtocol` adapter wrapping APScheduler.
 
 Resolves the deferred-install carry-forward from slice O2: the

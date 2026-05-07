@@ -1,3 +1,4 @@
+# mypy: disable-error-code="no-any-unimported"
 """Weekly review PDF generator (FR44; slice deployment-foundation §3.E).
 
 Consumes the ``digest_payload`` dict from

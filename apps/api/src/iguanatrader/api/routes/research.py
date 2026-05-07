@@ -19,6 +19,7 @@ the request transaction; ``session_var.set(db)`` binds the session for
 
 from __future__ import annotations
 
+import os
 from uuid import UUID
 
 import structlog
@@ -50,6 +51,7 @@ from iguanatrader.contexts.research.synthesis import (
     FakeLLMClient,
     Synthesizer,
 )
+from iguanatrader.contexts.research.synthesis.llm_client import LLMClient
 from iguanatrader.persistence import User
 from iguanatrader.shared.contextvars import session_var
 
@@ -61,12 +63,32 @@ router = APIRouter(prefix="/research", tags=["research"])
 _DEFAULT_METHODOLOGY = "three_pillar"
 
 
+def _build_llm_client() -> LLMClient:
+    """Pick the production or fake LLM client based on env (slice deployment-foundation §3.A.2).
+
+    Production envs (paper/live/production) AND a populated
+    ``ANTHROPIC_API_KEY`` env var → :class:`AnthropicLLMClient`.
+    Otherwise (dev/test or any unset key) → :class:`FakeLLMClient`,
+    preserving the slice-R5 default. The env-gated branch keeps unit
+    tests hermetic without runtime state — they stay on the fake.
+    """
+    env = (os.environ.get("IGUANATRADER_ENV") or "").strip().lower()
+    if env in {"paper", "live", "production"} and os.environ.get("ANTHROPIC_API_KEY"):
+        from iguanatrader.contexts.research.synthesis.anthropic_client import (
+            build_anthropic_llm_client_from_env,
+        )
+
+        return build_anthropic_llm_client_from_env()
+    return FakeLLMClient()
+
+
 def _build_service(repo: ResearchRepository) -> BriefService:
     """Compose the brief service with default dependencies.
 
-    R5 ships the :class:`FakeLLMClient` as the default — production
-    Anthropic wiring lands in a follow-up deployment slice once the SDK
-    is added to the project deps. Tests inject a richer fake.
+    Slice deployment-foundation (Wave 4) wired the env-gated
+    :func:`_build_llm_client` factory: production envs swap in
+    :class:`AnthropicLLMClient` while dev/test stay on
+    :class:`FakeLLMClient`.
     """
     composite = CompositeFeatureProvider(
         tier_a=TierAFeatureProvider(repo),
@@ -76,7 +98,7 @@ def _build_service(repo: ResearchRepository) -> BriefService:
     return BriefService(
         repository=repo,
         composite_provider=composite,
-        synthesizer=Synthesizer(llm_client=FakeLLMClient()),
+        synthesizer=Synthesizer(llm_client=_build_llm_client()),
         audit_service=AuditTrailService(repo),
     )
 

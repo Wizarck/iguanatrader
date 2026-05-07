@@ -111,6 +111,7 @@ def refresh_brief(
             FakeLLMClient,
             Synthesizer,
         )
+        from iguanatrader.contexts.research.synthesis.llm_client import LLMClient
         from iguanatrader.persistence import engine_factory, session_factory
         from iguanatrader.shared.contextvars import session_var, tenant_id_var
 
@@ -127,10 +128,23 @@ def refresh_brief(
                     tier_b=TierBFeatureProvider(repo),
                     tier_c=TierCFeatureProvider(repo),
                 )
+                # Slice deployment-foundation §3.A.2 — env-gated production
+                # adapter swap. Production envs with ANTHROPIC_API_KEY set
+                # use AnthropicLLMClient; dev/test default to FakeLLMClient.
+                env = (os.environ.get("IGUANATRADER_ENV") or "").strip().lower()
+                llm_client: LLMClient
+                if env in {"paper", "live", "production"} and os.environ.get("ANTHROPIC_API_KEY"):
+                    from iguanatrader.contexts.research.synthesis.anthropic_client import (
+                        build_anthropic_llm_client_from_env,
+                    )
+
+                    llm_client = build_anthropic_llm_client_from_env()
+                else:
+                    llm_client = FakeLLMClient()
                 service = BriefService(
                     repository=repo,
                     composite_provider=composite,
-                    synthesizer=Synthesizer(llm_client=FakeLLMClient()),
+                    synthesizer=Synthesizer(llm_client=llm_client),
                     audit_service=AuditTrailService(repo),
                 )
                 outcome = await service.refresh(symbol=symbol, methodology=methodology)

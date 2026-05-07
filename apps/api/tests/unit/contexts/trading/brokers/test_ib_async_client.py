@@ -80,7 +80,7 @@ def fake_ib_async_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
 
 @pytest.fixture
-def adapter() -> "object":
+def adapter() -> object:
     from iguanatrader.contexts.trading.brokers.ib_async_client import IbAsyncIBClient
 
     ib = MagicMock()

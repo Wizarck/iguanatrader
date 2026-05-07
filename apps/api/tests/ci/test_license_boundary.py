@@ -52,8 +52,7 @@ def test_each_new_dep_is_in_pyproject(dep: str, license_id: str) -> None:
     text = _read_pyproject_text()
     # Match `dep = ...` (poetry inline) or `dep = {version = ...}` (table form).
     assert (
-        f"\n{dep} =" in f"\n{text}"
-        or f"\n{dep}=" in f"\n{text}"
+        f"\n{dep} =" in f"\n{text}" or f"\n{dep}=" in f"\n{text}"
     ), f"Expected dep {dep!r} (license {license_id}) not found in root pyproject.toml"
 
 

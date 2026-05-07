@@ -26,6 +26,10 @@ Entrypoint for the dev/smoke uvicorn runner: :mod:`iguanatrader.api.__main__`.
 
 from __future__ import annotations
 
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -94,6 +98,55 @@ def _rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
     )
 
 
+@asynccontextmanager
+async def _production_adapter_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """FastAPI lifespan — bootstraps production adapters per env.
+
+    Slice deployment-foundation §3.D.2: when ``IGUANATRADER_ENV`` is
+    paper/live/production AND the production scrape deps are installed,
+    rebind the ladder's Tier-2 entry to Playwright. The fake stub
+    remains for dev/test envs.
+
+    Idempotent + degradation-tolerant: a missing playwright dep logs a
+    warning and lets the API boot anyway (Tier-1 webfetch still works).
+    Teardown closes the playwright browser on shutdown (no-op if never
+    bootstrapped).
+    """
+    log = structlog.get_logger("iguanatrader.api.app")
+    env = (os.environ.get("IGUANATRADER_ENV") or "").strip().lower()
+    if env in {"paper", "live", "production"}:
+        try:
+            from iguanatrader.contexts.research.scraping.tier2_playwright import (
+                bootstrap_production_tier2,
+            )
+
+            bootstrap_production_tier2()
+            log.info("api.lifespan.tier2_playwright_bootstrapped", env=env)
+        except Exception as exc:
+            log.warning(
+                "api.lifespan.tier2_playwright_bootstrap_failed",
+                env=env,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
+    yield
+
+    if env in {"paper", "live", "production"}:
+        try:
+            from iguanatrader.contexts.research.scraping.tier2_playwright import (
+                shutdown_playwright,
+            )
+
+            await shutdown_playwright()
+        except Exception as exc:
+            log.warning(
+                "api.lifespan.tier2_playwright_shutdown_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
+
 def create_app() -> FastAPI:
     """Build and return the FastAPI app.
 
@@ -110,6 +163,7 @@ def create_app() -> FastAPI:
         version="slice-5",
         docs_url="/docs",
         redoc_url=None,
+        lifespan=_production_adapter_lifespan,
     )
 
     # Body-buffering middleware MUST run before the slowapi route

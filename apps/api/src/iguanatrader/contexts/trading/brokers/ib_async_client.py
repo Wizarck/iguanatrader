@@ -1,3 +1,4 @@
+# mypy: disable-error-code="no-any-unimported"
 """Production ``IBClient`` adapter wrapping the ``ib_async`` SDK.
 
 Resolves the deferred-install carry-forward from slice T2:
@@ -52,6 +53,7 @@ def _to_order(o: IBOrder) -> Any:
     from ib_async import LimitOrder, MarketOrder, StopLimitOrder, StopOrder
 
     qty = float(o.total_quantity)  # ib_async expects float-ish quantities.
+    order: Any
     if o.order_type == "MKT":
         order = MarketOrder(o.action, qty)
     elif o.order_type == "LMT":
@@ -189,7 +191,11 @@ class IbAsyncIBClient:
         # event loop. Wait for the broker to stamp it.
         while not trade.order.permId:
             await ib.waitOnUpdateAsync(timeout=1.0)
-            if not trade.order.permId and trade.orderStatus.status in {"Cancelled", "ApiCancelled", "Inactive"}:
+            if not trade.order.permId and trade.orderStatus.status in {
+                "Cancelled",
+                "ApiCancelled",
+                "Inactive",
+            }:
                 raise RuntimeError(
                     f"placeOrder rejected before perm_id assignment: status="
                     f"{trade.orderStatus.status}"

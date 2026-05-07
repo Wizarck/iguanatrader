@@ -29,25 +29,25 @@
 ### 3.A AnthropicLLMClient
 
 - [x] **3.A.1** Author `apps/api/src/iguanatrader/contexts/research/synthesis/anthropic_client.py`. ~110 lines: dynamic-per-call `@cost_meter` composition (model varies per call), text-block extraction, lazy SDK construction, `build_anthropic_llm_client_from_env()` helper.
-- [ ] **3.A.2** Wire DI in research-synthesis service composition root: production code uses `build_anthropic_llm_client_from_env()`; tests continue to use `FakeLLMClient`. **Wired alongside §8 acceptance smoke** — composition root edits live in the smoke commit.
+- [x] **3.A.2** Wire DI in research-synthesis composition: env-gated `_build_llm_client()` helper in `apps/api/src/iguanatrader/api/routes/research.py` + same env-gated branch inline in `apps/api/src/iguanatrader/cli/research.py`. Production envs (paper/live/production) with `ANTHROPIC_API_KEY` set use `AnthropicLLMClient`; otherwise `FakeLLMClient` (preserves slice-R5 default for dev/test).
 - [x] **3.A.3** Author `tests/unit/contexts/research/test_anthropic_client.py` — fake `AsyncAnthropic` (no SDK call); 5 cases covering happy path, multi-block concat, cache flag, empty content, composition-root helper.
 
 ### 3.B IbAsyncIBClient
 
 - [x] **3.B.1** Author `apps/api/src/iguanatrader/contexts/trading/brokers/ib_async_client.py` — ~210 lines. Refined scope: this is the `IBClient` Protocol shim ONLY (HeartbeatMixin + idempotency live in the existing higher-level `IBKRAdapter` per slice T2 design). Translates 5 value-object shapes (Contract/Order/Position/AccountSummary/Execution) + delegates 8 Protocol methods to `ib_async.IB`. `build_ib_async_client_from_env()` helper.
-- [ ] **3.B.2** Wire DI in trading service composition root: production `IBKRAdapter` constructor receives `IbAsyncIBClient()` via factory; tests continue to inject the in-tree fake. **Wired alongside §8 acceptance smoke**.
+- [ ] **3.B.2** Wire DI in trading composition root: production `IBKRAdapter` constructor receives `IbAsyncIBClient()` via factory. **No production composition site yet** — the IBKRAdapter is currently constructed only by tests; `build_ib_async_client_from_env()` is ready but `IBKRAdapter`'s production consumer lands with slice T4 (`trading-routes-and-daemon`). DI swap is a single line in T4's daemon entrypoint.
 - [x] **3.B.3** Author `tests/unit/contexts/trading/brokers/test_ib_async_client.py` — fake `ib_async` injected via `sys.modules`; 9 cases covering connect/disconnect/req_current_time/positions/account_summary delegation, value-object translators (LMT, unsupported sec_type, missing limit_price). Heartbeat lifecycle + idempotency are exercised by existing `test_ibkr_adapter_lifecycle.py`.
 
 ### 3.C APSchedulerAdapter
 
 - [x] **3.C.1** Author `apps/api/src/iguanatrader/contexts/orchestration/apscheduler_adapter.py` — ~95 lines. Lazy SDK construction; `add_job` translates `JobSpec.cron_kwargs` to APScheduler's `trigger="cron"`; `replace_existing=True` for idempotent re-registration; `shutdown(wait=False)` so process shutdown doesn't block on in-flight jobs; `misfire_grace_time=300s`.
-- [ ] **3.C.2** Wire DI in orchestration service composition root: production code uses `build_apscheduler_adapter_from_env()`; tests continue to use `InMemoryScheduler`. **Wired alongside §8 acceptance smoke**.
+- [ ] **3.C.2** Wire DI in orchestration composition root: production code uses `build_apscheduler_adapter_from_env()`. **No production composition site yet** — `OrchestrationService` is currently instantiated only by tests; `build_apscheduler_adapter_from_env()` is ready but the production consumer lands with slice T4. DI swap is a single line in T4's daemon entrypoint.
 - [x] **3.C.3** Author `tests/unit/contexts/orchestration/test_apscheduler_adapter.py` — `MagicMock` scheduler injected; 7 cases covering `add_job` arg shape, `list_jobs` registry, start idempotency, shutdown noop-when-not-running, `is_running` mirror.
 
 ### 3.D Tier2PlaywrightClient
 
 - [x] **3.D.1** Author `apps/api/src/iguanatrader/contexts/research/scraping/tier2_playwright.py` — ~140 lines. Process-singleton browser holder with `asyncio.Semaphore(5)` concurrency cap; lazy chromium launch on first fetch; robots-check before navigation; 30s nav-timeout + 60s total-timeout; status-code mapping (403/429/503 → `ScrapeBlockedError`); `shutdown_playwright()` for FastAPI lifespan teardown.
-- [ ] **3.D.2** Composition root rebinds `_DEFAULT_TIER_FNS[TIER_2_PLAYWRIGHT]` to `fetch_tier2_playwright` once deps are installed. **Wired alongside §8 acceptance smoke**.
+- [x] **3.D.2** `bootstrap_production_tier2()` helper added to `tier2_playwright.py` (rebinds `_DEFAULT_TIER_FNS[TIER_2_PLAYWRIGHT]`). Called from a new FastAPI `lifespan` in `app.py` when `IGUANATRADER_ENV in {paper, live, production}`. Lifespan also handles teardown via `shutdown_playwright()`. Both wrapped in graceful try/except (missing `playwright` dep logs warning + lets API boot).
 - [x] **3.D.3** Author `tests/unit/contexts/research/test_tier2_playwright.py` — `playwright.async_api` mocked via `sys.modules`; 3 cases: 200-happy-path returns `ScrapeResult`, 403 raises `ScrapeBlockedError`, robots-disallow raises `ScrapeBlockedError`. NO real chromium launch.
 
 ### 3.E weekly_review_pdf

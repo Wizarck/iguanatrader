@@ -15,9 +15,9 @@ from typing import Any
 
 import pytest
 
-reportlab = pytest.importorskip("reportlab")  # noqa: F841 — used as install gate.
+pytest.importorskip("reportlab")
 
-from iguanatrader.contexts.orchestration.weekly_review_pdf import (  # noqa: E402
+from iguanatrader.contexts.orchestration.weekly_review_pdf import (
     render_weekly_review_pdf,
 )
 

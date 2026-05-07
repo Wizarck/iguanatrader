@@ -15,7 +15,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from iguanatrader.contexts.research.synthesis.anthropic_client import (
     AnthropicLLMClient,
     build_anthropic_llm_client_from_env,
@@ -140,9 +139,7 @@ async def test_complete_marks_cached_when_cache_read_tokens_present() -> None:
 
 @pytest.mark.asyncio
 async def test_complete_handles_empty_content_gracefully() -> None:
-    fake = _FakeAsyncAnthropic(
-        _FakeMessage(text_blocks=[], input_tokens=5, output_tokens=0)
-    )
+    fake = _FakeAsyncAnthropic(_FakeMessage(text_blocks=[], input_tokens=5, output_tokens=0))
     adapter = AnthropicLLMClient(api_key="sk-ant-test", client=fake)  # type: ignore[arg-type]
 
     result = await adapter.complete(
@@ -160,4 +157,4 @@ def test_composition_root_helper_uses_secret_env(
     client = build_anthropic_llm_client_from_env()
 
     assert isinstance(client, AnthropicLLMClient)
-    assert client._api_key == "sk-ant-from-env"  # noqa: SLF001 — test inspection.
+    assert client._api_key == "sk-ant-from-env"

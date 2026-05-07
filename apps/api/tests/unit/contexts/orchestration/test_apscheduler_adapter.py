@@ -11,7 +11,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-
 from iguanatrader.contexts.orchestration.apscheduler_adapter import APSchedulerAdapter
 from iguanatrader.contexts.orchestration.scheduler import JobSpec
 
@@ -31,9 +30,7 @@ def scheduler_mock() -> MagicMock:
 
 
 def test_add_job_passes_cron_kwargs_to_scheduler(scheduler_mock: MagicMock) -> None:
-    adapter = APSchedulerAdapter(
-        jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock
-    )
+    adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock)
     spec = JobSpec(
         name="premarket_research",
         fn=_noop,
@@ -53,9 +50,7 @@ def test_add_job_passes_cron_kwargs_to_scheduler(scheduler_mock: MagicMock) -> N
 
 
 def test_list_jobs_returns_registered_specs(scheduler_mock: MagicMock) -> None:
-    adapter = APSchedulerAdapter(
-        jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock
-    )
+    adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock)
     spec = JobSpec(name="weekly_review", fn=_noop, cron_kwargs={"day_of_week": "fri"})
     adapter.add_job(spec)
 
@@ -64,9 +59,7 @@ def test_list_jobs_returns_registered_specs(scheduler_mock: MagicMock) -> None:
 
 @pytest.mark.asyncio
 async def test_start_calls_scheduler_when_not_running(scheduler_mock: MagicMock) -> None:
-    adapter = APSchedulerAdapter(
-        jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock
-    )
+    adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock)
 
     await adapter.start()
 
@@ -78,9 +71,7 @@ async def test_start_is_idempotent_when_already_running(
     scheduler_mock: MagicMock,
 ) -> None:
     scheduler_mock.running = True
-    adapter = APSchedulerAdapter(
-        jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock
-    )
+    adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock)
 
     await adapter.start()
 
@@ -90,9 +81,7 @@ async def test_start_is_idempotent_when_already_running(
 @pytest.mark.asyncio
 async def test_shutdown_calls_scheduler_when_running(scheduler_mock: MagicMock) -> None:
     scheduler_mock.running = True
-    adapter = APSchedulerAdapter(
-        jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock
-    )
+    adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock)
 
     await adapter.shutdown()
 
@@ -107,9 +96,7 @@ async def test_shutdown_is_noop_when_scheduler_not_built() -> None:
 
 
 def test_is_running_reflects_scheduler_state(scheduler_mock: MagicMock) -> None:
-    adapter = APSchedulerAdapter(
-        jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock
-    )
+    adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:", scheduler=scheduler_mock)
     assert adapter.is_running is False
 
     scheduler_mock.running = True
