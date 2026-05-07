@@ -81,6 +81,31 @@ class StrategyConfigRepository(BaseRepository):
         # would land twice.
         return existing
 
+    async def get_by_id(self, strategy_config_id: UUID) -> StrategyConfig | None:
+        """Return the config by id, or ``None`` if absent.
+
+        Used by :meth:`_make_strategy_resolver` (slice T4-followup-
+        market-data §2.10) to load a fresh snapshot per propose call.
+        """
+        stmt = select(StrategyConfig).where(StrategyConfig.id == strategy_config_id)
+        result = await self.session.execute(stmt)
+        return cast("StrategyConfig | None", result.scalars().first())
+
+    async def list_enabled_for_symbol(self, symbol: str) -> list[StrategyConfig]:
+        """Return enabled configs for the current tenant + ``symbol``.
+
+        Used by the per-symbol propose loop in
+        :meth:`OrchestrationService.bootstrap_routines`. Tenant filter
+        is automatic via the slice-3 ``tenant_listener``.
+        """
+        stmt = (
+            select(StrategyConfig)
+            .where(StrategyConfig.symbol == symbol)
+            .where(StrategyConfig.enabled.is_(True))
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 class TradeProposalRepository(BaseRepository):
     """Persistence operations for :class:`TradeProposal` (slice T4).

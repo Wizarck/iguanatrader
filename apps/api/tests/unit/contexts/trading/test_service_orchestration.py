@@ -35,6 +35,19 @@ from iguanatrader.shared.contextvars import tenant_id_var
 from iguanatrader.shared.messagebus import MessageBus
 
 
+def _async_const(strategy: Any) -> Any:
+    """Slice T4-followup-market-data: ``StrategyResolver`` is now async.
+
+    Helper to wrap a fixed strategy as an async resolver so existing
+    tests don't need a ``async def`` per call site.
+    """
+
+    async def _resolve(_sid: UUID) -> Any:
+        return strategy
+
+    return _resolve
+
+
 class _FakeBroker:
     def __init__(self) -> None:
         self.calls: list[NewOrder] = []
@@ -133,7 +146,7 @@ async def test_execute_on_approval_handler_idempotent_under_duplicate_publish() 
     service = TradingService(
         bus=bus,
         broker=broker,
-        strategy_resolver=lambda _sid: _FakeStrategy(return_proposal=None),
+        strategy_resolver=_async_const(_FakeStrategy(return_proposal=None)),
     )
 
     invocation_count = {"n": 0}
@@ -179,7 +192,7 @@ async def test_propose_emits_proposal_created_with_correct_payload(
     service = TradingService(
         bus=bus,
         broker=broker,
-        strategy_resolver=lambda _sid: strategy,
+        strategy_resolver=_async_const(strategy),
     )
 
     received: list[ProposalCreated] = []
@@ -242,7 +255,7 @@ async def test_propose_returns_none_and_does_not_publish_on_no_signal() -> None:
     service = TradingService(
         bus=bus,
         broker=broker,
-        strategy_resolver=lambda _sid: strategy,
+        strategy_resolver=_async_const(strategy),
     )
 
     received: list[ProposalCreated] = []
@@ -283,7 +296,7 @@ async def test_propose_raises_when_kill_switch_active() -> None:
     service = TradingService(
         bus=bus,
         broker=broker,
-        strategy_resolver=lambda _sid: strategy,
+        strategy_resolver=_async_const(strategy),
     )
 
     # Simulate a KillSwitchTripped event arriving by calling halt_handler

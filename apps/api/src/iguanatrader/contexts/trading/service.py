@@ -27,7 +27,7 @@ have ``# T4 fills`` comments.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -98,7 +98,11 @@ class KillSwitchActiveError(IguanaError):
 
 
 # Type alias for the strategy resolver callable injected at construction.
-StrategyResolver = Callable[[UUID], StrategyPort]
+# Slice T4-followup-market-data: signature changed to async so production
+# closures can do session-scoped DB lookups (StrategyConfigRepository.get_by_id).
+# Tests that previously injected ``lambda id: mapping[id]`` need a 1-line
+# wrapper: ``async def _resolve(id): return mapping[id]``.
+StrategyResolver = Callable[[UUID], Awaitable[StrategyPort]]
 
 
 class TradingService:
@@ -190,7 +194,7 @@ class TradingService:
                 "call from a request scope or via with_tenant_context()"
             )
 
-        strategy = self._strategy_resolver(strategy_config_id)
+        strategy = await self._strategy_resolver(strategy_config_id)
         proposal = strategy.evaluate(symbol, bars, config)
 
         if proposal is None:
