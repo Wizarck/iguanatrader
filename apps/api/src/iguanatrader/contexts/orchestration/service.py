@@ -21,9 +21,10 @@ short-circuits to ``status='skipped_budget'``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from iguanatrader.contexts.orchestration.alert_filter import (
     AlertTier,
@@ -257,18 +258,27 @@ class OrchestrationService:
     async def bootstrap_routines(
         self,
         *,
-        scheduler: object,
-        trading_service: object,
+        scheduler: Any,
+        trading_service: Any,
         watchlist_symbols: list[str],
+        market_data_port: Any | None = None,
+        strategy_config_repo: Any | None = None,
+        ingestion_service: Any | None = None,
+        timeframe: str = "1d",
+        lookback_bars: int = 200,
     ) -> None:
-        """Register cron triggers for the 4 routines on the scheduler (slice T4 §3.4).
+        """Register cron triggers for the 4 propose routines + market_data_sync.
 
-        For each routine name in :data:`_ROUTINE_TITLES`, registers a
-        :class:`JobSpec` with a no-op fn placeholder; T4-followup wires
-        the actual `TradingService.propose` per watchlist symbol. The
-        slice T4 ships the registration shape; the per-symbol propose
-        loop is intentionally deferred to keep this slice focused on
-        the keystone wiring.
+        Slice T4-followup-market-data §2.11: replaces the T4
+        ``_placeholder`` no-op with a real per-symbol propose loop and
+        adds a 5th routine ``market_data_sync`` (daily 06:00 UTC) that
+        invokes the IBKR ingestion service.
+
+        Backwards-compat: ``market_data_port`` / ``strategy_config_repo``
+        / ``ingestion_service`` are Optional. If not supplied (older
+        test setups), the routines fall back to the original no-op
+        ``_placeholder`` and the ``market_data_sync`` routine is
+        skipped.
         """
         from iguanatrader.contexts.orchestration.scheduler import JobSpec
 
@@ -279,26 +289,122 @@ class OrchestrationService:
             "weekly_review": {"hour": 17, "minute": 0, "day_of_week": "fri"},
         }
 
+        wire_propose_loops = market_data_port is not None and strategy_config_repo is not None
+        # Local non-None aliases (mypy can't track the wire_propose_loops guard
+        # into the nested closure; explicit captures make the union narrowing
+        # visible inside ``_propose``).
+        md_port: Any = market_data_port
+        sc_repo: Any = strategy_config_repo
+
         async def _placeholder() -> None:
-            """T4-followup wires the per-symbol TradingService.propose loop."""
+            """Fallback no-op when market-data wiring is absent (test setups)."""
             return None
 
+        def _make_propose_fn(routine_name: str) -> Callable[[], Awaitable[None]]:
+            async def _propose() -> None:
+                for symbol in watchlist_symbols:
+                    try:
+                        configs = await sc_repo.list_enabled_for_symbol(symbol)
+                        if not configs:
+                            continue
+                        bars = await md_port.get_bars(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            lookback_bars=lookback_bars,
+                        )
+                        from iguanatrader.contexts.trading.ports import (
+                            StrategyConfigSnapshot,
+                        )
+
+                        for config in configs:
+                            snapshot = StrategyConfigSnapshot(
+                                id=config.id,
+                                tenant_id=config.tenant_id,
+                                strategy_kind=config.strategy_kind,
+                                symbol=config.symbol,
+                                params=dict(config.params),
+                                enabled=config.enabled,
+                                version=config.version,
+                            )
+                            await trading_service.propose(
+                                symbol=symbol,
+                                strategy_config_id=config.id,
+                                bars=bars,
+                                config=snapshot,
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "orchestration.routine.symbol_failed",
+                            extra={
+                                "symbol": symbol,
+                                "routine": routine_name,
+                                "error": str(exc),
+                            },
+                        )
+                        continue
+
+            return _propose
+
         for routine_name, cron_kwargs in cron_kwargs_by_routine.items():
+            fn = _make_propose_fn(routine_name) if wire_propose_loops else _placeholder
             spec = JobSpec(
                 name=routine_name,
-                fn=_placeholder,
+                fn=fn,
                 cron_kwargs=cron_kwargs,
             )
-            scheduler.add_job(spec)  # type: ignore[attr-defined]
+            scheduler.add_job(spec)
+
+        if ingestion_service is not None:
+
+            async def _ingest_market_data() -> None:
+                from iguanatrader.contexts.trading.market_data import (
+                    MarketDataRateLimitedError,
+                )
+
+                try:
+                    result = await ingestion_service.sync(
+                        symbols=watchlist_symbols,
+                        timeframe=timeframe,
+                        lookback_bars=lookback_bars,
+                        invoked_by="daemon-cron",
+                    )
+                    logger.info(
+                        "orchestration.market_data_sync.complete",
+                        extra={
+                            "successes": len(result.successes),
+                            "failures": len(result.failures),
+                            "bars_written": result.bars_written,
+                        },
+                    )
+                except MarketDataRateLimitedError as exc:
+                    logger.warning(
+                        "orchestration.market_data_sync.rate_limited",
+                        extra={"error": str(exc)},
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "orchestration.market_data_sync.failed",
+                        extra={"error": str(exc)},
+                    )
+
+            sync_spec = JobSpec(
+                name="market_data_sync",
+                fn=_ingest_market_data,
+                cron_kwargs={"hour": 6, "minute": 0, "day_of_week": "mon-fri"},
+            )
+            scheduler.add_job(sync_spec)
 
         logger.info(
             "orchestration.routines.bootstrapped",
             extra={
-                "routine_count": len(cron_kwargs_by_routine),
+                "routine_count": (
+                    len(cron_kwargs_by_routine) + (1 if ingestion_service is not None else 0)
+                ),
                 "watchlist_count": len(watchlist_symbols),
+                "propose_loops_wired": wire_propose_loops,
+                "market_data_sync_wired": ingestion_service is not None,
             },
         )
-        _ = trading_service  # T4-followup wires per-symbol propose loops.
 
     @staticmethod
     def _render_weekly_review_pdf_side_effect(

@@ -234,6 +234,39 @@ class IbAsyncIBClient:
         await ib.reqAllOpenOrdersAsync()
         return [_from_open_order(t) for t in ib.openTrades()]
 
+    async def req_historical_bars(
+        self,
+        *,
+        symbol: str,
+        duration_str: str,
+        bar_size: str,
+        what_to_show: str = "TRADES",
+        use_rth: bool = True,
+    ) -> Iterable[Any]:
+        """Fetch historical bars for ``symbol`` (slice T4-followup-market-data §2.4).
+
+        Wraps ``ib_async.IB.reqHistoricalDataAsync`` after qualifying
+        the symbol as a US-equity Stock contract on SMART/USD.
+        ``duration_str`` is IBKR's duration spec (e.g. ``"200 D"``,
+        ``"30 D"``, ``"1 Y"``); ``bar_size`` is e.g. ``"1 day"``,
+        ``"1 hour"``, ``"1 min"``. The ingestor is the only caller.
+        """
+        from ib_async import Stock
+
+        ib = self._ensure()
+        contract = Stock(symbol, "SMART", "USD")
+        await ib.qualifyContractsAsync(contract)
+        bars = await ib.reqHistoricalDataAsync(
+            contract,
+            endDateTime="",
+            durationStr=duration_str,
+            barSizeSetting=bar_size,
+            whatToShow=what_to_show,
+            useRTH=use_rth,
+            formatDate=2,  # epoch seconds; tz-naive UTC
+        )
+        return list(bars or [])
+
 
 def build_ib_async_client_from_env() -> IbAsyncIBClient:
     """Composition-root helper — constructs an unconnected :class:`IbAsyncIBClient`.

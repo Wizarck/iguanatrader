@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, NewType, Protocol, runtime_checkable
+from typing import Any, Literal, NewType, Protocol, runtime_checkable
 from uuid import UUID
 
 from iguanatrader.shared.ports import Port
@@ -282,6 +282,34 @@ class StrategyPort(Port, Protocol):
         ...
 
 
+@runtime_checkable
+class MarketDataPort(Protocol):
+    """Read-only port for fetching historical bars (slice T4-followup-market-data).
+
+    Production daemons use ``DBMarketDataAdapter`` (reads from the
+    ``market_data_bars`` table populated by the IBKR ingestor). Tests
+    use ``InMemoryMarketDataAdapter`` (seeded synthetic bars). The
+    daemon's read path is decoupled from the IBKR connection — bars
+    are populated asynchronously by the daily ``market_data_sync``
+    cron routine OR the ``iguanatrader market-data sync`` CLI.
+    """
+
+    async def get_bars(
+        self,
+        *,
+        symbol: str,
+        timeframe: Literal["1d", "1h", "1m"],
+        lookback_bars: int,
+    ) -> BarHistory:
+        """Return the last ``lookback_bars`` bars sorted ascending by ``ts``.
+
+        Raises ``MarketDataNotAvailableError`` if zero bars exist for
+        the (tenant, symbol, timeframe) tuple. Callers handle by
+        logging + skipping the symbol (FR isolation).
+        """
+        ...
+
+
 __all__ = [
     "Bar",
     "BarHistory",
@@ -289,6 +317,7 @@ __all__ = [
     "BrokerPort",
     "EquitySnapshotValue",
     "FillEvent",
+    "MarketDataPort",
     "NewOrder",
     "Position",
     "Proposal",

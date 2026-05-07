@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import typer
 
@@ -141,12 +141,25 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         from iguanatrader.contexts.orchestration.service import OrchestrationService
         from iguanatrader.contexts.risk.repository import RiskRepository
         from iguanatrader.contexts.risk.service import RiskService
+        from iguanatrader.contexts.trading.market_data.db import DBMarketDataAdapter
+        from iguanatrader.contexts.trading.market_data.ibkr_ingestor import (
+            IbAsyncMarketDataIngestor,
+        )
+        from iguanatrader.contexts.trading.market_data.repository import (
+            MarketDataSyncAuditRepository,
+        )
+        from iguanatrader.contexts.trading.market_data.service import (
+            MarketDataIngestionService,
+        )
+        from iguanatrader.contexts.trading.repository import (
+            StrategyConfigRepository,
+        )
         from iguanatrader.contexts.trading.service import TradingService
 
         trading_service = TradingService(
             bus=bus,
             broker=broker,
-            strategy_resolver=_make_strategy_resolver(),
+            strategy_resolver=_make_strategy_resolver(session_factory=sessionmaker),
         )
         trading_service.register_subscriptions()
 
@@ -166,13 +179,31 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         )
         approval_service.register_subscriptions(bus)
 
+        # Slice T4-followup-market-data §2.13 — market-data subsystem.
+        # DBMarketDataAdapter reads bars from `market_data_bars` table;
+        # IbAsyncMarketDataIngestor SHARES `ib_client` with the broker
+        # (per design Open Question 1) and runs daily via the new
+        # `market_data_sync` cron routine wired in bootstrap_routines.
+        market_data_port = DBMarketDataAdapter()
+        strategy_config_repo = StrategyConfigRepository()
+        ingestor = IbAsyncMarketDataIngestor(ib_client=ib_client)
+        audit_repo = MarketDataSyncAuditRepository()
+        ingestion_service = MarketDataIngestionService(
+            ingestor=ingestor,
+            audit_repo=audit_repo,
+        )
+
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
-        # Side-effect: registers cron JobSpecs on the scheduler.
+        # Side-effect: registers cron JobSpecs on the scheduler (4 propose
+        # routines + 5th market_data_sync routine wired by T4-followup).
         await orchestration_service.bootstrap_routines(
             scheduler=scheduler,
             trading_service=trading_service,
             watchlist_symbols=watchlist_symbols,
+            market_data_port=market_data_port,
+            strategy_config_repo=strategy_config_repo,
+            ingestion_service=ingestion_service,
         )
 
         # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close
@@ -232,31 +263,46 @@ async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter
     )
 
 
-def _make_strategy_resolver() -> StrategyResolver:
-    """Closure resolver: ``UUID → StrategyPort`` (slice T4 §3.3.f).
+def _make_strategy_resolver(
+    *,
+    session_factory: Any,
+) -> StrategyResolver:
+    """Async closure resolver: ``UUID → StrategyPort`` (slice T4-followup-market-data §2.10).
 
-    Loads the :class:`StrategyConfig` snapshot for the given id, then
-    delegates to :class:`StrategyManager._get_or_build` to construct
-    the actual :class:`StrategyPort` instance. The closure keeps the
-    daemon's manager-instance alive across the bus event loop.
+    Loads a fresh :class:`StrategyConfig` per propose call via
+    :class:`StrategyConfigRepository` (session-scoped), projects to a
+    :class:`StrategyConfigSnapshot`, then delegates to
+    :meth:`StrategyManager._get_or_build` for hot-reload-safe instance
+    construction. The manager + cache are closure-captured across calls.
     """
+    from iguanatrader.contexts.trading.ports import StrategyConfigSnapshot
+    from iguanatrader.contexts.trading.repository import StrategyConfigRepository
     from iguanatrader.contexts.trading.strategies.manager import StrategyManager
+    from iguanatrader.shared.contextvars import session_var
 
     manager = StrategyManager()
 
-    def _resolve(strategy_config_id: UUID) -> StrategyPort:
-        # Lazy snapshot load + manager._get_or_build — production code
-        # path. Tests inject a static map instead via the
-        # `strategy_resolver` constructor arg directly.
-        raise NotImplementedError(
-            f"_make_strategy_resolver requires a session-scoped "
-            f"StrategyConfigRepository to load snapshot for "
-            f"{strategy_config_id!r}; T4 leaves this as a NotImplementedError "
-            "placeholder — slice T4-followup wires the repository call. "
-            "Tests bypass via direct strategy_resolver injection."
-        )
+    async def _resolve(strategy_config_id: UUID) -> StrategyPort:
+        async with session_factory() as session:
+            session_var.set(session)
+            repo = StrategyConfigRepository()
+            row = await repo.get_by_id(strategy_config_id)
+            if row is None:
+                raise LookupError(f"StrategyConfig {strategy_config_id} not found")
+            snapshot = StrategyConfigSnapshot(
+                id=row.id,
+                tenant_id=row.tenant_id,
+                strategy_kind=row.strategy_kind,
+                symbol=row.symbol,
+                params=dict(row.params),
+                enabled=row.enabled,
+                version=row.version,
+            )
+            strategy = manager._get_or_build(snapshot)
+            if strategy is None:
+                raise LookupError(f"Unknown strategy_kind {row.strategy_kind!r}")
+            return cast("StrategyPort", strategy)
 
-    _ = manager  # keep referenced; T4-followup uses it.
     return cast("StrategyResolver", _resolve)
 
 
