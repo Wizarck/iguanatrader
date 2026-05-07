@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "iguanatrader.fullname" . }}
+  labels:
+    {{- include "iguanatrader.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if and .Values.ingress.tls.enabled .Values.ingress.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "iguanatrader.fullname" . }}-api
+                port:
+                  number: {{ .Values.service.api.port }}
+          - path: /openbb
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "iguanatrader.fullname" . }}-openbb
+                port:
+                  number: {{ .Values.service.openbb.port }}
+{{- end }}

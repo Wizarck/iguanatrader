@@ -29,7 +29,11 @@ repos:
     hooks:
       - id: check-toml
       - id: check-yaml
-        exclude: ^(\.skills-sources|\.ai-playbook|skills|\.claude|\.gemini)/
+        # Helm templates use Go's {{ }} template syntax — not parseable as YAML
+        # by `yaml.safe_load` (the hook's parser). The chart is verified
+        # separately by the `helm lint` job in .github/workflows/ci.yml which
+        # renders templates via `helm template` and parses the OUTPUT.
+        exclude: ^(\.skills-sources|\.ai-playbook|skills|\.claude|\.gemini|helm/[^/]+/templates)/
       - id: check-json
         exclude: ^(\.skills-sources|\.ai-playbook|skills|\.claude|\.gemini)/
       - id: check-merge-conflict

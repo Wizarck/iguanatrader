@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "iguanatrader.fullname" . }}-api
+  labels:
+    {{- include "iguanatrader.labels" . | nindent 4 }}
+    component: api
+spec:
+  serviceName: {{ include "iguanatrader.fullname" . }}-api
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "iguanatrader.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      component: api
+  template:
+    metadata:
+      labels:
+        {{- include "iguanatrader.labels" . | nindent 8 }}
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: {{ include "iguanatrader.apiImage" . }}
+          imagePullPolicy: {{ .Values.image.api.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.api.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "iguanatrader.fullname" . }}-env
+            - secretRef:
+                name: {{ .Values.secret.name }}
+                optional: false
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.resources.api | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.api.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.api.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.api.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.api.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.api.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.api.readiness.periodSeconds }}
+        - name: litestream
+          image: "{{ .Values.image.litestream.repository }}:{{ .Values.image.litestream.tag }}"
+          imagePullPolicy: {{ .Values.image.litestream.pullPolicy }}
+          args:
+            - replicate
+          env:
+            - name: LITESTREAM_S3_BUCKET
+              value: {{ .Values.litestream.s3.bucket | quote }}
+            - name: LITESTREAM_S3_REGION
+              value: {{ .Values.litestream.s3.region | quote }}
+            {{- if .Values.litestream.s3.endpoint }}
+            - name: LITESTREAM_S3_ENDPOINT
+              value: {{ .Values.litestream.s3.endpoint | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secret.name }}
+                optional: false
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: litestream-config
+              mountPath: /etc/litestream.yml
+              subPath: litestream.yml
+          resources:
+            {{- toYaml .Values.resources.litestream | nindent 12 }}
+      volumes:
+        - name: litestream-config
+          configMap:
+            name: {{ include "iguanatrader.fullname" . }}-litestream-config
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - {{ .Values.persistence.accessMode }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

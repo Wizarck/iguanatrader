@@ -1,0 +1,38 @@
+# Rancher Fleet GitRepo manifest — declares this repo as a GitOps source
+# for the iguanatrader Helm chart. Apply once into the fleet-default
+# namespace of the management cluster:
+#
+#   kubectl apply -f deploy/fleet-gitrepo.yaml
+#
+# Per-environment value overrides (dev/paper/live) live in Fleet bundles
+# selected via clusterSelector labels (see deploy/fleet/ overlays once
+# they land).
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: iguanatrader
+  namespace: fleet-default
+spec:
+  repo: https://github.com/Wizarck/iguanatrader.git
+  branch: main
+  paths:
+    - helm/iguanatrader-stack
+  targetNamespace: iguanatrader
+  helm:
+    releaseName: iguanatrader
+    # Default values come from helm/iguanatrader-stack/values.yaml.
+    # Per-cluster overrides go in fleet.yaml or a fleet-overlays/ dir
+    # selected via the targets[].clusterSelector below.
+  targets:
+    - name: dev
+      clusterSelector:
+        matchLabels:
+          iguanatrader.io/env: dev
+    - name: paper
+      clusterSelector:
+        matchLabels:
+          iguanatrader.io/env: paper
+    - name: live
+      clusterSelector:
+        matchLabels:
+          iguanatrader.io/env: live

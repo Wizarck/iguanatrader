@@ -1,0 +1,25 @@
+apiVersion: v2
+name: iguanatrader-stack
+description: |
+  Helm chart for the iguanatrader algorithmic trading bot. Deploys the
+  monolith API, the AGPL-isolated OpenBB sidecar (per ADR-013), and a
+  litestream sidecar replicating the local SQLite database to S3.
+
+  Frontend (Svelte 5) deployment will be added to this chart when the
+  W-series slices ship. Until then, this chart targets the headless API
+  + scheduler topology only.
+
+  Mirrors the eligia-core/helm/eligia-stack/ pattern from ADR-015.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/Wizarck/iguanatrader
+maintainers:
+  - name: Arturo Ramirez
+    email: arturo6ramirez@gmail.com
+keywords:
+  - trading
+  - algorithmic
+  - ibkr
+  - anthropic
+  - rancher-fleet

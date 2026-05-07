@@ -1,0 +1,17 @@
+iguanatrader-stack {{ .Chart.AppVersion }} installed.
+
+Release name: {{ .Release.Name }}
+Namespace:    {{ .Release.Namespace }}
+
+Components:
+  • api (StatefulSet, 1 replica) — FastAPI monolith + litestream sidecar replicating sqlite to S3
+  • openbb-sidecar (Deployment, 1 replica) — AGPL-isolated per ADR-013
+
+Reach the API:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "iguanatrader.fullname" . }}-api {{ .Values.service.api.port }}:{{ .Values.service.api.port }}
+  open http://localhost:{{ .Values.service.api.port }}
+
+Verify litestream is replicating:
+  kubectl --namespace {{ .Release.Namespace }} logs sts/{{ include "iguanatrader.fullname" . }}-api -c litestream | tail -5
+
+Secret rotation: see docs/runbooks/secret-rotation.md.

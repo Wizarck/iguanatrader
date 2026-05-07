@@ -175,6 +175,14 @@ class OrchestrationService:
             include_synthesis=synthesize_digest,
         )
 
+        # Slice deployment-foundation §3.E.2 — render weekly-review PDF
+        # alongside the markdown digest. Side-effect only (PDF path is
+        # logged, not added to RoutineOutcome to avoid breaking the
+        # frozen-dataclass shape callers depend on). Operator inspects
+        # the PDF at data/weekly_reviews/<scheduled_at-date>.pdf.
+        if routine_name == "weekly_review":
+            self._render_weekly_review_pdf_side_effect(digest, scheduled_at)
+
         ended_at = utc_now()
         duration_ms = int((ended_at - started_at).total_seconds() * 1000)
         await self._repo.update_routine_run(
@@ -245,6 +253,40 @@ class OrchestrationService:
                 _DETERMINISTIC_TEMPLATE[routine_name] if include_synthesis else None
             ),
         }
+
+    @staticmethod
+    def _render_weekly_review_pdf_side_effect(
+        digest: dict[str, object],
+        scheduled_at: datetime,
+    ) -> None:
+        """Render the weekly-review PDF and write to ``data/weekly_reviews/``.
+
+        Slice deployment-foundation §3.E.2. Wraps the renderer in a
+        broad try/except: a missing reportlab dep MUST NOT break the
+        routine — the markdown digest is the primary deliverable, the
+        PDF is supplementary.
+        """
+        try:
+            from pathlib import Path
+
+            from iguanatrader.contexts.orchestration.weekly_review_pdf import (
+                render_weekly_review_pdf,
+            )
+
+            pdf_dir = Path("data/weekly_reviews")
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = pdf_dir / f"{scheduled_at.date().isoformat()}.pdf"
+            pdf_bytes = render_weekly_review_pdf(digest, review_date=scheduled_at.date())
+            pdf_path.write_bytes(pdf_bytes)
+            logger.info(
+                "orchestration.weekly_review.pdf_rendered",
+                extra={"path": str(pdf_path), "size_bytes": len(pdf_bytes)},
+            )
+        except Exception as exc:
+            logger.warning(
+                "orchestration.weekly_review.pdf_failed",
+                extra={"error": str(exc), "type": type(exc).__name__},
+            )
 
     @staticmethod
     def _fallback_digest(

@@ -1,0 +1,46 @@
+{{/*
+AGPL-isolated OpenBB sidecar (per ADR-013). Runs as a separate
+Deployment with its own image so the AGPL surface never co-locates
+with the Apache-2.0 + Commons-Clause monolith.
+
+The api pod reaches this via the internal service DNS
+($OPENBB_SIDECAR_URL). No host port is exposed.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "iguanatrader.fullname" . }}-openbb
+  labels:
+    {{- include "iguanatrader.labels" . | nindent 4 }}
+    component: openbb-sidecar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "iguanatrader.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      component: openbb-sidecar
+  template:
+    metadata:
+      labels:
+        {{- include "iguanatrader.labels" . | nindent 8 }}
+        component: openbb-sidecar
+    spec:
+      containers:
+        - name: openbb
+          image: {{ include "iguanatrader.openbbImage" . }}
+          imagePullPolicy: {{ .Values.image.openbb.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.openbb.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "iguanatrader.fullname" . }}-env
+          resources:
+            {{- toYaml .Values.resources.openbb | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.openbb.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.openbb.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.openbb.liveness.periodSeconds }}

@@ -96,6 +96,40 @@ jobs:
           echo "Slice 1 - no Python sources under apps/ or packages/."
           echo "Skipping pytest until slice 2 lands runtime source."
 
+  helm-lint:
+    # Slice deployment-foundation §7 — verifies the helm/iguanatrader-stack
+    # chart lints cleanly + renders to valid Kubernetes manifests. Skipped
+    # if the chart directory is not yet present (so this gate is a no-op
+    # for branches predating Wave 4).
+    name: Helm chart lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect helm chart
+        id: detect_helm
+        run: |
+          if [ -d helm/iguanatrader-stack ]; then
+            echo "has_chart=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_chart=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install helm
+        if: steps.detect_helm.outputs.has_chart == 'true'
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+      - name: helm lint
+        if: steps.detect_helm.outputs.has_chart == 'true'
+        run: helm lint helm/iguanatrader-stack --set litestream.s3.bucket=ci-placeholder
+      - name: helm template (smoke render)
+        if: steps.detect_helm.outputs.has_chart == 'true'
+        run: helm template iguanatrader helm/iguanatrader-stack --set litestream.s3.bucket=ci-placeholder > /tmp/rendered.yaml && wc -l /tmp/rendered.yaml
+      - name: Skip notice (chart not present)
+        if: steps.detect_helm.outputs.has_chart == 'false'
+        run: |
+          echo "helm/iguanatrader-stack not present yet — Wave 4 not landed."
+          echo "Skipping helm lint."
+
   secrets-scan:
     name: Secrets scan (gitleaks)
     runs-on: ubuntu-latest
