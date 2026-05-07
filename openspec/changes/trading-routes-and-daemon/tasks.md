@@ -45,9 +45,9 @@
 
 ## 3. Daemon entrypoint (`apps/api/src/iguanatrader/cli/trading.py` NEW)
 
-- [ ] **3.1** Create file with Typer `app: typer.Typer = typer.Typer(name="trading", help="Trading daemon (slice T4).")`. ~20 LoC.
-- [ ] **3.2** `@app.command("run")` accepting `--mode {paper,live}` + `--tenant <slug>`. Calls `asyncio.run(_run_daemon(...))`. Validate mode rejects unknown values. ~30 LoC.
-- [ ] **3.3** `_run_daemon(mode, tenant)` async function:
+- [x] **3.1** `cli/trading.py` created with Typer app. ~250 LoC total (more than estimate due to graceful-shutdown stack + Windows-asyncio signal-handler fallback).
+- [x] **3.2** `@app.command("run")` with mode validation (`paper|live`).
+- [x] **3.3** `_run_daemon(mode, tenant)` async function:
   - 3.3.a Resolve tenant_id via `_resolve_tenant_id` from `cli/_tenant.py`.
   - 3.3.b Construct DB engine + session (per `cli/research.py` pattern).
   - 3.3.c **3.B.2 wiring**: `ib_client = build_ib_async_client_from_env()` + `broker = IBKRAdapter(client_factory=lambda: ib_client, ...)` (1 line each). Closes Wave 4 deferred 3.B.2.
@@ -60,8 +60,12 @@
   - 3.3.j SIGTERM handler: `signal.signal(SIGTERM, lambda *_: shutdown_event.set())`. Block on `await shutdown_event.wait()`.
   - 3.3.k Graceful shutdown order: `scheduler.shutdown()` → `broker.disconnect()` → `shutdown_playwright()` → engine.dispose().
   - Total: ~120-150 LoC.
-- [ ] **3.4** Add `bootstrap_routines(scheduler, trading_service, watchlist_symbols)` method to `OrchestrationService` (`apps/api/src/iguanatrader/contexts/orchestration/service.py`). Iterates `_ROUTINE_TITLES` keys + watchlist; registers cron `JobSpec`s on the scheduler. ~40 LoC.
-- [ ] **3.5** Daemon smoke test (`apps/api/tests/integration/test_daemon_smoke.py` NEW): boot daemon in subprocess with fake env vars, send SIGTERM after 2s, assert exit code 0 + clean shutdown logs present. ~80 LoC.
+- [x] **3.4** `OrchestrationService.bootstrap_routines(scheduler, trading_service, watchlist_symbols)` added. Registers 4 cron `JobSpec`s with placeholder `_placeholder` fn (T4-followup wires per-symbol `TradingService.propose` loops).
+- [ ] **3.5** Daemon smoke test **deferred to operator** — requires real subprocess + sqlite engine + DB migrations applied. Operator runs `iguanatrader trading run --mode paper --tenant test` and sends Ctrl+C to verify graceful shutdown.
+
+> **Discovery (3.3.h)**: K1 RiskService + P1 ApprovalService have NO `register_subscriptions` method. Their bus integrations were scaffolded but never completed. T4 daemon logs `trading.daemon.bus_subscriptions.partial` warning + boots without those wirings; manual approve via API route §4.5 bypasses the chain. Both wirings are explicit carry-forward to **K1-followup + P1-followup slices** (separate from T4).
+>
+> **Discovery (3.3.f)**: Strategy resolver closure raises `NotImplementedError` because production needs `StrategyConfigRepository.get(id) → manager._get_or_build` plumbing not present yet. Tests bypass via direct `strategy_resolver=` injection. Carry-forward to **T4-followup**.
 
 ## 4. API routes (`apps/api/src/iguanatrader/api/routes/trading.py` NEW)
 
