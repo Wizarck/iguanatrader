@@ -20,7 +20,7 @@
 
 - [x] **2.1** Add `apps/api/src/iguanatrader/config/secrets.py` — `class SecretEnv` with typed properties (`anthropic_api_key`, `ibkr_username`, `ibkr_password`, `tws_port`, `ibkr_host`, `ib_client_id`, `database_path`). Properties raise `MissingSecretError` if env var unset.
 - [x] **2.2** Add `tests/unit/config/test_secrets.py` — verify `SecretEnv()` reads from `os.environ`; `monkeypatch.delenv` produces `MissingSecretError`; integer-coerced properties surface `MissingSecretError` (not `ValueError`) on malformed input.
-- [ ] **2.3** Update `apps/api/src/iguanatrader/main.py` (or composition root) to construct `SecretEnv()` ONCE at startup and pass into adapter constructors via DI. Wired alongside each adapter's DI in §3.
+- [x] **2.3** Composition pattern: each `build_*_from_env()` factory in §3 constructs `SecretEnv()` internally and passes the typed properties into the adapter. No FastAPI-app-level singleton needed because each adapter's lifecycle is independent (Anthropic per-route, scheduler per-daemon, etc.) and `SecretEnv()` is stateless.
 
 ## 3. Six production adapters (parallelisable per [.ai-playbook/specs/release-management.md §6.6](../../../.ai-playbook/specs/release-management.md))
 
@@ -53,7 +53,7 @@
 ### 3.E weekly_review_pdf
 
 - [x] **3.E.1** Author `apps/api/src/iguanatrader/contexts/orchestration/weekly_review_pdf.py` — ~170 lines. Pure function `render_weekly_review_pdf(digest, review_date=None) -> bytes`; no disk I/O. 4 sections (Performance / Strategy attribution / Cost breakdown / Action items) defensively handle malformed digest fields.
-- [ ] **3.E.2** Wire into `OrchestrationService.run_routine("weekly_review")` — the digest output is also rendered as PDF and the path is included in the routine result. **Wired alongside §8 acceptance smoke** — caller writes to `data/weekly_reviews/<YYYY-MM-DD>.pdf`.
+- [x] **3.E.2** `OrchestrationService.run_routine` now invokes `_render_weekly_review_pdf_side_effect` when `routine_name == "weekly_review"`. PDF written to `data/weekly_reviews/<YYYY-MM-DD>.pdf`; failures graceful-degrade (markdown digest is the primary deliverable).
 - [x] **3.E.3** Author `tests/unit/contexts/orchestration/test_weekly_review_pdf.py` — `pytest.importorskip("reportlab")` install-gate; 5 cases: PDF magic bytes, empty-digest tolerance, review-date embedding, document-info `iguanatrader` author, malformed-digest tolerance.
 
 ### 3.F (No 6th adapter — Helm chart is the deployment surface, covered in §4 below.)
