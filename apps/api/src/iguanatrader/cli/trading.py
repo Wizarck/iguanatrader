@@ -137,6 +137,8 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             OrchestrationRepository,
         )
         from iguanatrader.contexts.orchestration.service import OrchestrationService
+        from iguanatrader.contexts.risk.repository import RiskRepository
+        from iguanatrader.contexts.risk.service import RiskService
         from iguanatrader.contexts.trading.service import TradingService
 
         trading_service = TradingService(
@@ -145,6 +147,11 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             strategy_resolver=_make_strategy_resolver(),
         )
         trading_service.register_subscriptions()
+
+        # Slice K1-followup-bus-subscriptions §3.1 — RiskService bridge
+        # subscribes to ProposalCreated + emits ProposalRiskEvaluated.
+        risk_service = RiskService(repository=RiskRepository(session=session), bus=bus)
+        risk_service.register_subscriptions(bus)
 
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
@@ -155,17 +162,17 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             watchlist_symbols=watchlist_symbols,
         )
 
-        # K1 RiskService + P1 ApprovalService bus subscriptions are NOT
-        # yet shipped (their service classes lack register_subscriptions
-        # methods); slice K1-followup + P1-followup own those wirings.
-        # The daemon boots without them so the rest of the pipeline can
-        # be exercised manually via POST /trades/proposals/{id}/approve
-        # (slice T4 §4.5).
+        # P1 ApprovalService bus subscriptions are NOT yet shipped
+        # (its service class lacks register_subscriptions); slice
+        # P1-followup owns that wiring. K1 propose→risk hop is wired
+        # by this slice (K1-followup-bus-subscriptions); the manual-
+        # approve endpoint (POST /trades/proposals/{id}/approve)
+        # remains the operator override path that still bypasses P1.
         log.warning(
             "trading.daemon.bus_subscriptions.partial",
             note=(
-                "K1 RiskService + P1 ApprovalService bus subscriptions "
-                "deferred to follow-up slices; manual approve endpoint "
+                "P1 ApprovalService bus subscriptions deferred to a "
+                "follow-up slice; manual approve endpoint "
                 "(POST /trades/proposals/{id}/approve) bypasses the chain."
             ),
         )
