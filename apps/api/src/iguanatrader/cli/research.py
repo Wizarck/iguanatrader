@@ -23,6 +23,11 @@ from uuid import UUID
 
 import typer
 
+# Slice T4 §1.1: tenant resolution + db_url extracted to cli/_tenant.py so
+# `cli/trading.py` (and future CLI subcommands) can share the helper.
+from iguanatrader.cli._tenant import db_url as _db_url
+from iguanatrader.cli._tenant import resolve_tenant_id as _resolve_tenant_id
+
 app: typer.Typer = typer.Typer(
     name="research",
     help="Research operator commands (slice R5).",
@@ -30,7 +35,6 @@ app: typer.Typer = typer.Typer(
 )
 
 
-_DEFAULT_DB_URL = "sqlite+aiosqlite:///./data/iguanatrader.db"
 _VALID_METHODOLOGIES = (
     "three_pillar",
     "canslim",
@@ -38,37 +42,6 @@ _VALID_METHODOLOGIES = (
     "qarp",
     "multi_factor",
 )
-
-
-def _db_url() -> str:
-    return os.getenv("IGUANA_DATABASE_URL") or _DEFAULT_DB_URL
-
-
-async def _resolve_tenant_id(tenant: str | None) -> UUID:
-    """Resolve a tenant name → UUID; default to first tenant if None.
-
-    Replicates the admin-CLI tenant-resolution pattern. Single-tenant
-    deployments need no flag.
-    """
-    from sqlalchemy import select
-
-    from iguanatrader.persistence import Tenant, engine_factory, session_factory
-
-    engine = engine_factory(_db_url())
-    try:
-        sessionmaker = session_factory(engine)
-        async with sessionmaker() as session:
-            stmt = select(Tenant)
-            if tenant is not None:
-                stmt = stmt.where(Tenant.name == tenant)
-            result = await session.execute(stmt)
-            row = result.scalars().first()
-    finally:
-        await engine.dispose()
-    if row is None:
-        typer.echo(f"No tenant found (name={tenant!r})")
-        raise typer.Exit(code=1)
-    return row.id
 
 
 @app.command("refresh-brief")
