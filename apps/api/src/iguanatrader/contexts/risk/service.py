@@ -95,6 +95,133 @@ class RiskService:
         return self._repo
 
     # ------------------------------------------------------------------
+    # Bus bridge (slice K1-followup-bus-subscriptions)
+    # ------------------------------------------------------------------
+
+    def register_subscriptions(self, bus: MessageBus | None = None) -> None:
+        """Subscribe to ``trading.ProposalCreated`` and bridge to evaluate_proposal.
+
+        Slice K1-followup §1.3: closes the propose→risk hop in the T1
+        archived event pipeline. The bridge handler emits the K1-native
+        :class:`RiskProposalAccepted` / :class:`RiskProposalRejected`
+        events (unchanged behaviour) AND additionally publishes
+        :class:`trading.ProposalRiskEvaluated` so T4's
+        :meth:`TradingService.risk_check_handler` can react.
+
+        Idempotent at the bus boundary (slice 2 D1: subscribe with
+        ``idempotent=True``). Re-registering creates a new subscription
+        handle — the daemon calls this once per service instance on
+        startup.
+        """
+        from iguanatrader.contexts.trading.events import ProposalCreated
+
+        target_bus = bus if bus is not None else self._bus
+        if target_bus is None:
+            raise RuntimeError(
+                "RiskService.register_subscriptions called without a bus; "
+                "construct RiskService(repository, bus=...) or pass bus= explicitly."
+            )
+        target_bus.subscribe(
+            ProposalCreated,
+            self._proposal_created_handler,
+            idempotent=True,
+        )
+
+    async def _proposal_created_handler(self, event: Any) -> None:
+        """Bridge: ``ProposalCreated`` → evaluate_proposal → ``ProposalRiskEvaluated``.
+
+        Slice K1-followup §1.2 body. Loads the :class:`TradeProposal`
+        row by id, projects to :class:`TradeProposalInput`, calls
+        :meth:`evaluate_proposal` (which emits K1-native events
+        unchanged), then publishes T1's expected
+        :class:`ProposalRiskEvaluated` so T4's bus chain continues.
+
+        Failure modes:
+
+        * Missing :class:`TradeProposal` row → log warning, publish
+          nothing (the :class:`ProposalCreated` was for a proposal
+          that was deleted between publish and handle — should never
+          happen in practice, but defensive).
+        * :class:`KillSwitchActiveError` from
+          :meth:`evaluate_proposal` → publish
+          ``ProposalRiskEvaluated(outcome="reject",
+          cap_type_breached="kill_switch")`` so T4 still drives the
+          proposal to a terminal state via its reject branch.
+        * Generic exception → re-raise (the bus catches at the
+          subscription boundary and logs + suppresses; the proposal
+          is left in an "in-flight" limbo for operator inspection).
+        """
+        from iguanatrader.contexts.trading.events import ProposalRiskEvaluated
+        from iguanatrader.contexts.trading.repository import (
+            TradeProposalRepository,
+        )
+
+        if self._bus is None:
+            log.warning(
+                "risk.bridge.bus_missing",
+                proposal_id=str(event.proposal_id),
+            )
+            return
+
+        proposal_row = await TradeProposalRepository().get_by_id(event.proposal_id)
+        if proposal_row is None:
+            log.warning(
+                "risk.bridge.proposal_missing",
+                proposal_id=str(event.proposal_id),
+            )
+            return
+
+        proposal_input = self._project_proposal_input(proposal_row)
+        try:
+            _, decision = await self.evaluate_proposal(proposal_input)
+        except KillSwitchActiveError:
+            log.info(
+                "risk.bridge.kill_switch_active",
+                proposal_id=str(event.proposal_id),
+                tenant_id=str(event.tenant_id),
+            )
+            await self._bus.publish(
+                ProposalRiskEvaluated(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    outcome="reject",
+                    cap_type_breached="kill_switch",
+                )
+            )
+            return
+
+        await self._bus.publish(
+            ProposalRiskEvaluated(
+                tenant_id=event.tenant_id,
+                proposal_id=event.proposal_id,
+                outcome=decision.outcome,
+                cap_type_breached=decision.cap_type_breached,
+                clip_quantity=decision.clip_quantity,
+            )
+        )
+        log.info(
+            "risk.bridge.evaluated",
+            proposal_id=str(event.proposal_id),
+            outcome=decision.outcome,
+            cap_type_breached=decision.cap_type_breached,
+        )
+
+    @staticmethod
+    def _project_proposal_input(row: Any) -> TradeProposalInput:
+        """Project a :class:`TradeProposal` ORM row → :class:`TradeProposalInput`.
+
+        Service-layer single conversion point per K1 design D2 (the
+        engine stays free of T1 ORM types). ``notional_value`` is
+        computed as ``quantity * entry_price_indicative``.
+        """
+        return TradeProposalInput(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            notional_value=Decimal(str(row.quantity)) * Decimal(str(row.entry_price_indicative)),
+            side=row.side,
+        )
+
+    # ------------------------------------------------------------------
     # Cap loading
     # ------------------------------------------------------------------
 
