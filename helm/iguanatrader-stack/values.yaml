@@ -1,0 +1,113 @@
+# iguanatrader-stack — default values.
+#
+# Per-environment overrides (dev/paper/live) are provided via Fleet
+# bundle clusterSelector labels; this file holds shared defaults.
+
+image:
+  api:
+    repository: ghcr.io/wizarck/iguanatrader-api
+    tag: ""  # falls back to .Chart.AppVersion if empty
+    pullPolicy: IfNotPresent
+  openbb:
+    repository: ghcr.io/wizarck/iguanatrader-openbb-sidecar
+    tag: ""
+    pullPolicy: IfNotPresent
+  litestream:
+    repository: litestream/litestream
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+env:
+  # Operational env tag (dev/paper/live). MUST be set per Fleet bundle override.
+  IGUANATRADER_ENV: "dev"
+  LOG_LEVEL: "INFO"
+  METRICS_ENABLED: "false"
+  # API → OpenBB sidecar internal DNS.
+  OPENBB_SIDECAR_URL: "http://iguanatrader-openbb:8765"
+  # Sqlite path inside the api pod's PV mount.
+  DATABASE_PATH: "/data/iguanatrader.sqlite"
+  # IBKR defaults (paper port). Override per env in Fleet bundle.
+  TWS_PORT: "7497"
+  IBKR_HOST: "host.docker.internal"
+  IB_CLIENT_ID: "1"
+
+# Secret references — populated by sops-secrets-operator at deploy time
+# from the SOPS-encrypted manifest. The chart only declares the EnvFrom
+# binding shape; actual values live in the encrypted Secret.
+secret:
+  name: iguanatrader-secrets
+  # Field names referenced by the api/openbb pods via envFrom.secretRef.
+  fields:
+    - ANTHROPIC_API_KEY
+    - IBKR_USERNAME
+    - IBKR_PASSWORD
+    - LITESTREAM_AWS_ACCESS_KEY_ID
+    - LITESTREAM_AWS_SECRET_ACCESS_KEY
+
+resources:
+  api:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  openbb:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  litestream:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+persistence:
+  enabled: true
+  storageClass: ""  # cluster default
+  size: 10Gi
+  accessMode: ReadWriteOnce
+
+litestream:
+  s3:
+    bucket: ""        # MUST be set per env via Fleet bundle override
+    region: "us-east-1"
+    endpoint: ""      # blank = AWS native
+  syncInterval: "10s"
+
+ingress:
+  enabled: true
+  className: "traefik"
+  host: "iguanatrader.local"
+  tls:
+    enabled: false
+    secretName: ""
+
+service:
+  api:
+    type: ClusterIP
+    port: 8000
+  openbb:
+    type: ClusterIP
+    port: 8765
+
+probes:
+  api:
+    liveness:
+      path: /health/live
+      initialDelaySeconds: 30
+      periodSeconds: 30
+    readiness:
+      path: /health/ready
+      initialDelaySeconds: 10
+      periodSeconds: 10
+  openbb:
+    liveness:
+      path: /health
+      initialDelaySeconds: 30
+      periodSeconds: 30

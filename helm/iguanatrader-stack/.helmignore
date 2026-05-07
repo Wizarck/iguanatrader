@@ -1,0 +1,12 @@
+.DS_Store
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+*.tmp
+*.bak
+*.orig
+*.pyc
+__pycache__/
+README.md.bak
