@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from iguanatrader.contexts.orchestration.alert_filter import (
     AlertTier,
@@ -257,12 +257,12 @@ class OrchestrationService:
     async def bootstrap_routines(
         self,
         *,
-        scheduler: object,
-        trading_service: object,
+        scheduler: Any,
+        trading_service: Any,
         watchlist_symbols: list[str],
-        market_data_port: object | None = None,
-        strategy_config_repo: object | None = None,
-        ingestion_service: object | None = None,
+        market_data_port: Any | None = None,
+        strategy_config_repo: Any | None = None,
+        ingestion_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
     ) -> None:
@@ -298,12 +298,12 @@ class OrchestrationService:
             async def _propose() -> None:
                 for symbol in watchlist_symbols:
                     try:
-                        configs = await strategy_config_repo.list_enabled_for_symbol(  # type: ignore[union-attr]
+                        configs = await strategy_config_repo.list_enabled_for_symbol(
                             symbol,
                         )
                         if not configs:
                             continue
-                        bars = await market_data_port.get_bars(  # type: ignore[union-attr]
+                        bars = await market_data_port.get_bars(
                             symbol=symbol,
                             timeframe=timeframe,
                             lookback_bars=lookback_bars,
@@ -322,7 +322,7 @@ class OrchestrationService:
                                 enabled=config.enabled,
                                 version=config.version,
                             )
-                            await trading_service.propose(  # type: ignore[union-attr]
+                            await trading_service.propose(
                                 symbol=symbol,
                                 strategy_config_id=config.id,
                                 bars=bars,
@@ -345,10 +345,10 @@ class OrchestrationService:
             fn = _make_propose_fn(routine_name) if wire_propose_loops else _placeholder
             spec = JobSpec(
                 name=routine_name,
-                fn=fn,  # type: ignore[arg-type]
+                fn=fn,
                 cron_kwargs=cron_kwargs,
             )
-            scheduler.add_job(spec)  # type: ignore[attr-defined]
+            scheduler.add_job(spec)
 
         if ingestion_service is not None:
 
@@ -358,7 +358,7 @@ class OrchestrationService:
                 )
 
                 try:
-                    result = await ingestion_service.sync(  # type: ignore[union-attr]
+                    result = await ingestion_service.sync(
                         symbols=watchlist_symbols,
                         timeframe=timeframe,
                         lookback_bars=lookback_bars,
@@ -385,10 +385,10 @@ class OrchestrationService:
 
             sync_spec = JobSpec(
                 name="market_data_sync",
-                fn=_ingest_market_data,  # type: ignore[arg-type]
+                fn=_ingest_market_data,
                 cron_kwargs={"hour": 6, "minute": 0, "day_of_week": "mon-fri"},
             )
-            scheduler.add_job(sync_spec)  # type: ignore[attr-defined]
+            scheduler.add_job(sync_spec)
 
         logger.info(
             "orchestration.routines.bootstrapped",

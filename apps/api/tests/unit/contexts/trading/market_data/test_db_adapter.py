@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from iguanatrader.contexts.trading.market_data import MarketDataNotAvailableError
@@ -57,7 +57,7 @@ async def sf(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 async def _seed_bars(
     sf: async_sessionmaker[AsyncSession],
     *,
-    tenant_id: object,
+    tenant_id: UUID,
     symbol: str,
     n: int,
     start_offset_days: int = 0,

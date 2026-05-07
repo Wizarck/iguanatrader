@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import typer
 
@@ -265,7 +265,7 @@ async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter
 
 def _make_strategy_resolver(
     *,
-    session_factory: object,
+    session_factory: Any,
 ) -> StrategyResolver:
     """Async closure resolver: ``UUID → StrategyPort`` (slice T4-followup-market-data §2.10).
 
@@ -283,7 +283,7 @@ def _make_strategy_resolver(
     manager = StrategyManager()
 
     async def _resolve(strategy_config_id: UUID) -> StrategyPort:
-        async with session_factory() as session:  # type: ignore[attr-defined]
+        async with session_factory() as session:
             session_var.set(session)
             repo = StrategyConfigRepository()
             row = await repo.get_by_id(strategy_config_id)

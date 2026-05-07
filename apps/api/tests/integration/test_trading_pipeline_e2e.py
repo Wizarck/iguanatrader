@@ -25,7 +25,7 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -47,6 +47,7 @@ from iguanatrader.contexts.trading.models import StrategyConfig
 from iguanatrader.contexts.trading.ports import (
     Bar,
     BrokerOrderId,
+    BrokerPort,
     FillEvent,
     NewOrder,
     StrategyConfigSnapshot,
@@ -133,7 +134,7 @@ def _generate_uptrend(n: int = 50) -> list[Bar]:
 
 
 class _FakeBroker:
-    """In-memory :class:`BrokerPort` recording calls + emitting fills."""
+    """Minimal :class:`BrokerPort`-compatible fake recording orders."""
 
     def __init__(self) -> None:
         self.calls: list[NewOrder] = []
@@ -145,22 +146,25 @@ class _FakeBroker:
     async def cancel_order(self, broker_order_id: BrokerOrderId) -> None:
         return None
 
-    async def stream_fills(self) -> AsyncIterator[FillEvent]:
-        if False:
-            yield FillEvent(
-                tenant_id=uuid4(),
-                order_id=uuid4(),
-                quantity_filled=Decimal("0"),
-                fill_price=Decimal("0"),
-                commission=Decimal("0"),
-                commission_currency="USD",
-                filled_at=datetime.now(UTC),
-            )
+    def reconcile_fills(self, since: datetime) -> AsyncIterator[FillEvent]:
+        async def _empty() -> AsyncIterator[FillEvent]:
+            if False:
+                yield FillEvent(
+                    tenant_id=uuid4(),
+                    order_id=uuid4(),
+                    quantity_filled=Decimal("0"),
+                    fill_price=Decimal("0"),
+                    commission=Decimal("0"),
+                    commission_currency="USD",
+                    filled_at=datetime.now(UTC),
+                )
 
-    async def positions(self) -> Any:
-        return []
+        return _empty()
 
-    async def disconnect(self) -> None:
+    async def get_position(self, symbol: str) -> Any:
+        return None
+
+    async def get_account_equity(self) -> Any:
         return None
 
 
@@ -239,7 +243,7 @@ async def test_propose_to_fill_chain(
         session_var.set(session)
         trading_service = TradingService(
             bus=bus,
-            broker=broker,
+            broker=cast("BrokerPort", broker),
             strategy_resolver=_resolve,
         )
         trading_service.register_subscriptions()
