@@ -133,6 +133,8 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             os.environ.get("IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS")
         )
 
+        from iguanatrader.contexts.approval.repository import ApprovalRepository
+        from iguanatrader.contexts.approval.service import ApprovalService
         from iguanatrader.contexts.orchestration.repository import (
             OrchestrationRepository,
         )
@@ -153,6 +155,17 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         risk_service = RiskService(repository=RiskRepository(session=session), bus=bus)
         risk_service.register_subscriptions(bus)
 
+        # Slice P1-followup-bus-subscriptions §3.1 — ApprovalService
+        # bridge subscribes to ApprovalRequested (audit-write) + 3
+        # outbound bridges (ApprovalProposal{Approved,Rejected,
+        # TimedOut} → trading.ProposalApproved/Rejected). Closes the
+        # last gap in the propose→risk→approve→execute chain.
+        approval_service = ApprovalService(
+            repository=ApprovalRepository(),
+            message_bus=bus,
+        )
+        approval_service.register_subscriptions(bus)
+
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
         # Side-effect: registers cron JobSpecs on the scheduler.
@@ -162,20 +175,9 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             watchlist_symbols=watchlist_symbols,
         )
 
-        # P1 ApprovalService bus subscriptions are NOT yet shipped
-        # (its service class lacks register_subscriptions); slice
-        # P1-followup owns that wiring. K1 propose→risk hop is wired
-        # by this slice (K1-followup-bus-subscriptions); the manual-
-        # approve endpoint (POST /trades/proposals/{id}/approve)
-        # remains the operator override path that still bypasses P1.
-        log.warning(
-            "trading.daemon.bus_subscriptions.partial",
-            note=(
-                "P1 ApprovalService bus subscriptions deferred to a "
-                "follow-up slice; manual approve endpoint "
-                "(POST /trades/proposals/{id}/approve) bypasses the chain."
-            ),
-        )
+        # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close
+        # the propose→risk→approve→execute chain end-to-end.
+        log.info("trading.daemon.bus_subscriptions.complete")
 
         await scheduler.start()
         log.info("trading.daemon.scheduler_started")

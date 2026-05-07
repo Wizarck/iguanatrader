@@ -50,6 +50,37 @@ from iguanatrader.shared.time import now as utc_now
 log = structlog.get_logger("iguanatrader.contexts.approval.service")
 
 
+_DEFAULT_APPROVAL_CHANNELS = "telegram,dashboard"
+_DEFAULT_APPROVAL_TIMEOUT_SECONDS = 300
+_TIMEOUT_MIN_SECONDS = 1
+_TIMEOUT_MAX_SECONDS = 86400
+
+
+def _parse_approval_channels(raw: str | None) -> list[str]:
+    """Parse ``IGUANATRADER_DEFAULT_APPROVAL_CHANNELS`` (comma-separated).
+
+    Default ``"telegram,dashboard"`` per slice P1-followup §2.7 (env-var
+    first-cut; v2 SaaS swaps to a per-tenant ``approval_defaults`` table).
+    """
+    csv = (raw or _DEFAULT_APPROVAL_CHANNELS).strip()
+    return [chan.strip().lower() for chan in csv.split(",") if chan.strip()]
+
+
+def _parse_approval_timeout(raw: str | None) -> int:
+    """Parse ``IGUANATRADER_DEFAULT_APPROVAL_TIMEOUT_SECONDS`` + clamp.
+
+    Clamped to ``[1, 86400]`` (1s … 24h). Falls back to 300s on parse
+    failure or empty.
+    """
+    if raw is None or not raw.strip():
+        return _DEFAULT_APPROVAL_TIMEOUT_SECONDS
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        return _DEFAULT_APPROVAL_TIMEOUT_SECONDS
+    return max(_TIMEOUT_MIN_SECONDS, min(_TIMEOUT_MAX_SECONDS, value))
+
+
 class ApprovalService:
     """Coordinator for approval lifecycle + event emission."""
 
@@ -226,6 +257,207 @@ class ApprovalService:
                 expired_at=request.expires_at,
             )
         await self._message_bus.publish(event)
+
+    # ------------------------------------------------------------------
+    # Slice P1-followup-bus-subscriptions §2 — bus bridge.
+    #
+    # Inbound: trading.ApprovalRequested → create_request audit-write.
+    # Outbound: ApprovalProposal{Approved,Rejected,TimedOut} translated
+    # to trading-flavored events (T4 already subscribes to those).
+    # ------------------------------------------------------------------
+
+    def register_subscriptions(self, bus: MessageBus | None = None) -> None:
+        """Wire bus subscriptions: 1 inbound + 3 outbound bridges.
+
+        All four subscriptions use ``idempotent=True`` (slice 2 D1) so
+        re-registration on daemon restart is safe. The daemon calls this
+        once per service instance on startup; tests construct fresh
+        services per test.
+        """
+        target_bus = bus if bus is not None else self._message_bus
+        if target_bus is None:
+            raise RuntimeError(
+                "ApprovalService.register_subscriptions requires a "
+                "MessageBus via constructor injection or method arg."
+            )
+
+        from iguanatrader.contexts.trading.events import ApprovalRequested
+
+        target_bus.subscribe(
+            ApprovalRequested,
+            self._approval_requested_handler,
+            idempotent=True,
+        )
+        target_bus.subscribe(
+            ApprovalProposalApproved,
+            self._bridge_to_trading_approved_handler,
+            idempotent=True,
+        )
+        target_bus.subscribe(
+            ApprovalProposalRejected,
+            self._bridge_to_trading_rejected_handler,
+            idempotent=True,
+        )
+        target_bus.subscribe(
+            ApprovalProposalTimedOut,
+            self._bridge_to_trading_timeout_handler,
+            idempotent=True,
+        )
+
+    async def _approval_requested_handler(self, event: Any) -> None:
+        """Inbound bridge: persist the approval_request row.
+
+        Channel push fan-out (Telegram bot send, Hermes HTTP) is
+        deliberately deferred to ``P1-followup-channel-fanout``;
+        dashboard SSE + ``POST /approvals/{id}/{approve,reject}`` routes
+        already drive the human-decision path.
+        """
+        import os
+
+        channels = _parse_approval_channels(
+            os.environ.get("IGUANATRADER_DEFAULT_APPROVAL_CHANNELS")
+        )
+        timeout_seconds = _parse_approval_timeout(
+            os.environ.get("IGUANATRADER_DEFAULT_APPROVAL_TIMEOUT_SECONDS")
+        )
+        row = await self.create_request(
+            proposal_id=event.proposal_id,
+            channels=channels,
+            timeout_seconds=timeout_seconds,
+        )
+        log.info(
+            "approval.bus.request_persisted",
+            proposal_id=str(event.proposal_id),
+            request_id=str(row.id),
+            channels=list(channels),
+            timeout_seconds=timeout_seconds,
+        )
+
+    async def _bridge_to_trading_approved_handler(
+        self, event: ApprovalProposalApproved
+    ) -> None:
+        """Outbound bridge: ApprovalProposalApproved → trading.ProposalApproved.
+
+        Tenant id is resolved from :data:`tenant_id_var` (slice 2 D2);
+        P1 events do not carry tenant_id (the audit row is tenant-scoped
+        by row-level scoping, not by event payload). If the ContextVar
+        is unset (test outside request scope) we log and skip rather
+        than emit a tenant-less event.
+        """
+        from iguanatrader.contexts.trading.events import ProposalApproved
+        from iguanatrader.shared.contextvars import tenant_id_var
+
+        tenant_id = tenant_id_var.get()
+        if tenant_id is None:
+            log.error(
+                "approval.bus.bridge_skipped_no_tenant",
+                bridge="approved",
+                proposal_id=str(event.proposal_id),
+            )
+            return
+
+        translated = ProposalApproved(
+            tenant_id=tenant_id,
+            proposal_id=event.proposal_id,  # type: ignore[arg-type]
+            approved_by_user_id=event.decided_by_user_id,
+            metadata={
+                "decision_id": str(event.decision_id),
+                "decided_at": (
+                    event.decided_at.isoformat()
+                    if event.decided_at is not None
+                    else None
+                ),
+                "decided_via_channel": event.decided_via_channel,
+            },
+        )
+        await self._message_bus.publish(translated)
+        log.info(
+            "approval.bus.translated_to_trading_approved",
+            proposal_id=str(event.proposal_id),
+            decision_id=str(event.decision_id),
+            decided_via_channel=event.decided_via_channel,
+        )
+
+    async def _bridge_to_trading_rejected_handler(
+        self, event: ApprovalProposalRejected
+    ) -> None:
+        """Outbound bridge: ApprovalProposalRejected → trading.ProposalRejected."""
+        from iguanatrader.contexts.trading.events import ProposalRejected
+        from iguanatrader.shared.contextvars import tenant_id_var
+
+        tenant_id = tenant_id_var.get()
+        if tenant_id is None:
+            log.error(
+                "approval.bus.bridge_skipped_no_tenant",
+                bridge="rejected",
+                proposal_id=str(event.proposal_id),
+            )
+            return
+
+        translated = ProposalRejected(
+            tenant_id=tenant_id,
+            proposal_id=event.proposal_id,  # type: ignore[arg-type]
+            reason=event.reason or "user_declined",
+            metadata={
+                "decision_id": str(event.decision_id),
+                "decided_at": (
+                    event.decided_at.isoformat()
+                    if event.decided_at is not None
+                    else None
+                ),
+                "decided_via_channel": event.decided_via_channel,
+            },
+        )
+        await self._message_bus.publish(translated)
+        log.info(
+            "approval.bus.translated_to_trading_rejected",
+            proposal_id=str(event.proposal_id),
+            decision_id=str(event.decision_id),
+            reason=translated.reason,
+        )
+
+    async def _bridge_to_trading_timeout_handler(
+        self, event: ApprovalProposalTimedOut
+    ) -> None:
+        """Outbound bridge: ApprovalProposalTimedOut → trading.ProposalRejected.
+
+        Collapses timeout to ``ProposalRejected(reason="approval_timeout")``
+        sentinel — keeps T4's archive surface untouched (T4 has exactly
+        one terminal handler for the rejected path; adding a separate
+        ``ProposalApprovalTimedOut`` event class would force a T4
+        register_subscriptions change).
+        """
+        from iguanatrader.contexts.trading.events import ProposalRejected
+        from iguanatrader.shared.contextvars import tenant_id_var
+
+        tenant_id = tenant_id_var.get()
+        if tenant_id is None:
+            log.error(
+                "approval.bus.bridge_skipped_no_tenant",
+                bridge="timed_out",
+                proposal_id=str(event.proposal_id),
+            )
+            return
+
+        translated = ProposalRejected(
+            tenant_id=tenant_id,
+            proposal_id=event.proposal_id,  # type: ignore[arg-type]
+            reason="approval_timeout",
+            metadata={
+                "request_id": str(event.request_id),
+                "expired_at": (
+                    event.expired_at.isoformat()
+                    if event.expired_at is not None
+                    else None
+                ),
+            },
+        )
+        await self._message_bus.publish(translated)
+        log.info(
+            "approval.bus.translated_to_trading_timed_out",
+            proposal_id=str(event.proposal_id),
+            request_id=str(event.request_id),
+        )
 
 
 __all__ = ["ApprovalService"]
