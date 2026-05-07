@@ -1,22 +1,32 @@
 # Retrospective: trading-routes-and-daemon (T4 keystone — partial)
 
-> **Forward-authored** per [.ai-playbook/specs/runbook-bmad-openspec.md §4.1](../.ai-playbook/specs/runbook-bmad-openspec.md). Fields filled at archive time.
-
-- **PR**: TBD (slice/trading-routes-and-daemon branch open)
-- **Archive path**: `openspec/changes/archive/<archive-date>-trading-routes-and-daemon/`
-- **Lines shipped**: ~600 LoC src (vs ~1,200 estimated; integration test deferred to followup)
+- **Archived**: 2026-05-07
+- **PR**: [#102](https://github.com/Wizarck/iguanatrader/pull/102) — squash-merged at `0f97bd4`.
+- **Archive path**: `openspec/changes/archive/2026-05-07-trading-routes-and-daemon/`
+- **Schema**: spec-driven
+- **Lines shipped**: ~600 LoC src + 50 retro/tasks ≈ **~650 total** (vs ~1,200 estimated; integration test deferred to followup).
 
 ## What worked
 
-- _(fill on archive — pre-flag candidates: T1 skeleton was extraordinarily helpful — handlers were already declared; T4 just filled bodies. The Wave 4 deferred 3.B.2 + 3.C.2 closed in 2 single lines as promised.)_
+- **T1 skeleton paid off massively**. `TradingService` + 6 handler stubs were already declared with `# T4 fills` markers — T4 just filled bodies. Saved an estimated 200-300 LoC of class-shape authoring + bus-subscription declarations. Pattern candidate: **pre-shipped skeletons for bus-event-driven services accelerate downstream slices by 3-5x**.
+- **Wave 4 deferred items closed in single lines as promised** (3.B.2 IBKRAdapter ← IbAsyncIBClient + 3.C.2 OrchestrationService ← APSchedulerAdapter). The `build_*_from_env()` factory pattern from deployment-foundation worked cleanly — daemon entrypoint reads like a documentation example.
+- **Gates A/B/C followed explicitly** (proposal review → design review → tasks review) — fixing the workflow lesson from deployment-foundation retro. Operator approved each gate consciously (`adelante` → next gate). Zero rework from skipping.
+- **Local mypy/ruff/black before each commit** → CI green at first push (15/15 checks pass). Compare to deployment-foundation slice: 4 rounds of fix-iterations. Lessons codified worked.
+- **Design pivot during apply** (rejection event-only when `trade_proposals` revealed strict-append-only) was caught at handler-body authoring time, not in production. The pivot was a 5-minute decision documented in the repository docstring + tasks.md notes.
 
 ## What didn't
 
-- _(fill on archive — pre-flag candidates: K1 RiskService + P1 ApprovalService have NO register_subscriptions methods → full pipeline can't be exercised end-to-end → integration test deferred → T4 ships incomplete. Discovery happened mid-apply, not in design phase.)_
+- **K1 + P1 `register_subscriptions` absence surfaced AFTER design approval**. K1 RiskService + P1 ApprovalService were scaffolded in their own slices but their bus integrations were never completed. T4 design assumed they existed; discovery happened during Group 3 daemon authoring. Forced partial-scope: integration test deferred + manual-approve route as keystone interim path.
+- **Strategy resolver production wiring forced a `NotImplementedError` stub**. T4 design assumed a `StrategyManager.get_strategy(id)` method exists; doesn't. The closure scaffold raises NotImplementedError and tests bypass via direct injection. Deferred to T4-followup.
+- **Integration test ALL deferred** — 5 sub-tasks (5.1-5.5) all moved to T4-followup because the full pipeline (synthesise → propose → risk → approve → execute) can't be exercised without K1+P1 wiring. T4 ships keystone DI + bodies + manual-approve only.
+- **Pre-flight discovery missing from Gate B (design review)**. The "does every consumer-side wiring of every event subscriber exist?" question wasn't asked. Promote to ai-playbook v0.11.1 as a hard Gate-B checklist item.
 
 ## Lessons
 
-- _(fill on archive — pre-flag candidates: pre-flight discovery gates B/C should include "does the consumer-side wiring of every event subscriber exist?" — not just "do I have the proposal/design/tasks". The discovery that K1+P1 lacked register_subscriptions surfaced AFTER design was approved.)_
+- **Pre-flight discovery for bus-driven slices** must answer "for every event we plan to publish, who consumes it AND is the subscription wiring already shipped?" — BEFORE Gate B approval. Add to ai-playbook `runbook-bmad-openspec.md` Gate B checklist.
+- **Strict-append-only schemas need a documented reaching-around pattern**. Three options surfaced: (a) add a migration to allow column mutation via `__append_only_mutable_columns__`, (b) track state via separate audit table, (c) track state via bus events only. T4 picked (c) — works for transient lifecycles but breaks queryability for ops dashboards. The choice is per-table; the pattern is "state is event-derived, not column-mutable".
+- **Skeleton + body-fill pattern is the new Wave normal**. T1 → T4 (fill) is the second iteration of this (R1 → R5 was the first; deployment-foundation's adapters were the third). Promote to ai-playbook as **`skeleton-then-fill.md`** named pattern.
+- **`object`-typed callable params should use proper type aliases**. Five mypy errors in the daemon traced to `object` param types where `StrategyResolver` / `IbAsyncIBClient` would have given mypy enough info. Cost: 10 minutes of cast() insertions. Lesson: when authoring a daemon with multiple injected services, declare type aliases first, then write the body.
 
 ## Carry-forward to next change(s)
 
