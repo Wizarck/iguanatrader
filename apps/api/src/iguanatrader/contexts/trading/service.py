@@ -35,23 +35,42 @@ from uuid import UUID, uuid4
 
 import structlog
 
+from iguanatrader.contexts.observability.errors import BudgetExceededError
+from iguanatrader.contexts.trading.brokers.ibkr_adapter import BrokerAuthError
 from iguanatrader.contexts.trading.events import (
     ApprovalRequested,
+    EquityUpdated,
+    OrderFilled,
     OrderPlaced,
+    OrderRejected,
     ProposalApproved,
     ProposalCreated,
     ProposalRejected,
     ProposalRiskEvaluated,
 )
-from iguanatrader.contexts.trading.models import Order, Trade, TradeProposal
+from iguanatrader.contexts.trading.models import (
+    EquitySnapshot,
+    Fill,
+    Order,
+    Trade,
+    TradeProposal,
+)
 from iguanatrader.contexts.trading.ports import (
     BarHistory,
     BrokerOrderId,
     BrokerPort,
+    FillEvent,
     NewOrder,
     Proposal,
     StrategyConfigSnapshot,
     StrategyPort,
+)
+from iguanatrader.contexts.trading.repository import (
+    EquitySnapshotRepository,
+    FillRepository,
+    OrderRepository,
+    TradeProposalRepository,
+    TradeRepository,
 )
 from iguanatrader.shared.contextvars import tenant_id_var
 from iguanatrader.shared.errors import IguanaError
@@ -240,9 +259,11 @@ class TradingService:
     async def risk_check_handler(self, event: ProposalRiskEvaluated) -> None:
         """Subscriber: on permissive risk outcome publish :class:`ApprovalRequested`.
 
-        Slice T1 ships only the breadcrumb + the publish on the
-        ``allow``/``clip`` outcomes. Slice T4 will add the persistence
-        of the risk evaluation receipt + any further routing logic.
+        Slice T4 (§2.A): on ``event.outcome == "reject"`` publish
+        :class:`ProposalRejected` so downstream consumers (P1 audit
+        channels, O1 cost meter) record the dead-end. The
+        ``trade_proposals`` row is NOT mutated — the table is strict-
+        append-only; the bus event is the durable record.
         """
         log.info(
             "trading.proposal.risk_evaluated.received",
@@ -264,9 +285,27 @@ class TradingService:
                 proposal_id=str(event.proposal_id),
                 decision=event.outcome,
             )
-        # T4 fills: on outcome == 'reject', persist a no-trade audit
-        # row + emit a structlog breadcrumb so the operator can trace
-        # why the proposal stopped.
+            return
+
+        if event.outcome == "reject":
+            reason = (
+                f"risk_engine_reject:{event.cap_type_breached}"
+                if event.cap_type_breached
+                else "risk_engine_reject"
+            )
+            await self._bus.publish(
+                ProposalRejected(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    reason=reason,
+                )
+            )
+            log.info(
+                "trading.proposal.rejected_by_risk",
+                proposal_id=str(event.proposal_id),
+                reason=reason,
+                tenant_id=str(event.tenant_id),
+            )
 
     # ------------------------------------------------------------------
     # Step 5 — execute_on_approval_handler (skeleton; T4 fills logic)
@@ -276,13 +315,20 @@ class TradingService:
 
         Idempotent at the bus boundary (slice 2 D1: subscribe with
         ``idempotent=True``); the registration in
-        :meth:`register_subscriptions` sets the flag. If P1 retries the
-        approve event the bus suppresses the duplicate.
+        :meth:`register_subscriptions` sets the flag. T4 §2.B layers
+        a second-line idempotency check via the
+        :meth:`OrderRepository.get_by_proposal_id` lookup before
+        contacting the broker.
 
-        T1 plants the call + the persistence of the ``orders`` row +
-        the :class:`OrderPlaced` publish; T4 fills in the
-        :class:`Trade` lifecycle row creation (state == 'open') + the
-        ``proposal → trade → order`` linkage queries.
+        Sequence (per slice T4 design §2.1.2):
+
+        1. Idempotency: skip if ``orders`` already has a row for the proposal.
+        2. Load :class:`TradeProposal` (publish :class:`ProposalRejected` if missing).
+        3. Create :class:`Trade` row (state='open').
+        4. Build :class:`NewOrder` from the proposal.
+        5. Submit via broker; map ``BrokerAuthError`` / ``BudgetExceededError`` to
+           :class:`OrderRejected` + persist Order(state='rejected').
+        6. On success: persist Order(state='submitted') + publish :class:`OrderPlaced`.
         """
         log.info(
             "trading.proposal.approved.received",
@@ -290,61 +336,250 @@ class TradingService:
             tenant_id=str(event.tenant_id),
         )
 
-        # T4 fills: load the TradeProposal + create the Trade row first
-        # (state='open'), then reconstruct the NewOrder shape from the
-        # proposal. Below is the skeleton call sequence — comments mark
-        # the gaps.
+        order_repo = OrderRepository()
+        existing = await order_repo.get_by_proposal_id(event.proposal_id)
+        if existing is not None:
+            log.info(
+                "trading.execute.idempotent_skip",
+                proposal_id=str(event.proposal_id),
+                order_id=str(existing.id),
+                reason="order_already_placed",
+            )
+            return
 
-        # 1. (T4) Load proposal by id; idempotency-guard against a
-        #    duplicate execute path that survived the bus dedup window.
-        # 2. (T4) Create Trade row (state='open', opened_at=utc_now()).
-        # 3. (T4) Build NewOrder from Proposal + tenant config.
-        # 4. (T1) Submit via broker; record broker_order_id.
-        # 5. (T1) INSERT order row; (T1) publish OrderPlaced.
+        proposal_repo = TradeProposalRepository()
+        proposal_row = await proposal_repo.get_by_id(event.proposal_id)
+        if proposal_row is None:
+            await self._bus.publish(
+                ProposalRejected(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    reason="proposal_missing",
+                )
+            )
+            log.warning(
+                "trading.execute.proposal_missing",
+                proposal_id=str(event.proposal_id),
+            )
+            return
 
-        new_order_stub = NewOrder(
+        trade_repo = TradeRepository()
+        trade_id = uuid4()
+        opened_at = utc_now()
+        trade = Trade(
+            id=trade_id,
             tenant_id=event.tenant_id,
-            trade_id=uuid4(),  # T4: real trade_id from step 2
-            symbol="",  # T4: copied from Proposal
-            side="buy",  # T4: copied from Proposal
-            quantity=Decimal("0"),  # T4: copied from Proposal
-            order_type="market",  # T4: copied from Proposal
+            proposal_id=event.proposal_id,
+            symbol=proposal_row.symbol,
+            side=proposal_row.side,
+            quantity=proposal_row.quantity,
+            mode=proposal_row.mode,
+            state="open",
+            opened_at=opened_at,
         )
-        # In a real T4 implementation we'd ``await self._broker.place_order(new_order_stub)``;
-        # T1 leaves the call wired but commented to avoid hitting a fake
-        # broker on import-time test loading. Document the call-site so
-        # T4 just uncomments + fills the missing fields.
-        broker_order_id: BrokerOrderId | None = None
-        _ = (new_order_stub, broker_order_id, OrderPlaced, Order, utc_now, datetime)
+        await trade_repo.add(trade)
 
+        new_order = NewOrder(
+            tenant_id=event.tenant_id,
+            trade_id=trade_id,
+            symbol=proposal_row.symbol,
+            side=proposal_row.side,
+            quantity=proposal_row.quantity,
+            order_type="market",
+            client_order_id=uuid4(),
+        )
+
+        order_id = uuid4()
+        broker_order_id: BrokerOrderId | None = None
+        rejection_reason: str | None = None
+        try:
+            broker_order_id = await self._broker.place_order(new_order)
+        except BrokerAuthError as exc:
+            rejection_reason = "broker_auth"
+            log.warning(
+                "trading.execute.broker_auth_error",
+                proposal_id=str(event.proposal_id),
+                error=str(exc),
+            )
+        except BudgetExceededError as exc:
+            rejection_reason = "budget"
+            log.warning(
+                "trading.execute.budget_exceeded",
+                proposal_id=str(event.proposal_id),
+                error=str(exc),
+            )
+
+        if rejection_reason is not None:
+            rejected_order = Order(
+                id=order_id,
+                tenant_id=event.tenant_id,
+                trade_id=trade_id,
+                broker="ibkr",
+                broker_order_id=None,
+                order_type=new_order.order_type,
+                side=new_order.side,
+                quantity=new_order.quantity,
+                limit_price=None,
+                stop_price=None,
+                state="rejected",
+            )
+            await order_repo.add(rejected_order)
+            await self._bus.publish(
+                OrderRejected(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    reason=rejection_reason,
+                )
+            )
+            return
+
+        order = Order(
+            id=order_id,
+            tenant_id=event.tenant_id,
+            trade_id=trade_id,
+            broker="ibkr",
+            broker_order_id=broker_order_id,
+            order_type=new_order.order_type,
+            side=new_order.side,
+            quantity=new_order.quantity,
+            limit_price=None,
+            stop_price=None,
+            state="submitted",
+            submitted_at=utc_now(),
+        )
+        await order_repo.add(order)
+        await self._bus.publish(
+            OrderPlaced(
+                tenant_id=event.tenant_id,
+                order_id=order_id,
+                broker_order_id=broker_order_id,
+            )
+        )
         log.info(
-            "trading.execute_on_approval.skeleton",
+            "trading.order.placed",
+            order_id=str(order_id),
+            broker_order_id=broker_order_id,
             proposal_id=str(event.proposal_id),
-            note="T4 wires real Trade+Order persistence + broker submission",
+            tenant_id=str(event.tenant_id),
         )
 
     # ------------------------------------------------------------------
     # Step 6 — reconcile_fills_handler (skeleton; T4 fills logic)
     # ------------------------------------------------------------------
     async def reconcile_fills_handler(self, since: datetime) -> None:
-        """On reconnect, drain ``BrokerPort.reconcile_fills(since)``.
+        """On heartbeat tick / reconnect, drain ``BrokerPort.reconcile_fills(since)``.
 
-        Slice T1 plants the iteration shape; T4 wires the session-based
-        ``Fill`` INSERT + ``Trade.state`` update + :class:`OrderFilled`
-        publish.
+        Slice T4 §2.C body fill: persist each :class:`Fill`, update
+        :class:`Trade.state` when the order is fully filled, publish
+        :class:`OrderFilled`, and snapshot equity on terminal state.
         """
-        log.info(
-            "trading.fills.reconcile.started",
-            since=since.isoformat(),
-        )
-        async for _fill in self._broker.reconcile_fills(since):
-            # T4 fills: persist Fill row, mutate Trade.state if total
-            # filled qty matches the order qty, publish OrderFilled.
-            log.info(
-                "trading.fills.reconcile.received",
-                broker_fill_id=_fill.broker_fill_id,
+        log.info("trading.fills.reconcile.started", since=since.isoformat())
+        fill_repo = FillRepository()
+        order_repo = OrderRepository()
+        trade_repo = TradeRepository()
+        equity_repo = EquitySnapshotRepository()
+
+        async for fill_event in self._broker.reconcile_fills(since):
+            await self._reconcile_one_fill(
+                fill_event,
+                fill_repo=fill_repo,
+                order_repo=order_repo,
+                trade_repo=trade_repo,
+                equity_repo=equity_repo,
             )
         log.info("trading.fills.reconcile.completed")
+
+    async def _reconcile_one_fill(
+        self,
+        fill_event: FillEvent,
+        *,
+        fill_repo: FillRepository,
+        order_repo: OrderRepository,
+        trade_repo: TradeRepository,
+        equity_repo: EquitySnapshotRepository,
+    ) -> None:
+        """Process a single :class:`FillEvent` (slice T4 §2.C body)."""
+        if fill_event.broker_fill_id and await fill_repo.exists_by_broker_fill_id(
+            fill_event.broker_fill_id
+        ):
+            log.info(
+                "trading.fill.dedup_skip",
+                broker_fill_id=fill_event.broker_fill_id,
+            )
+            return
+
+        order = await order_repo.get_by_id(fill_event.order_id)
+        if order is None:
+            log.warning(
+                "trading.fill.order_missing",
+                order_id=str(fill_event.order_id),
+                broker_fill_id=fill_event.broker_fill_id,
+            )
+            return
+
+        fill_id = uuid4()
+        fill = Fill(
+            id=fill_id,
+            tenant_id=fill_event.tenant_id,
+            order_id=fill_event.order_id,
+            quantity_filled=fill_event.quantity_filled,
+            fill_price=fill_event.fill_price,
+            commission=fill_event.commission,
+            broker_fill_id=fill_event.broker_fill_id,
+        )
+        await fill_repo.add(fill)
+
+        total_filled = await fill_repo.sum_quantity_for_order(fill_event.order_id)
+        # `total_filled` already includes the just-added fill via the SUM.
+        is_terminal = bool(Decimal(str(total_filled)) >= Decimal(str(order.quantity)))
+        if is_terminal:
+            closed_at = utc_now()
+            await trade_repo.update_state(order.trade_id, state="closed", closed_at=closed_at)
+        else:
+            await trade_repo.update_state(order.trade_id, state="partial")
+
+        await self._bus.publish(
+            OrderFilled(
+                tenant_id=fill_event.tenant_id,
+                order_id=fill_event.order_id,
+                fill_id=fill_id,
+            )
+        )
+        log.info(
+            "trading.fill.persisted",
+            fill_id=str(fill_id),
+            order_id=str(fill_event.order_id),
+            quantity_filled=str(fill_event.quantity_filled),
+            fully_filled=is_terminal,
+        )
+
+        if is_terminal:
+            equity_value = await self._broker.get_account_equity()
+            snapshot_id = uuid4()
+            snapshot = EquitySnapshot(
+                id=snapshot_id,
+                tenant_id=equity_value.tenant_id,
+                mode=equity_value.mode,
+                account_equity=equity_value.account_equity,
+                cash_balance=equity_value.cash_balance,
+                realized_pnl_today=equity_value.realized_pnl_today,
+                unrealized_pnl=equity_value.unrealized_pnl,
+                currency=equity_value.currency,
+                snapshot_kind=equity_value.snapshot_kind,
+            )
+            await equity_repo.add(snapshot)
+            await self._bus.publish(
+                EquityUpdated(
+                    tenant_id=equity_value.tenant_id,
+                    equity_snapshot_id=snapshot_id,
+                )
+            )
+            log.info(
+                "trading.equity.snapshot_recorded",
+                snapshot_id=str(snapshot_id),
+                trade_id=str(order.trade_id),
+                account_equity=str(equity_value.account_equity),
+            )
 
     # ------------------------------------------------------------------
     # Cross-context — proposal rejected + halt
@@ -379,8 +614,3 @@ __all__ = [
     "StrategyResolver",
     "TradingService",
 ]
-
-
-# Keep referenced exports alive for ruff (these are intentionally
-# re-exported via ``__all__`` only when T4 fills the bodies).
-_ = (Trade,)

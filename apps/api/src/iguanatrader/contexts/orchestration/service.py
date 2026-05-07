@@ -254,6 +254,52 @@ class OrchestrationService:
             ),
         }
 
+    async def bootstrap_routines(
+        self,
+        *,
+        scheduler: object,
+        trading_service: object,
+        watchlist_symbols: list[str],
+    ) -> None:
+        """Register cron triggers for the 4 routines on the scheduler (slice T4 §3.4).
+
+        For each routine name in :data:`_ROUTINE_TITLES`, registers a
+        :class:`JobSpec` with a no-op fn placeholder; T4-followup wires
+        the actual `TradingService.propose` per watchlist symbol. The
+        slice T4 ships the registration shape; the per-symbol propose
+        loop is intentionally deferred to keep this slice focused on
+        the keystone wiring.
+        """
+        from iguanatrader.contexts.orchestration.scheduler import JobSpec
+
+        cron_kwargs_by_routine: dict[str, dict[str, object]] = {
+            "premarket": {"hour": 8, "minute": 0, "day_of_week": "mon-fri"},
+            "midday": {"hour": 12, "minute": 30, "day_of_week": "mon-fri"},
+            "postmarket": {"hour": 16, "minute": 30, "day_of_week": "mon-fri"},
+            "weekly_review": {"hour": 17, "minute": 0, "day_of_week": "fri"},
+        }
+
+        async def _placeholder() -> None:
+            """T4-followup wires the per-symbol TradingService.propose loop."""
+            return None
+
+        for routine_name, cron_kwargs in cron_kwargs_by_routine.items():
+            spec = JobSpec(
+                name=routine_name,
+                fn=_placeholder,
+                cron_kwargs=cron_kwargs,
+            )
+            scheduler.add_job(spec)  # type: ignore[attr-defined]
+
+        logger.info(
+            "orchestration.routines.bootstrapped",
+            extra={
+                "routine_count": len(cron_kwargs_by_routine),
+                "watchlist_count": len(watchlist_symbols),
+            },
+        )
+        _ = trading_service  # T4-followup wires per-symbol propose loops.
+
     @staticmethod
     def _render_weekly_review_pdf_side_effect(
         digest: dict[str, object],

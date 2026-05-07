@@ -166,6 +166,28 @@ class OrderPlaced(Event):
 
 
 @dataclass(kw_only=True)
+class OrderRejected(Event):
+    """Emitted by T1 ``TradingService.execute_on_approval_handler`` on broker
+    rejection (auth error, budget exceeded, generic broker NACK).
+
+    Slice T4 additive extension per the canonical extension pattern in
+    [.ai-playbook/specs/protocol-fake-deferred-install.md](../../../../.ai-playbook/specs/protocol-fake-deferred-install.md).
+    Subscribers: O1 cost meter, future P1 audit channels.
+    """
+
+    event_name: ClassVar[str] = "trading.order.rejected"
+
+    tenant_id: UUID
+    proposal_id: UUID
+    reason: str  # "broker_auth" | "budget" | "broker_other"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.proposal_id)
+
+
+@dataclass(kw_only=True)
 class OrderFilled(Event):
     """Emitted by T1 ``TradingService`` after recording a broker fill.
 
@@ -207,6 +229,7 @@ __all__ = [
     "EquityUpdated",
     "OrderFilled",
     "OrderPlaced",
+    "OrderRejected",
     "ProposalApproved",
     "ProposalCreated",
     "ProposalRejected",
