@@ -21,6 +21,7 @@ short-circuits to ``status='skipped_budget'``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -289,21 +290,24 @@ class OrchestrationService:
         }
 
         wire_propose_loops = market_data_port is not None and strategy_config_repo is not None
+        # Local non-None aliases (mypy can't track the wire_propose_loops guard
+        # into the nested closure; explicit captures make the union narrowing
+        # visible inside ``_propose``).
+        md_port: Any = market_data_port
+        sc_repo: Any = strategy_config_repo
 
         async def _placeholder() -> None:
             """Fallback no-op when market-data wiring is absent (test setups)."""
             return None
 
-        def _make_propose_fn(routine_name: str) -> object:
+        def _make_propose_fn(routine_name: str) -> Callable[[], Awaitable[None]]:
             async def _propose() -> None:
                 for symbol in watchlist_symbols:
                     try:
-                        configs = await strategy_config_repo.list_enabled_for_symbol(
-                            symbol,
-                        )
+                        configs = await sc_repo.list_enabled_for_symbol(symbol)
                         if not configs:
                             continue
-                        bars = await market_data_port.get_bars(
+                        bars = await md_port.get_bars(
                             symbol=symbol,
                             timeframe=timeframe,
                             lookback_bars=lookback_bars,
