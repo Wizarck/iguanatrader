@@ -142,6 +142,16 @@ class TradeRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return cast("Trade | None", result.scalars().first())
 
+    async def list_for_tenant(self) -> list[Trade]:
+        """List all trades for the current tenant (slice trades-read-endpoints).
+
+        Tenant filter automatic via slice-3 ``tenant_listener``. Ordered
+        by ``created_at DESC`` (most-recent first); pagination is v2.
+        """
+        stmt = select(Trade).order_by(Trade.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def update_state(
         self,
         trade_id: UUID,
@@ -207,6 +217,22 @@ class FillRepository(BaseRepository):
         stmt = select(Fill.id).where(Fill.broker_fill_id == broker_fill_id)
         result = await self.session.execute(stmt)
         return result.scalars().first() is not None
+
+    async def list_for_trade(self, trade_id: UUID) -> list[Fill]:
+        """List fills for a given trade (slice trades-read-endpoints).
+
+        :class:`Fill` carries ``order_id`` (not ``trade_id``), so we
+        join through :class:`Order` to resolve the parent trade.
+        Ordered ``filled_at ASC`` (chronological).
+        """
+        stmt = (
+            select(Fill)
+            .join(Order, Fill.order_id == Order.id)
+            .where(Order.trade_id == trade_id)
+            .order_by(Fill.filled_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     async def sum_quantity_for_order(self, order_id: UUID) -> Any:
         """Sum ``fills.quantity_filled`` across all fills for an order.
