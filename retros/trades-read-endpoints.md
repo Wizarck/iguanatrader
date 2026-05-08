@@ -2,17 +2,20 @@
 
 > **Forward-authored** per [.ai-playbook/specs/runbook-bmad-openspec.md §4.1](../.ai-playbook/specs/runbook-bmad-openspec.md). Fields filled at archive time.
 
-- **PR**: TBD
-- **Archive path**: `openspec/changes/archive/<archive-date>-trades-read-endpoints/`
-- **Lines shipped**: ~250 LoC (~50 src + ~280 tests).
+- **PR**: [#106](https://github.com/Wizarck/iguanatrader/pull/106) (merged 2026-05-08, squash `e9f70f1`).
+- **Archive path**: `openspec/changes/archive/2026-05-08-trades-read-endpoints/`
+- **Lines shipped**: 600 insertions / 32 deletions across 8 files (~80 src + ~290 tests + ~230 openspec/retro). CI 14/14 verde al primer push.
 
 ## What worked
 
-- _(fill on archive — pre-flag candidates: 3 GET stubs swapped to bodies in <30min via existing `TradeRepository.get_by_id` + 2 new methods (`list_for_tenant`, `list_for_trade`); `_FakeBroker`-style proposal-trade-order-fill seed helper centralised; tenant_listener took care of cross-tenant isolation transparently.)_
+- 3 GET stubs swapped to bodies in <30min via existing `TradeRepository.get_by_id` + 2 new methods (`list_for_tenant`, `list_for_trade`).
+- Centralised `_seed_trade` helper in the test file kept setup terse + readable.
+- `tenant_listener` (slice-3) handled cross-tenant isolation transparently — no explicit `WHERE tenant_id` needed in the new repository methods.
+- 14/14 CI green at first push (lint+mypy+pytest+lighthouse+coderabbit). Local `.venv` ruff/black/mypy installed during P1-followup paid off.
 
 ## What didn't
 
-- _(fill on archive — pre-flag candidates: empty `_seed_trade` helper duplicates logic that exists in T4 service layer; future cleanup could reuse `TradingService` flow but for v1 a test-local seeding fixture keeps the test isolated.)_
+- `_seed_trade` helper duplicates a small slice of what `TradingService` would do end-to-end; for v1 the test-local fixture keeps tests fast + isolated, but a future cleanup could reuse a shared seeding utility.
 
 ## Carry-forward
 
