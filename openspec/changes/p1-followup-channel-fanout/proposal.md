@@ -76,7 +76,7 @@ approval_service = ApprovalService(
 
 ## Out of scope (deferred to future operator slice)
 
-- **Production Telegram bot send**: Telegram bot token from SOPS bundle; per-tenant `chat_id` lookup; rate-limit (Telegram bot API has 30 messages/sec). 
+- **Production Telegram bot send**: Telegram bot token from SOPS bundle; per-tenant `chat_id` lookup; rate-limit (Telegram bot API has 30 messages/sec).
 - **Production Hermes WhatsApp send**: HTTP credentials; per-tenant phone number routing; HMAC payload signing (per ADR-?? if applicable).
 - **Dashboard SSE notify**: dashboard already discovers via `/sse/approvals` poll — pushing a notification *to* the dashboard SSE channel from this dispatcher is redundant.
 - **Per-tenant channel config table**: env-var v1; v2 SaaS adds `tenant_channel_configs`.

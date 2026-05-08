@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from iguanatrader.contexts.approval.channels.types import ApprovalRequestRow
 from iguanatrader.contexts.approval.dispatcher import (
     LogOnlyChannelDispatcher,
     build_channel_dispatcher_from_env,
@@ -17,16 +17,26 @@ from iguanatrader.contexts.trading.events import ApprovalRequested
 from iguanatrader.shared.messagebus import MessageBus
 
 
+def _make_request_row() -> ApprovalRequestRow:
+    return ApprovalRequestRow(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        proposal_id=uuid4(),
+        delivered_to_channels=["telegram", "dashboard"],
+        timeout_seconds=300,
+        expires_at=datetime.now(UTC) + timedelta(seconds=300),
+        created_at=datetime.now(UTC),
+    )
+
+
 @pytest.mark.asyncio
 async def test_log_only_dispatcher_logs_without_raising() -> None:
     dispatcher = LogOnlyChannelDispatcher()
-    request = SimpleNamespace(
-        id=uuid4(),
-        proposal_id=uuid4(),
-        delivered_to_channels=["telegram", "dashboard"],
-    )
     # MUST NOT raise.
-    await dispatcher.fanout(request=request, channels=["telegram", "dashboard"])
+    await dispatcher.fanout(
+        request=_make_request_row(),
+        channels=["telegram", "dashboard"],
+    )
 
 
 def test_build_channel_dispatcher_unset_returns_log_only(
@@ -50,17 +60,7 @@ async def test_approval_service_calls_dispatcher_after_create_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_repo = AsyncMock()
-    fake_repo.create_request = AsyncMock(
-        return_value=SimpleNamespace(
-            id=uuid4(),
-            proposal_id=uuid4(),
-            tenant_id=uuid4(),
-            delivered_to_channels=["telegram"],
-            timeout_seconds=300,
-            created_at=datetime.now(UTC),
-            expires_at=datetime.now(UTC) + timedelta(seconds=300),
-        )
-    )
+    fake_repo.create_request = AsyncMock(return_value=_make_request_row())
     dispatcher = AsyncMock()
     dispatcher.fanout = AsyncMock()
     bus = MessageBus()
@@ -83,17 +83,7 @@ async def test_approval_service_calls_dispatcher_after_create_request(
 @pytest.mark.asyncio
 async def test_approval_service_swallows_dispatcher_failure() -> None:
     fake_repo = AsyncMock()
-    fake_repo.create_request = AsyncMock(
-        return_value=SimpleNamespace(
-            id=uuid4(),
-            proposal_id=uuid4(),
-            tenant_id=uuid4(),
-            delivered_to_channels=["telegram"],
-            timeout_seconds=300,
-            created_at=datetime.now(UTC),
-            expires_at=datetime.now(UTC) + timedelta(seconds=300),
-        )
-    )
+    fake_repo.create_request = AsyncMock(return_value=_make_request_row())
     failing = AsyncMock()
     failing.fanout = AsyncMock(side_effect=RuntimeError("transport down"))
     bus = MessageBus()
@@ -116,17 +106,7 @@ async def test_approval_service_swallows_dispatcher_failure() -> None:
 @pytest.mark.asyncio
 async def test_approval_service_skips_fanout_when_dispatcher_none() -> None:
     fake_repo = AsyncMock()
-    fake_repo.create_request = AsyncMock(
-        return_value=SimpleNamespace(
-            id=uuid4(),
-            proposal_id=uuid4(),
-            tenant_id=uuid4(),
-            delivered_to_channels=["telegram"],
-            timeout_seconds=300,
-            created_at=datetime.now(UTC),
-            expires_at=datetime.now(UTC) + timedelta(seconds=300),
-        )
-    )
+    fake_repo.create_request = AsyncMock(return_value=_make_request_row())
     bus = MessageBus()
     service = ApprovalService(
         repository=fake_repo,
