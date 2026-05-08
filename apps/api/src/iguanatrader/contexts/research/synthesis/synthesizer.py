@@ -93,8 +93,16 @@ class Synthesizer:
         feature_bundle: FeatureBundle,
         methodology_result: MethodologyResult,
         model: str,
+        narrative_context: list[str] | None = None,
     ) -> SynthesizedBrief:
-        """Run the synthesis pipeline against ``feature_bundle``."""
+        """Run the synthesis pipeline against ``feature_bundle``.
+
+        Slice R6: ``narrative_context`` (optional) is the Hindsight
+        recall result. When present and non-empty, the prompt is
+        prefixed with a "Hindsight narrative" section before the
+        methodology + facts content. ``None``/empty list = identical
+        behavior to pre-R6 (R5 archive callers).
+        """
         if methodology not in METHODOLOGY_REGISTRY:
             raise ValueError(
                 f"unknown methodology {methodology!r}; "
@@ -107,6 +115,9 @@ class Synthesizer:
             feature_bundle=feature_bundle,
             methodology_result=methodology_result,
         )
+        if narrative_context:
+            hindsight_block = "\n\n## Hindsight narrative\n\n" + "\n\n".join(narrative_context)
+            prompt = hindsight_block + "\n\n---\n\n" + prompt
         replay_key = self._compute_replay_key(
             symbol=symbol,
             methodology=methodology,

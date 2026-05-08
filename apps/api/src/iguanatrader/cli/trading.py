@@ -193,6 +193,28 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             audit_repo=audit_repo,
         )
 
+        # Slice R6 hindsight-integration §7 — narrative recall bank.
+        # build_hindsight_adapter_from_env() returns InMemoryHindsightAdapter
+        # if IGUANATRADER_HINDSIGHT_URL unset (dev/CI safe). Always-on
+        # retain via bus subscription on ResearchBriefSynthesized.
+        from iguanatrader.contexts.research.hindsight.http_adapter import (
+            build_hindsight_adapter_from_env,
+        )
+        from iguanatrader.contexts.research.hindsight.retain_handler import (
+            HindsightRetainHandler,
+        )
+        from iguanatrader.contexts.research.repository import (
+            ResearchRepository,
+        )
+
+        hindsight = build_hindsight_adapter_from_env()
+        research_repo = ResearchRepository()
+        hindsight_retain = HindsightRetainHandler(
+            hindsight=hindsight,
+            repository=research_repo,
+        )
+        hindsight_retain.register_subscriptions(bus)
+
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
         # Side-effect: registers cron JobSpecs on the scheduler (4 propose
