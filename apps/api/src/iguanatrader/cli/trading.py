@@ -173,9 +173,17 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # outbound bridges (ApprovalProposal{Approved,Rejected,
         # TimedOut} → trading.ProposalApproved/Rejected). Closes the
         # last gap in the propose→risk→approve→execute chain.
+        # Slice p1-followup-channel-fanout adds the dispatcher
+        # injection (LogOnly v1; production push deferred to a future
+        # operator slice when ops config is ready).
+        from iguanatrader.contexts.approval.dispatcher import (
+            build_channel_dispatcher_from_env,
+        )
+
         approval_service = ApprovalService(
             repository=ApprovalRepository(),
             message_bus=bus,
+            channel_dispatcher=build_channel_dispatcher_from_env(),
         )
         approval_service.register_subscriptions(bus)
 

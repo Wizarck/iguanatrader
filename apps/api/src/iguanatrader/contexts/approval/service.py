@@ -89,9 +89,15 @@ class ApprovalService:
         *,
         repository: ApprovalRepository,
         message_bus: MessageBus,
+        channel_dispatcher: Any | None = None,
     ) -> None:
         self._repository = repository
         self._message_bus = message_bus
+        # Slice p1-followup-channel-fanout: optional ChannelDispatcher
+        # for bus-driven channel push. None = no fanout (existing P1
+        # archive behaviour). Set by the daemon via
+        # `build_channel_dispatcher_from_env()`.
+        self._channel_dispatcher = channel_dispatcher
 
     async def create_request(
         self,
@@ -332,6 +338,24 @@ class ApprovalService:
             channels=list(channels),
             timeout_seconds=timeout_seconds,
         )
+
+        # Slice p1-followup-channel-fanout: dispatcher fan-out after
+        # the audit-write. Failures are caught + swallowed (FR32:
+        # one bad dispatcher must not bring down the audit-write
+        # path; the bus chain still continues).
+        if self._channel_dispatcher is not None:
+            try:
+                await self._channel_dispatcher.fanout(
+                    request=row,
+                    channels=channels,
+                )
+            except Exception as exc:
+                log.warning(
+                    "approval.bus.fanout_failed",
+                    proposal_id=str(event.proposal_id),
+                    request_id=str(row.id),
+                    error=str(exc),
+                )
 
     async def _bridge_to_trading_approved_handler(self, event: ApprovalProposalApproved) -> None:
         """Outbound bridge: ApprovalProposalApproved → trading.ProposalApproved.
