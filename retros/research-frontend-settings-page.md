@@ -2,9 +2,9 @@
 
 > Scope-reduced rename of original `research-frontend-components` proposal. Ships only the Settings page (closes R6 hindsight-integration carry-forward); deferred 5 components + audit-trail route + Playwright + Storybook + Lighthouse threshold extension to a future `research-frontend-extras` slice.
 
-- **PR**: TBD
-- **Archive path**: `openspec/changes/archive/<archive-date>-research-frontend-settings-page/`
-- **Lines shipped**: ~150 LoC (~120 .svelte + ~25 .server.ts + retro/openspec).
+- **PR**: [#108](https://github.com/Wizarck/iguanatrader/pull/108) (merged 2026-05-08, squash `f6c453f`).
+- **Archive path**: `openspec/changes/archive/2026-05-08-research-frontend-settings-page/`
+- **Lines shipped**: 236 insertions / 56 deletions across 7 files. CI 14/14 verde al primer push (Lighthouse a11y ≥ 95 sobre /settings confirmado).
 
 ## What worked
 
