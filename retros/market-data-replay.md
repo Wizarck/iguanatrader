@@ -2,17 +2,21 @@
 
 > **Forward-authored**.
 
-- **PR**: TBD
-- **Archive path**: `openspec/changes/archive/<archive-date>-market-data-replay/`
-- **Lines shipped**: ~600 LoC (~250 src + ~280 tests + ~70 retro/openspec).
+- **PR**: [#109](https://github.com/Wizarck/iguanatrader/pull/109) (merged 2026-05-08, squash `93eca65`).
+- **Archive path**: `openspec/changes/archive/2026-05-08-market-data-replay/`
+- **Lines shipped**: 745 insertions / 6 deletions across 9 files. CI 14/14 verde tras 1 round (round 1 mypy: ReplayResult dataclass needed mutable for bars_loaded accumulation; fixed by dropping frozen=True).
 
 ## What worked
 
-- _(fill on archive — pre-flag candidates: optional `as_of` kwarg on `MarketDataPort.get_bars` keeps backwards-compatibility (existing daemon callers untouched); replay service is fully read-only by construction (no MessageBus injected, no broker dep); reuses existing `_make_strategy_resolver` from cli/trading.py for the strategy lookup; CLI subcommand auto-discovered into existing `iguanatrader market-data` Typer app from T4-followup-market-data.)_
+- Optional `as_of` kwarg on `MarketDataPort.get_bars` keeps backwards-compatibility (existing daemon callers untouched).
+- Replay service is fully read-only by construction (no MessageBus, no broker, no propose call).
+- Reuses existing `_make_strategy_resolver` from `cli/trading.py` for strategy lookup — no duplication.
+- CLI subcommand auto-discovered into existing `iguanatrader market-data` Typer app from T4-followup-market-data.
 
 ## What didn't
 
-- _(fill on archive — pre-flag candidates: `Proposal` dataclass has 11 fields incl. `confidence_score` + `mode` that I missed in the test fixture — caught at compile/lint time. Pre-flag for future tests touching trading.ports types.)_
+- `Proposal` dataclass has 11 fields incl. `confidence_score` + `mode` that I missed in the test fixture — caught at compile time. Pre-flag for future tests touching trading.ports types.
+- `ReplayResult` initially declared `frozen=True` — `bars_loaded += len(...)` on a frozen dataclass raises at mypy --strict (`misc` error). Fix: drop `frozen=True` (kept `slots=True` for memory). Pre-flag: when accumulating across a loop, dataclass must be mutable.
 
 ## Carry-forward
 
