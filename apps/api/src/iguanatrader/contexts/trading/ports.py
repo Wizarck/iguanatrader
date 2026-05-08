@@ -300,8 +300,13 @@ class MarketDataPort(Protocol):
         symbol: str,
         timeframe: Literal["1d", "1h", "1m"],
         lookback_bars: int,
+        as_of: datetime | None = None,
     ) -> BarHistory:
         """Return the last ``lookback_bars`` bars sorted ascending by ``ts``.
+
+        ``as_of`` (slice market-data-replay): when set, filters bars to
+        ``ts <= as_of`` before applying the lookback window. Backwards-
+        compatible: ``None`` returns the latest bars (current behavior).
 
         Raises ``MarketDataNotAvailableError`` if zero bars exist for
         the (tenant, symbol, timeframe) tuple. Callers handle by

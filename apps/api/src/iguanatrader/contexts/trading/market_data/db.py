@@ -8,6 +8,7 @@ injected on every SELECT).
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -28,6 +29,7 @@ class DBMarketDataAdapter:
         symbol: str,
         timeframe: Literal["1d", "1h", "1m"],
         lookback_bars: int,
+        as_of: datetime | None = None,
     ) -> BarHistory:
         session = session_var.get()
         if session is None:
@@ -41,9 +43,10 @@ class DBMarketDataAdapter:
             select(MarketDataBar)
             .where(MarketDataBar.symbol == symbol)
             .where(MarketDataBar.timeframe == timeframe)
-            .order_by(MarketDataBar.ts.desc())
-            .limit(lookback_bars)
         )
+        if as_of is not None:
+            stmt = stmt.where(MarketDataBar.ts <= as_of)
+        stmt = stmt.order_by(MarketDataBar.ts.desc()).limit(lookback_bars)
         result = await session.execute(stmt)
         rows = list(result.scalars().all())
         if not rows:

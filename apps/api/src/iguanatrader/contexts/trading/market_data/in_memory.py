@@ -10,6 +10,7 @@ Constructor seeds a ``{symbol: list[Bar]}`` map. Used by:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from iguanatrader.contexts.trading.market_data import MarketDataNotAvailableError
@@ -28,17 +29,22 @@ class InMemoryMarketDataAdapter:
         symbol: str,
         timeframe: Literal["1d", "1h", "1m"],
         lookback_bars: int,
+        as_of: datetime | None = None,
     ) -> BarHistory:
         """Return the last ``lookback_bars`` bars from the seed.
 
         Timeframe is ignored — the seed is single-timeframe by design.
-        Tests construct one adapter per timeframe under test if needed.
+        ``as_of`` (slice market-data-replay): when set, filters bars to
+        ``timestamp <= as_of`` before applying the lookback window.
         """
         if symbol not in self._seed:
             raise MarketDataNotAvailableError(
                 detail=f"No seeded bars for symbol={symbol!r}",
             )
-        bars = self._seed[symbol][-lookback_bars:]
+        bars = list(self._seed[symbol])
+        if as_of is not None:
+            bars = [b for b in bars if b.timestamp <= as_of]
+        bars = bars[-lookback_bars:]
         return BarHistory(symbol=symbol, bars=tuple(bars))
 
 

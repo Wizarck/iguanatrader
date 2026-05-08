@@ -72,6 +72,40 @@ def sync(
     )
 
 
+@app.command("replay")
+def replay(
+    routine: str = typer.Option(
+        ...,
+        "--routine",
+        help="One of: premarket, midday, postmarket, weekly_review.",
+    ),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        help="ISO 8601 date YYYY-MM-DD (the as_of point for bars).",
+    ),
+    symbols: str | None = typer.Option(
+        None,
+        "--symbols",
+        help="CSV symbol list. Defaults to IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS.",
+    ),
+    timeframe: str = typer.Option("1d", "--timeframe"),
+    lookback_bars: int = typer.Option(200, "--lookback-bars"),
+    tenant: str | None = typer.Option(None, "--tenant"),
+) -> None:
+    """Re-evaluate strategies against historical bars (slice market-data-replay)."""
+    asyncio.run(
+        _run_replay(
+            routine=routine,
+            date=date,
+            symbols_csv=symbols,
+            timeframe=timeframe,
+            lookback_bars=lookback_bars,
+            tenant=tenant,
+        )
+    )
+
+
 @app.command("backfill")
 def backfill(
     symbol: str = typer.Option(..., "--symbol", help="Single symbol to backfill."),
@@ -91,6 +125,95 @@ def backfill(
             invoked_by="cli-backfill",
         )
     )
+
+
+async def _run_replay(
+    *,
+    routine: str,
+    date: str,
+    symbols_csv: str | None,
+    timeframe: str,
+    lookback_bars: int,
+    tenant: str | None,
+) -> None:
+    """Construct replay service + invoke; print table to stdout."""
+    from datetime import UTC, datetime
+
+    from iguanatrader.contexts.trading.market_data.db import DBMarketDataAdapter
+    from iguanatrader.contexts.trading.market_data.replay import (
+        MarketDataReplayService,
+    )
+    from iguanatrader.contexts.trading.repository import StrategyConfigRepository
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    try:
+        as_of = datetime.fromisoformat(date).replace(tzinfo=UTC)
+    except ValueError as exc:
+        typer.echo(f"Invalid --date={date!r}; expected YYYY-MM-DD: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    default_watchlist = _parse_csv(
+        os.environ.get("IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS"),
+        default=["AAPL", "MSFT", "GOOGL"],
+    )
+    symbols = _parse_csv(symbols_csv, default=default_watchlist)
+    if not symbols:
+        typer.echo("No symbols supplied (CSV empty + no default watchlist).", err=True)
+        raise typer.Exit(code=2)
+
+    tenant_id = await resolve_tenant_id(tenant)
+    engine = engine_factory(db_url())
+    sm = session_factory(engine)
+
+    try:
+        async with sm() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+            from iguanatrader.cli.trading import _make_strategy_resolver
+
+            resolver = _make_strategy_resolver(session_factory=sm)
+            service = MarketDataReplayService(
+                market_data_port=DBMarketDataAdapter(),
+                strategy_config_repo=StrategyConfigRepository(),
+                strategy_resolver=resolver,
+            )
+            try:
+                result = await service.replay(
+                    symbols=symbols,
+                    routine=routine,
+                    as_of=as_of,
+                    timeframe=timeframe,
+                    lookback_bars=lookback_bars,
+                )
+            except ValueError as exc:
+                typer.echo(f"[market-data replay] {exc}", err=True)
+                raise typer.Exit(code=2) from exc
+
+        # Print a compact table to stdout. NOT a structlog event - this
+        # is operator-facing output.
+        typer.echo(
+            f"replay routine={result.routine} as_of={result.as_of.isoformat()} "
+            f"bars_loaded={result.bars_loaded}"
+        )
+        typer.echo(
+            f"{'symbol':<8} {'strategy':<14} {'v':>3} {'propose':<8} "
+            f"{'side':<5} {'qty':>10} {'entry':>10} {'stop':>10}  rationale"
+        )
+        for row in result.rows:
+            qty = "-" if row.quantity is None else f"{row.quantity}"
+            entry = "-" if row.entry_price is None else f"{row.entry_price}"
+            stop = "-" if row.stop_price is None else f"{row.stop_price}"
+            side = row.side or "-"
+            propose = "YES" if row.would_propose else "no"
+            rationale = row.rationale[:80]
+            typer.echo(
+                f"{row.symbol:<8} {row.strategy_kind:<14} {row.strategy_version:>3} "
+                f"{propose:<8} {side:<5} {qty:>10} {entry:>10} {stop:>10}  "
+                f"{rationale}"
+            )
+    finally:
+        await engine.dispose()
 
 
 async def _run_sync(
