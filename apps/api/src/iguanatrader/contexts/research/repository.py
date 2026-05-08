@@ -272,6 +272,17 @@ class ResearchRepository(BaseRepository):
     # Brief queries (insert is stubbed until R5)
     # ------------------------------------------------------------------
 
+    async def get_brief_by_id(self, brief_id: UUID) -> ResearchBrief | None:
+        """Return the brief by id, or ``None`` if absent (slice R6).
+
+        Used by :class:`HindsightRetainHandler` to load the brief
+        thesis after :class:`ResearchBriefSynthesized` fires (the bus
+        event carries only the id per slice 2 D3).
+        """
+        stmt = sa.select(ResearchBrief).where(ResearchBrief.id == brief_id)
+        result = await self._session.execute(stmt)
+        return result.scalars().first()
+
     async def latest_brief(self, symbol: str) -> ResearchBrief | None:
         """Return the highest-version brief for ``symbol`` for the current tenant.
 

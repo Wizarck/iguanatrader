@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -74,6 +74,7 @@ class BriefService:
         audit_service: AuditTrailService,
         bus: MessageBus | None = None,
         default_model: str = "claude-3-5-sonnet",
+        hindsight: Any | None = None,
     ) -> None:
         self._repo = repository
         self._provider = composite_provider
@@ -81,6 +82,10 @@ class BriefService:
         self._audit = audit_service
         self._bus = bus
         self._default_model = default_model
+        # Slice R6: optional Hindsight Port for FR81 narrative recall.
+        # When None or feature flag OFF, refresh() skips the recall path
+        # transparently. Test-existing callers leave this as None.
+        self._hindsight = hindsight
 
     async def refresh(
         self,
@@ -102,12 +107,16 @@ class BriefService:
         score_fn = METHODOLOGY_REGISTRY[methodology]
         methodology_result = score_fn(feature_bundle.values_only())
 
+        # Slice R6 - FR81 gated narrative recall via Hindsight.
+        narrative_context = await self._maybe_recall_hindsight(symbol)
+
         synthesised = await self._synth.synthesize(
             symbol=symbol,
             methodology=methodology,
             feature_bundle=feature_bundle,
             methodology_result=methodology_result,
             model=self._default_model,
+            narrative_context=narrative_context,
         )
 
         # Resolve symbol_universe + watchlist FK ids needed for the brief insert.
@@ -209,6 +218,64 @@ class BriefService:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    async def _maybe_recall_hindsight(self, symbol: str) -> list[str]:
+        """Slice R6 - FR81 gated narrative recall.
+
+        Returns ``[]`` (no-op) when:
+
+        * ``self._hindsight is None`` (R5 archive callers / tests).
+        * ``tenant.feature_flags.hindsight_recall_enabled`` is falsy.
+        * Recall raises (timeout / unavailable) - logs + degrades.
+
+        Returns the recall result list otherwise.
+        """
+        if self._hindsight is None:
+            return []
+        from iguanatrader.contexts.research.hindsight import (
+            HindsightTimeout,
+            HindsightUnavailable,
+        )
+        from iguanatrader.persistence import Tenant
+        from iguanatrader.shared.contextvars import tenant_id_var
+
+        tenant_id = tenant_id_var.get()
+        if tenant_id is None:
+            return []
+        try:
+            tenant = await self._repo._session.get(Tenant, tenant_id)
+        except Exception as exc:
+            logger.warning(
+                "research.hindsight.tenant_lookup_failed",
+                extra={"symbol": symbol, "error": str(exc)},
+            )
+            return []
+        if tenant is None:
+            return []
+        flags = getattr(tenant, "feature_flags", {}) or {}
+        if not bool(flags.get("hindsight_recall_enabled", False)):
+            return []
+        bank = f"iguanatrader-research-{tenant_id}"
+        query = f"{symbol} fundamentals macro context lessons"
+        try:
+            return await self._hindsight.recall(
+                bank=bank,
+                query=query,
+                limit=20,
+                timeout_ms=2000,
+            )
+        except (HindsightUnavailable, HindsightTimeout) as exc:
+            logger.warning(
+                "research.hindsight.recall_failed",
+                extra={"symbol": symbol, "error": str(exc)},
+            )
+            return []
+        except Exception as exc:
+            logger.warning(
+                "research.hindsight.recall_unexpected_error",
+                extra={"symbol": symbol, "error": str(exc)},
+            )
+            return []
 
     async def _resolve_brief_fks(self, symbol: str) -> tuple[UUID, UUID]:
         """Return ``(symbol_universe_id, watchlist_config_id)`` for ``symbol``.
