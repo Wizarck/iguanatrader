@@ -1,10 +1,12 @@
-"""Test that ``Synthesizer.synthesize`` accepts ``narrative_context`` and
-prepends a Hindsight section to the prompt when it is non-empty
+"""Test that ``Synthesizer.synthesize`` accepts ``narrative_context``
+and prepends a Hindsight section to the prompt when non-empty
 (slice R6 §2.3).
 
-We mock the LLM client to capture the prompt; the rest of the pipeline
-(citations + parse) is not exercised - this test isolates the prompt
-composition.
+We patch ``Synthesizer._render_prompt`` to return a deterministic
+string and a spy ``LLMClient`` to capture the final prompt that is
+sent to ``llm.complete``. This avoids needing real ``FeatureBundle`` /
+``LLMCompletion`` shapes (those have project-specific signatures we
+don't want to couple to here).
 """
 
 from __future__ import annotations
@@ -14,91 +16,118 @@ from typing import Any
 import pytest
 
 
-def _make_minimal_synthesizer() -> Any:
-    """Lazy import so the test stays fast even if R5 internals shift."""
-    from iguanatrader.contexts.research.synthesis import Synthesizer
+class _RecordingLLM:
+    """Minimal LLMClient spy that captures the final prompt."""
 
-    return Synthesizer
+    def __init__(self) -> None:
+        self.last_prompt: str | None = None
+
+    async def complete(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        replay_key: str,
+        max_tokens: int,
+    ) -> Any:
+        self.last_prompt = prompt
+        # Return a sentinel; downstream parse will fail with a tractable
+        # exception that the test catches.
+        raise RuntimeError("STOP_AFTER_PROMPT_CAPTURE")
 
 
 @pytest.mark.asyncio
-async def test_narrative_context_prepended_to_prompt() -> None:
-    Synthesizer = _make_minimal_synthesizer()
-
-    captured: dict[str, str] = {}
-
-    class _SpyLLM:
-        async def complete(
-            self,
-            *,
-            prompt: str,
-            model: str,
-            replay_key: str,
-            max_tokens: int,
-        ) -> Any:
-            captured["prompt"] = prompt
-            # Synthesizer downstream parsing requires a markdown body
-            # of >=MIN_BODY_WORDS — we don't actually go that far in
-            # this test (we'll catch the BriefSynthesisShortError).
-            from iguanatrader.contexts.research.synthesis.anthropic_client import (
-                LLMCompletion,
-            )
-
-            return LLMCompletion(
-                text="short",
-                input_tokens=1,
-                output_tokens=1,
-                cache_hit_tokens=0,
-            )
-
-    synth = Synthesizer(llm_client=_SpyLLM())  # type: ignore[arg-type]
-
-    # Build a minimal feature_bundle + methodology_result.
-    from iguanatrader.contexts.research.feature_provider import (
-        FeatureBundle,
+async def test_synthesize_prepends_hindsight_block_when_context_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from iguanatrader.contexts.research.synthesis.synthesizer import (
+        Synthesizer,
     )
+
+    spy = _RecordingLLM()
+    synth = Synthesizer(llm_client=spy)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        Synthesizer,
+        "_render_prompt",
+        lambda *a, **kw: "ORIGINAL_PROMPT_BODY",
+    )
+
+    monkeypatch.setattr(
+        Synthesizer,
+        "_compute_replay_key",
+        lambda *a, **kw: "key-x",
+    )
+
+    # Provide a methodology that exists; methodology_result is sentinel.
     from iguanatrader.contexts.research.methodology import (
         METHODOLOGY_REGISTRY,
     )
 
     methodology = next(iter(METHODOLOGY_REGISTRY))
-    bundle = FeatureBundle(
-        symbol="AAPL",
-        values={},
-        fact_citations={},
-        fact_lookups={},
-    )
-    score_fn = METHODOLOGY_REGISTRY[methodology]
-    methodology_result = score_fn(bundle.values_only())
 
-    # Test 1: with narrative_context populated, prompt prefixed.
-    with pytest.raises(BaseException):  # noqa: B017 - downstream parse fails on stub LLM
-        # Will raise BriefSynthesisShortError — that's fine; we just
-        # need the prompt captured.
+    with pytest.raises(RuntimeError, match="STOP_AFTER_PROMPT_CAPTURE"):
         await synth.synthesize(
             symbol="AAPL",
             methodology=methodology,
-            feature_bundle=bundle,
-            methodology_result=methodology_result,
+            feature_bundle=object(),  # type: ignore[arg-type]
+            methodology_result=object(),  # type: ignore[arg-type]
             model="claude-3-5-sonnet",
             narrative_context=[
                 "[brief_summary] AAPL theme: services growth",
                 "[brief_summary] AAPL theme: hardware refresh cycle",
             ],
         )
-    assert "Hindsight narrative" in captured["prompt"]
-    assert "services growth" in captured["prompt"]
 
-    # Test 2: with narrative_context=None, prompt does NOT include
-    # the Hindsight block.
-    captured.clear()
-    with pytest.raises(BaseException):  # noqa: B017 - downstream parse fails on stub LLM
+    assert spy.last_prompt is not None
+    assert "Hindsight narrative" in spy.last_prompt
+    assert "services growth" in spy.last_prompt
+    # Original body still present after the prefix.
+    assert "ORIGINAL_PROMPT_BODY" in spy.last_prompt
+    # Hindsight block precedes the original.
+    assert spy.last_prompt.index("Hindsight narrative") < spy.last_prompt.index(
+        "ORIGINAL_PROMPT_BODY"
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesize_omits_hindsight_block_when_context_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from iguanatrader.contexts.research.synthesis.synthesizer import (
+        Synthesizer,
+    )
+
+    spy = _RecordingLLM()
+    synth = Synthesizer(llm_client=spy)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        Synthesizer,
+        "_render_prompt",
+        lambda *a, **kw: "ORIGINAL_PROMPT_BODY",
+    )
+    monkeypatch.setattr(
+        Synthesizer,
+        "_compute_replay_key",
+        lambda *a, **kw: "key-x",
+    )
+
+    from iguanatrader.contexts.research.methodology import (
+        METHODOLOGY_REGISTRY,
+    )
+
+    methodology = next(iter(METHODOLOGY_REGISTRY))
+
+    with pytest.raises(RuntimeError, match="STOP_AFTER_PROMPT_CAPTURE"):
         await synth.synthesize(
             symbol="AAPL",
             methodology=methodology,
-            feature_bundle=bundle,
-            methodology_result=methodology_result,
+            feature_bundle=object(),  # type: ignore[arg-type]
+            methodology_result=object(),  # type: ignore[arg-type]
             model="claude-3-5-sonnet",
             narrative_context=None,
         )
-    assert "Hindsight narrative" not in captured["prompt"]
+
+    assert spy.last_prompt is not None
+    assert "Hindsight narrative" not in spy.last_prompt
+    assert spy.last_prompt == "ORIGINAL_PROMPT_BODY"

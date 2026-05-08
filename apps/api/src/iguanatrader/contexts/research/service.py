@@ -258,12 +258,13 @@ class BriefService:
         bank = f"iguanatrader-research-{tenant_id}"
         query = f"{symbol} fundamentals macro context lessons"
         try:
-            return await self._hindsight.recall(
+            result = await self._hindsight.recall(
                 bank=bank,
                 query=query,
                 limit=20,
                 timeout_ms=2000,
             )
+            return [str(item) for item in result]
         except (HindsightUnavailable, HindsightTimeout) as exc:
             logger.warning(
                 "research.hindsight.recall_failed",
