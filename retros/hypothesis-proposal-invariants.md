@@ -2,17 +2,20 @@
 
 > **Forward-authored**.
 
-- **PR**: TBD
-- **Archive path**: `openspec/changes/archive/<archive-date>-hypothesis-proposal-invariants/`
-- **Lines shipped**: ~250 LoC (~210 test + ~40 retro/openspec).
+- **PR**: [#110](https://github.com/Wizarck/iguanatrader/pull/110) (merged 2026-05-08, squash `33067a3`).
+- **Archive path**: `openspec/changes/archive/2026-05-08-hypothesis-proposal-invariants/`
+- **Lines shipped**: 283 insertions across 4 files. CI 14/14 verde al primer push.
 
 ## What worked
 
-- _(fill on archive — pre-flag candidates: extends the existing tests/property/ pattern (test_strategy_no_lookahead.py + test_risk_caps_invariant.py); CI-blocking marker so future strategy regressions break the build; parametrized over STRATEGY_REGISTRY so new strategies inherit the invariants by construction.)_
+- Extends the existing `tests/property/` pattern (sibling to `test_strategy_no_lookahead.py` + `test_risk_caps_invariant.py`).
+- CI-blocking marker (`@pytest.mark.ci_blocking`) so a future strategy regression breaks the build immediately.
+- Parametrized over `STRATEGY_REGISTRY` so new strategies inherit the invariants by construction (no manual test updates needed when strategies are added).
+- Hypothesis catches edge cases (price spikes, sparse histories) that fixed-input unit tests would miss.
 
 ## What didn't
 
-- _(fill on archive — pre-flag candidates: max_examples=50 (vs 200 in test_risk_caps_invariant.py) tradeoff between coverage + CI runtime; can be dialled up later if a regression slips through.)_
+- `max_examples=50` is conservative (vs 200 in `test_risk_caps_invariant.py`) — runtime trade-off. Donchian/SMA strategies on 60-120 random closes are slow-ish (LRU cache resets per example). Can be dialled up later if a regression slips through with low-frequency triggers.
 
 ## Carry-forward
 
