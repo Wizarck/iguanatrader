@@ -55,9 +55,13 @@ class ReplayRow:
     rationale: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ReplayResult:
-    """Aggregate replay outcome for a single (routine, as_of) tick."""
+    """Aggregate replay outcome for a single (routine, as_of) tick.
+
+    Mutable (NOT frozen) because `bars_loaded` accumulates across the
+    per-symbol loop in `MarketDataReplayService.replay`.
+    """
 
     routine: str
     as_of: datetime
