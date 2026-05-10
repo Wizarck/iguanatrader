@@ -2,17 +2,20 @@
 
 > **Forward-authored**. Test-only slice; companion to hypothesis-proposal-invariants (PR #110).
 
-- **PR**: TBD
-- **Archive path**: `openspec/changes/archive/<archive-date>-propose-event-emission-property/`
-- **Lines shipped**: ~340 LoC (~280 test + ~60 retro/openspec).
+- **PR**: [#112](https://github.com/Wizarck/iguanatrader/pull/112) (merged 2026-05-10, squash `7498f89`).
+- **Archive path**: `openspec/changes/archive/2026-05-10-propose-event-emission-property/`
+- **Lines shipped**: 361 insertions across 4 files. CI 14/14 verde tras 1 fix round (round 1: 4 unused `# type: ignore[arg-type]` comments — TradingService accepts the fakes via Protocol structural typing).
 
 ## What worked
 
-- _(fill on archive — pre-flag candidates: regression net for the 1:1 emission contract of `TradingService.propose`; complements hypothesis-proposal-invariants (Proposal payload shape) + test_service_orchestration.py (per-case unit tests); covers the kill-switch path (raises before evaluate, bus untouched) which is the most-likely silent-emission-bug failure mode.)_
+- Regression net for the 1:1 emission contract of `TradingService.propose`; complements hypothesis-proposal-invariants (Proposal payload shape) + test_service_orchestration.py (per-case unit tests).
+- Covers the kill-switch path (raises before evaluate, bus untouched) — the most-likely silent-emission-bug failure mode.
+- 70 examples (50 + 20) across both tests; Hypothesis catches edge cases unit tests would miss.
 
 ## What didn't
 
-- _(fill on archive — pre-flag candidates: not @pytest.mark.ci_blocking — emission contract is already validated by unit tests + Hypothesis is the regression catch. Tradeoff between strict CI gate + Hypothesis flakiness on unusual examples.)_
+- 4 prophylactic `# type: ignore[arg-type]` comments slipped through; mypy --strict flagged them as `unused-ignore`. Pre-flag: don't pre-emptively add type-ignores; only add when mypy actually complains.
+- Not `@pytest.mark.ci_blocking` — emission contract already validated by unit tests; this is the regression net.
 
 ## Carry-forward
 
