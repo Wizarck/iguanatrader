@@ -16,12 +16,45 @@
 
 <script lang="ts">
   import type { PageData } from './$types';
+  import BriefHeader from '$lib/components/research/BriefHeader.svelte';
+  import CitationLink from '$lib/components/research/CitationLink.svelte';
+  import { parseCitations } from '$lib/research/parse-citations';
+
+  type FactRow = {
+    id: string;
+    source_id: string;
+    source_url?: string | null;
+    retrieval_method?: 'api' | 'scrape' | 'manual' | 'llm' | null;
+    retrieved_at?: string | null;
+    fact_kind?: string;
+    value_numeric?: number | string | null;
+    value_text?: string | null;
+    effective_from?: string;
+  };
 
   let { data }: { data: PageData } = $props();
 
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
   let currentBrief = $state(data.brief as Record<string, unknown> | null);
+
+  let facts = $derived(data.facts as FactRow[]);
+
+  // Build a fact-id → fact lookup for the citation tooltip data.
+  let factById = $derived.by(() => {
+    const map = new Map<string, FactRow>();
+    for (const f of facts) {
+      map.set(f.id, f);
+    }
+    return map;
+  });
+
+  let body = $derived(
+    (currentBrief?.body_markdown as string | undefined) ??
+      (currentBrief?.thesis_text as string | undefined) ??
+      ''
+  );
+  let segments = $derived(parseCitations(body));
 
   async function refresh() {
     refreshing = true;
@@ -55,48 +88,64 @@
 </svelte:head>
 
 <section>
-  <header>
-    <h1>Research — {data.symbol}</h1>
-    <button type="button" onclick={refresh} disabled={refreshing}>
-      {refreshing ? 'Synthesising…' : 'Refresh brief'}
-    </button>
-  </header>
-
-  {#if refreshError}
-    <div role="alert" class="error">{refreshError}</div>
-  {/if}
-
   {#if currentBrief}
-    <article aria-label="Brief summary">
-      <h2>
-        Brief v{(currentBrief.version as number) ?? '–'} ·
-        <span class="methodology">{currentBrief.methodology}</span>
-      </h2>
-      {#if currentBrief.partial}
-        <div role="status" class="warn">Partial brief — required tier-A features missing.</div>
-      {/if}
-      <pre class="markdown">{currentBrief.body_markdown ?? currentBrief.thesis_text}</pre>
+    <BriefHeader
+      symbol={data.symbol}
+      methodology={(currentBrief.methodology as string) ?? 'unknown'}
+      version={(currentBrief.version as number) ?? 0}
+      synthesizedAt={(currentBrief.created_at as string) ?? null}
+      {refreshing}
+      {refreshError}
+      onRefresh={refresh}
+    />
+
+    {#if currentBrief.partial}
+      <div role="status" class="warn">Partial brief — required tier-A features missing.</div>
+    {/if}
+
+    <article class="brief-body" aria-label="Brief summary">
+      {#each segments as seg, i (i)}
+        {#if seg.kind === 'text'}
+          <span class="text-segment">{seg.value}</span>
+        {:else}
+          {@const fact = factById.get(seg.factId)}
+          <CitationLink
+            factId={seg.factId}
+            sourceLabel={fact?.source_id ?? null}
+            sourceUrl={fact?.source_url ?? null}
+            retrievedAt={fact?.retrieved_at ?? null}
+            method={fact?.retrieval_method ?? null}
+          />
+        {/if}
+      {/each}
     </article>
   {:else}
     <article aria-label="No brief yet">
+      <h1>Research — {data.symbol}</h1>
       <p>No brief synthesised yet for {data.symbol}.</p>
-      <p>Click <strong>Refresh brief</strong> to run the methodology pipeline.</p>
+      <button type="button" onclick={refresh} disabled={refreshing}>
+        {refreshing ? 'Synthesising…' : 'Refresh brief'}
+      </button>
+      {#if refreshError}
+        <div role="alert" class="error">{refreshError}</div>
+      {/if}
     </article>
   {/if}
 
   <section aria-label="Recent facts">
-    <h2>Recent facts ({(data.facts as unknown[]).length})</h2>
-    {#if (data.facts as unknown[]).length === 0}
+    <h2>Recent facts ({facts.length})</h2>
+    {#if facts.length === 0}
       <p>No facts ingested yet for {data.symbol}.</p>
     {:else}
       <ul>
-        {#each data.facts as fact (((fact as Record<string, unknown>).id as string))}
-          {@const f = fact as Record<string, unknown>}
+        {#each facts as fact, idx (fact.id ?? idx)}
           <li>
-            <span class="fact-kind">{f.fact_kind}</span>
-            <span class="fact-source">{f.source_id}</span>
-            <span class="fact-value">{f.value_numeric ?? f.value_text ?? ''}</span>
-            <time datetime={f.effective_from as string}>{f.effective_from}</time>
+            <span class="fact-kind">{fact.fact_kind}</span>
+            <span class="fact-source">{fact.source_id}</span>
+            <span class="fact-value">{fact.value_numeric ?? fact.value_text ?? ''}</span>
+            {#if fact.effective_from}
+              <time datetime={fact.effective_from}>{fact.effective_from}</time>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -109,12 +158,6 @@
     color: var(--ink);
     padding: 1rem;
   }
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-  }
   h1 {
     font-size: 22px;
     font-weight: 600;
@@ -122,7 +165,7 @@
   h2 {
     font-size: 18px;
     font-weight: 600;
-    margin-top: 1rem;
+    margin-top: 1.5rem;
   }
   button {
     padding: 0.5rem 1rem;
@@ -150,17 +193,17 @@
     border-radius: 4px;
     margin: 0.5rem 0;
   }
-  .methodology {
-    color: var(--mute);
-    font-weight: 400;
-  }
-  pre.markdown {
+  .brief-body {
     white-space: pre-wrap;
     word-wrap: break-word;
     font-family: var(--font-sans, sans-serif);
     background: var(--surface);
     padding: 1rem;
     border-radius: 4px;
+    line-height: 1.55;
+  }
+  .text-segment {
+    white-space: pre-wrap;
   }
   ul {
     list-style: none;
