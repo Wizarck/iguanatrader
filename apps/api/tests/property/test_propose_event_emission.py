@@ -184,8 +184,8 @@ def test_propose_emits_one_event_iff_strategy_returns_proposal(
 
         service = TradingService(
             bus=bus,
-            broker=broker,  # type: ignore[arg-type]
-            strategy_resolver=_resolve,  # type: ignore[arg-type]
+            broker=broker,
+            strategy_resolver=_resolve,
         )
 
         token = tenant_id_var.set(tenant_id)
@@ -261,8 +261,8 @@ def test_kill_switch_active_emits_zero_events_regardless_of_strategy_output(
 
         service = TradingService(
             bus=bus,
-            broker=_FakeBroker(),  # type: ignore[arg-type]
-            strategy_resolver=_resolve,  # type: ignore[arg-type]
+            broker=_FakeBroker(),
+            strategy_resolver=_resolve,
         )
         service._kill_switch_active = True  # flip after construction
 
