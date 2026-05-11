@@ -15,22 +15,17 @@
 </script>
 
 <script lang="ts">
-  import type { PageData } from './$types';
   import BriefHeader from '$lib/components/research/BriefHeader.svelte';
   import CitationLink from '$lib/components/research/CitationLink.svelte';
+  import FactTimeline, {
+    type FactTimelineRow
+  } from '$lib/components/research/FactTimeline.svelte';
   import { parseCitations } from '$lib/research/parse-citations';
+  import { renderBriefBody } from '$lib/research/render-brief-body';
 
-  type FactRow = {
-    id: string;
-    source_id: string;
-    source_url?: string | null;
-    retrieval_method?: 'api' | 'scrape' | 'manual' | 'llm' | null;
-    retrieved_at?: string | null;
-    fact_kind?: string;
-    value_numeric?: number | string | null;
-    value_text?: string | null;
-    effective_from?: string;
-  };
+  import type { PageData } from './$types';
+
+  type FactRow = FactTimelineRow;
 
   let { data }: { data: PageData } = $props();
 
@@ -55,6 +50,7 @@
       ''
   );
   let segments = $derived(parseCitations(body));
+  let auditTrailVersion = $derived((currentBrief?.version as number | undefined) ?? null);
 
   async function refresh() {
     refreshing = true;
@@ -106,7 +102,8 @@
     <article class="brief-body" aria-label="Brief summary">
       {#each segments as seg, i (i)}
         {#if seg.kind === 'text'}
-          <span class="text-segment">{seg.value}</span>
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+          {@html renderBriefBody(seg.value)}
         {:else}
           {@const fact = factById.get(seg.factId)}
           <CitationLink
@@ -119,6 +116,14 @@
         {/if}
       {/each}
     </article>
+
+    {#if auditTrailVersion !== null}
+      <p class="audit-link">
+        <a href="/research/{data.symbol}/audit-trail/{auditTrailVersion}"
+          >View audit trail (FR70 derivation chain) →</a
+        >
+      </p>
+    {/if}
   {:else}
     <article aria-label="No brief yet">
       <h1>Research — {data.symbol}</h1>
@@ -132,25 +137,7 @@
     </article>
   {/if}
 
-  <section aria-label="Recent facts">
-    <h2>Recent facts ({facts.length})</h2>
-    {#if facts.length === 0}
-      <p>No facts ingested yet for {data.symbol}.</p>
-    {:else}
-      <ul>
-        {#each facts as fact, idx (fact.id ?? idx)}
-          <li>
-            <span class="fact-kind">{fact.fact_kind}</span>
-            <span class="fact-source">{fact.source_id}</span>
-            <span class="fact-value">{fact.value_numeric ?? fact.value_text ?? ''}</span>
-            {#if fact.effective_from}
-              <time datetime={fact.effective_from}>{fact.effective_from}</time>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
+  <FactTimeline {facts} />
 </section>
 
 <style>
@@ -161,11 +148,6 @@
   h1 {
     font-size: 22px;
     font-weight: 600;
-  }
-  h2 {
-    font-size: 18px;
-    font-weight: 600;
-    margin-top: 1.5rem;
   }
   button {
     padding: 0.5rem 1rem;
@@ -194,35 +176,44 @@
     margin: 0.5rem 0;
   }
   .brief-body {
-    white-space: pre-wrap;
-    word-wrap: break-word;
     font-family: var(--font-sans, sans-serif);
     background: var(--surface);
     padding: 1rem;
     border-radius: 4px;
     line-height: 1.55;
   }
-  .text-segment {
-    white-space: pre-wrap;
+  .brief-body :global(h1),
+  .brief-body :global(h2),
+  .brief-body :global(h3),
+  .brief-body :global(h4) {
+    margin: 0.75rem 0 0.5rem;
+    color: var(--ink);
   }
-  ul {
-    list-style: none;
-    padding: 0;
+  .brief-body :global(p) {
+    margin: 0.5rem 0;
   }
-  li {
-    display: flex;
-    gap: 1rem;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--mute);
+  .brief-body :global(ul),
+  .brief-body :global(ol) {
+    margin: 0.5rem 0 0.5rem 1.25rem;
   }
-  .fact-kind {
-    font-family: monospace;
+  .brief-body :global(a) {
     color: var(--accent);
   }
-  .fact-source {
-    color: var(--mute);
+  .brief-body :global(code) {
+    font-family: monospace;
+    background: var(--surface-hover, rgba(0, 0, 0, 0.05));
+    padding: 0.05rem 0.25rem;
+    border-radius: 3px;
   }
-  .fact-value {
-    flex: 1;
+  .audit-link {
+    margin: 0.5rem 0 1rem;
+  }
+  .audit-link a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .audit-link a:hover {
+    text-decoration: underline;
   }
 </style>
