@@ -28,6 +28,8 @@ Both tables are append-only; the slice-3 listener will raise
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, cast
 from uuid import UUID, uuid4
@@ -49,6 +51,20 @@ from iguanatrader.persistence.models import AuthorizedSender
 from iguanatrader.shared.contextvars import tenant_id_var
 from iguanatrader.shared.kernel import BaseRepository
 from iguanatrader.shared.time import now as utc_now
+
+
+@dataclass(frozen=True, slots=True)
+class EnabledSenderRow:
+    """In-memory projection of an enabled :class:`AuthorizedSender` row.
+
+    Used by the channel-dispatch binding layer (slice
+    ``p1-channel-fanout-production``) to resolve recipients without leaking
+    ORM types across the boundary.
+    """
+
+    channel: str
+    external_id: str
+    display_name: str | None
 
 
 class ApprovalRepository(BaseRepository):
@@ -217,6 +233,37 @@ class ApprovalRepository(BaseRepository):
         result = await self.session.execute(stmt)
         instances = result.scalars().all()
         return [self._to_request_row(i) for i in instances]
+
+    async def list_enabled_senders(
+        self,
+        *,
+        tenant_id: UUID,
+        channels: Sequence[str],
+    ) -> list[EnabledSenderRow]:
+        """Return enabled ``authorized_senders`` rows for ``tenant_id`` in ``channels``.
+
+        Used by the channel-dispatch binding layer to resolve recipients per
+        approval request without coupling to the generic dispatch core.
+        Returns the empty list if ``channels`` is empty.
+        """
+        if not channels:
+            return []
+        stmt = (
+            select(AuthorizedSender)
+            .where(AuthorizedSender.tenant_id == tenant_id)
+            .where(AuthorizedSender.channel.in_(list(channels)))
+            .where(AuthorizedSender.enabled.is_(True))
+        )
+        result = await self.session.execute(stmt)
+        instances = result.scalars().all()
+        return [
+            EnabledSenderRow(
+                channel=row.channel,
+                external_id=row.external_id,
+                display_name=row.display_name,
+            )
+            for row in instances
+        ]
 
     async def sweep_expired(self, now: datetime) -> list[ApprovalRequestRow]:
         """All expired requests with no decision (timeout-sweep candidates)."""
