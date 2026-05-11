@@ -180,10 +180,11 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             build_channel_dispatcher_from_env,
         )
 
+        approval_repository = ApprovalRepository()
         approval_service = ApprovalService(
-            repository=ApprovalRepository(),
+            repository=approval_repository,
             message_bus=bus,
-            channel_dispatcher=build_channel_dispatcher_from_env(),
+            channel_dispatcher=build_channel_dispatcher_from_env(repository=approval_repository),
         )
         approval_service.register_subscriptions(bus)
 
