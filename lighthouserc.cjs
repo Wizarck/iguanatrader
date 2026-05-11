@@ -41,6 +41,10 @@ module.exports = {
         "http://localhost:5173/risk",
         "http://localhost:5173/costs",
         "http://localhost:5173/settings",
+
+        // Slice research-frontend-extras-2 — research detail surfaces.
+        "http://localhost:5173/research/AAPL",
+        "http://localhost:5173/research/AAPL/audit-trail/1",
       ],
       numberOfRuns: 1,
       settings: {

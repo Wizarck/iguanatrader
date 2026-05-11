@@ -119,6 +119,97 @@ const server = createServer(async (req, res) => {
     return send(res, 200, MOCK_USER_PAYLOAD);
   }
 
+  // Slice research-frontend-extras-2 mocks — minimal Brief + Facts.
+  const briefMatch = /^\/api\/v1\/research\/briefs\/([A-Za-z0-9._-]+)$/.exec(url.pathname);
+  if (req.method === 'GET' && briefMatch) {
+    const symbol = briefMatch[1].toUpperCase();
+    return send(res, 200, {
+      id: '00000000-0000-0000-0000-00000000aaaa',
+      symbol_universe_id: '00000000-0000-0000-0000-00000000bbbb',
+      watchlist_config_id: '00000000-0000-0000-0000-00000000cccc',
+      version: 1,
+      methodology: 'three_pillar',
+      thesis_text: 'short summary',
+      score_overall: '0.75',
+      score_components: null,
+      citations: [],
+      audit_trail: [
+        {
+          formula: 'pe = price / earnings',
+          inputs: [
+            { fact_id: '00000000-0000-0000-0000-00000000f001', value: '180.0' },
+            { fact_id: '00000000-0000-0000-0000-00000000f002', value: '6.0' }
+          ],
+          intermediate_steps: ['180.0 / 6.0 = 30.0'],
+          final_output: 30.0
+        }
+      ],
+      llm_provider: 'mock',
+      llm_model: 'mock-001',
+      llm_input_tokens: 0,
+      llm_output_tokens: 0,
+      llm_cache_hit_tokens: 0,
+      partial: false,
+      created_at: '2026-05-11T00:00:00Z',
+      body_markdown:
+        `## ${symbol} thesis\n\nStrong quarter per ` +
+        `[fact:00000000-0000-0000-0000-00000000f001] and growing earnings ` +
+        `per [fact:00000000-0000-0000-0000-00000000f002].\n\n- bullet one\n- bullet two`,
+      pillar_scores: null,
+      audit_trail_summary: null,
+      next_scheduled_refresh_at: null,
+      last_fact_recorded_at: null,
+      stale: false,
+      resolved_citations: []
+    });
+  }
+
+  const factsMatch = /^\/api\/v1\/research\/facts\/([A-Za-z0-9._-]+)$/.exec(url.pathname);
+  if (req.method === 'GET' && factsMatch) {
+    return send(res, 200, [
+      {
+        id: '00000000-0000-0000-0000-00000000f001',
+        source_id: 'EDGAR 10-Q FY26 Q1',
+        symbol_universe_id: '00000000-0000-0000-0000-00000000bbbb',
+        fact_kind: 'price',
+        value_numeric: '180.0',
+        value_text: null,
+        value_jsonb: null,
+        unit: 'USD',
+        currency: 'USD',
+        effective_from: '2026-05-01T00:00:00Z',
+        effective_to: null,
+        recorded_from: '2026-05-01T00:00:00Z',
+        recorded_to: null,
+        source_url: 'https://example.test/edgar/q1',
+        retrieval_method: 'api',
+        retrieved_at: '2026-05-01T00:00:00Z',
+        confidence: null,
+        created_at: '2026-05-01T00:00:00Z'
+      },
+      {
+        id: '00000000-0000-0000-0000-00000000f002',
+        source_id: 'EDGAR 10-Q FY26 Q1',
+        symbol_universe_id: '00000000-0000-0000-0000-00000000bbbb',
+        fact_kind: 'earnings',
+        value_numeric: '6.0',
+        value_text: null,
+        value_jsonb: null,
+        unit: 'USD',
+        currency: 'USD',
+        effective_from: '2026-05-01T00:00:00Z',
+        effective_to: null,
+        recorded_from: '2026-05-01T00:00:00Z',
+        recorded_to: null,
+        source_url: 'https://example.test/edgar/q1',
+        retrieval_method: 'api',
+        retrieved_at: '2026-05-01T00:00:00Z',
+        confidence: null,
+        created_at: '2026-05-01T00:00:00Z'
+      }
+    ]);
+  }
+
   send(res, 404, {
     type: 'urn:iguanatrader:error:not-found',
     title: 'Not Found',

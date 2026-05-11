@@ -16,6 +16,7 @@
     refreshing: boolean;
     refreshError: string | null;
     onRefresh: () => Promise<void> | void;
+    refreshDisabled?: boolean;
   };
 
   let {
@@ -25,7 +26,8 @@
     synthesizedAt,
     refreshing,
     refreshError,
-    onRefresh
+    onRefresh,
+    refreshDisabled = false
   }: Props = $props();
 
   function formatTs(iso: string | null): string {
@@ -52,9 +54,11 @@
         <span class="value">{formatTs(synthesizedAt)}</span>
       </div>
     </div>
-    <button type="button" onclick={() => onRefresh()} disabled={refreshing}>
-      {#if refreshing}Synthesising…{:else}Refresh{/if}
-    </button>
+    {#if !refreshDisabled}
+      <button type="button" onclick={() => onRefresh()} disabled={refreshing}>
+        {#if refreshing}Synthesising…{:else}Refresh{/if}
+      </button>
+    {/if}
   </div>
 </header>
 
