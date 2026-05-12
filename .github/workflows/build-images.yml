@@ -4,35 +4,62 @@ on:
   push:
     tags:
       - 'v*.*.*'
+    branches: [main]
+    paths:
+      - 'apps/api/Dockerfile'
+      - 'apps/web/Dockerfile'
+      - 'docker-compose*.yml'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - 'apps/web/package.json'
+      - 'pnpm-lock.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/api/Dockerfile'
+      - 'apps/web/Dockerfile'
+      - 'docker-compose*.yml'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - 'apps/web/package.json'
+      - 'pnpm-lock.yaml'
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: docker build (validation only at slice 1)
+  config-validation:
+    name: docker compose config (sanity)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [dev, paper, live, test]
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: docker compose config (sanity)
+      - name: Validate compose YAML shape
         run: |
           docker compose -f docker-compose.yml config --quiet
           docker compose -f docker-compose.paper.yml config --quiet
           docker compose -f docker-compose.live.yml config --quiet
           docker compose -f docker-compose.test.yml config --quiet
-      # Slice 2 lands apps/api/Dockerfile; until then `docker build` would fail.
-      # Skip-with-notice keeps the workflow a green CI check during slice 1.
-      - name: Skip docker build until slice 2
-        if: ${{ hashFiles('apps/api/Dockerfile') == '' }}
+          docker compose -f docker-compose.mvp.yml config --quiet
+
+  build-mvp-api:
+    name: docker build apps/api/Dockerfile
+    runs-on: ubuntu-latest
+    needs: config-validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: docker build api (runtime stage)
         run: |
-          echo "::notice::n/a — apps/api/Dockerfile not present yet (slice 2 lands it)"
-      - name: docker build ${{ matrix.target }}
-        if: ${{ hashFiles('apps/api/Dockerfile') != '' }}
+          docker build -f apps/api/Dockerfile --target runtime -t iguanatrader/api:mvp .
+
+  build-mvp-web:
+    name: docker build apps/web/Dockerfile
+    runs-on: ubuntu-latest
+    needs: config-validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: docker build web (runtime stage)
         run: |
-          docker build -f apps/api/Dockerfile --target ${{ matrix.target }} -t iguanatrader/api:${{ matrix.target }} .
+          docker build -f apps/web/Dockerfile --target runtime -t iguanatrader/web:mvp .
