@@ -1,0 +1,74 @@
+# iguanatrader — MVP deployment profile (slice bootstrap-tenant-cli-and-mvp-deploy).
+#
+# Minimal two-service stack runnable on a VPS:
+#
+#   - `api`     FastAPI monolith (port 8000)
+#   - `web`     SvelteKit adapter-node frontend (port 5173)
+#
+# Data persists in the named volume `iguanatrader_data` (SQLite +
+# bitemporal research payloads). Bring-up sequence on a fresh VPS:
+#
+#   1. `docker compose -f docker-compose.mvp.yml build`
+#   2. `docker compose -f docker-compose.mvp.yml run --rm api \
+#        python -m alembic -c apps/api/alembic.ini upgrade head`
+#   3. `docker compose -f docker-compose.mvp.yml run --rm api \
+#        iguanatrader admin bootstrap-tenant <slug> \
+#          --email <e> --password <p>`
+#   4. `docker compose -f docker-compose.mvp.yml up -d`
+#
+# Then visit http://<VPS_IP>:5173 and log in with the seeded credentials.
+# Behind a reverse proxy (Caddy/nginx) you'd terminate TLS at the proxy
+# and forward to `web:5173` + `api:8000` over the compose network.
+#
+# What this stack does NOT include (deliberately):
+#   - OpenBB sidecar (AGPL isolation; only needed once you wire the
+#     research adapters with real provider keys — see docs/getting-started.md).
+#   - Litestream replication (the canonical docker-compose.yml has it).
+#   - IBKR TWS/Gateway (paper/live trading; slice T4 wiring + ops setup).
+#   - SOPS-encrypted env decryption (use plain env vars on the VPS; the
+#     canonical .secrets/dev.env.enc pipeline is for multi-operator teams).
+
+services:
+  api:
+    image: iguanatrader/api:mvp
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    environment:
+      - IGUANATRADER_PROFILE=mvp
+      - IGUANATRADER_API_HOST=0.0.0.0
+      - IGUANATRADER_API_PORT=8000
+      # Single SQLite file under the named volume.
+      - IGUANA_DATABASE_URL=sqlite+aiosqlite:////data/iguanatrader.db
+      # MUST override before `docker compose up` in production. The
+      # default below is a non-functional placeholder so the container
+      # fails loudly if the operator forgets the override.
+      - IGUANATRADER_JWT_SECRET=${IGUANATRADER_JWT_SECRET:-CHANGE-ME-64-CHAR-HEX}
+    volumes:
+      - iguanatrader_data:/data
+    ports:
+      - "8000:8000"
+
+  web:
+    image: iguanatrader/web:mvp
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=5173
+      # The SvelteKit form action + hooks.server.ts proxy /api/v1/*
+      # to this URL. Inside the compose network, resolve via DNS.
+      - IGUANATRADER_API_BASE_URL=http://api:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  iguanatrader_data:
