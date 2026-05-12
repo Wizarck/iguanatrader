@@ -11,3 +11,6 @@ dist
 playwright-report
 test-results
 tests-e2e/.last-run.json
+# Storybook build artefact (slice research-frontend-storybook). Local dev
+# server runs without touching disk; only `pnpm build-storybook` writes.
+storybook-static
