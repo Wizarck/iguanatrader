@@ -16,12 +16,10 @@
 
 <script lang="ts">
   import BriefHeader from '$lib/components/research/BriefHeader.svelte';
-  import CitationLink from '$lib/components/research/CitationLink.svelte';
   import FactTimeline, {
     type FactTimelineRow
   } from '$lib/components/research/FactTimeline.svelte';
-  import { parseCitations } from '$lib/research/parse-citations';
-  import { renderBriefBody } from '$lib/research/render-brief-body';
+  import { renderBriefBody, type FactProvenance } from '$lib/research/render-brief-body';
 
   import type { PageData } from './$types';
 
@@ -35,9 +33,9 @@
 
   let facts = $derived(data.facts as FactRow[]);
 
-  // Build a fact-id → fact lookup for the citation tooltip data.
+  // Build a fact-id → provenance lookup for the citation chip tooltips.
   let factById = $derived.by(() => {
-    const map = new Map<string, FactRow>();
+    const map = new Map<string, FactProvenance>();
     for (const f of facts) {
       map.set(f.id, f);
     }
@@ -49,7 +47,7 @@
       (currentBrief?.thesis_text as string | undefined) ??
       ''
   );
-  let segments = $derived(parseCitations(body));
+  let renderedHtml = $derived(renderBriefBody(body, factById));
   let auditTrailVersion = $derived((currentBrief?.version as number | undefined) ?? null);
 
   async function refresh() {
@@ -100,21 +98,8 @@
     {/if}
 
     <article class="brief-body" aria-label="Brief summary">
-      {#each segments as seg, i (i)}
-        {#if seg.kind === 'text'}
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-          {@html renderBriefBody(seg.value)}
-        {:else}
-          {@const fact = factById.get(seg.factId)}
-          <CitationLink
-            factId={seg.factId}
-            sourceLabel={fact?.source_id ?? null}
-            sourceUrl={fact?.source_url ?? null}
-            retrievedAt={fact?.retrieved_at ?? null}
-            method={fact?.retrieval_method ?? null}
-          />
-        {/if}
-      {/each}
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+      {@html renderedHtml}
     </article>
 
     {#if auditTrailVersion !== null}
@@ -204,6 +189,27 @@
     background: var(--surface-hover, rgba(0, 0, 0, 0.05));
     padding: 0.05rem 0.25rem;
     border-radius: 3px;
+  }
+  .brief-body :global(.citation-chip) {
+    display: inline-block;
+    padding: 0 0.35rem;
+    margin: 0 0.1rem;
+    border-radius: 3px;
+    background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+    color: var(--accent);
+    font-size: 0.85em;
+    text-decoration: none;
+    border: 1px solid var(--mute);
+    line-height: 1.5;
+  }
+  .brief-body :global(.citation-chip:hover) {
+    background: var(--accent);
+    color: var(--accent-fg, #fff);
+  }
+  .brief-body :global(.citation-chip-broken) {
+    color: var(--warn-fg, #960);
+    border-style: dashed;
+    cursor: help;
   }
   .audit-link {
     margin: 0.5rem 0 1rem;

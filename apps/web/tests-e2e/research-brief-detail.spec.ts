@@ -1,9 +1,12 @@
 /**
- * Slice research-frontend-extras-2 — brief detail page e2e.
+ * Slice research-frontend-extras-2 + research-citation-renderer-refactor —
+ * brief detail page e2e.
  *
  * Asserts:
- * - Markdown body renders to HTML (heading + list).
- * - Citation markers become inline chips with the right fact id.
+ * - Markdown body renders to HTML (heading + list) — single-pass pipeline.
+ * - Citation markers become inline anchor chips (citation-chip class +
+ *   data-fact-id + target=_blank) without splitting the surrounding
+ *   paragraph.
  * - FactTimeline shows the mock's two facts.
  * - "View audit trail" link points to /audit-trail/<version>.
  */
@@ -38,6 +41,14 @@ test.describe('research brief detail', () => {
     await expect(timeline).toBeVisible();
     await expect(timeline.getByText('price')).toBeVisible();
     await expect(timeline.getByText('earnings')).toBeVisible();
+
+    // Citation chips: two static anchor elements inside the brief-body article,
+    // both pointing at the mocked EDGAR source URL with target=_blank.
+    const briefBody = page.getByRole('article', { name: /brief summary/i });
+    const chips = briefBody.locator('a.citation-chip');
+    await expect(chips).toHaveCount(2);
+    await expect(chips.first()).toHaveAttribute('target', '_blank');
+    await expect(chips.first()).toHaveAttribute('href', 'https://example.test/edgar/q1');
 
     // Audit-trail link present and points to /audit-trail/1.
     const auditLink = page.getByRole('link', { name: /view audit trail/i });
