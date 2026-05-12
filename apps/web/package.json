@@ -12,7 +12,9 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
-    "e2e:install": "playwright install chromium"
+    "e2e:install": "playwright install chromium",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@iguanatrader/shared-types": "workspace:*",
@@ -26,8 +28,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
+    "@storybook/addon-a11y": "^10.3.6",
+    "@storybook/sveltekit": "^10.3.6",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.0.0",
+    "storybook": "^10.3.6",
     "svelte-check": "^4.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.5.0",
