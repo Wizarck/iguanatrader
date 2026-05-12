@@ -25,9 +25,10 @@
     facts: FactTimelineRow[];
     maxItems?: number;
     highlightFactId?: string | null;
+    asOf?: string | null;
   };
 
-  let { facts, maxItems = 20, highlightFactId = null }: Props = $props();
+  let { facts, maxItems = 20, highlightFactId = null, asOf = null }: Props = $props();
 
   const RETRIEVAL_ICON: Record<string, string> = {
     api: '↪',
@@ -50,7 +51,9 @@
 
 <section class="fact-timeline" aria-label="Recent facts timeline">
   <header>
-    <h3>Recent facts</h3>
+    <h3>
+      Recent facts{#if asOf}<span class="as-of"> · as of {asOf}</span>{/if}
+    </h3>
     <span class="count">{facts.length} total · showing {sorted.length}</span>
   </header>
   {#if sorted.length === 0}
@@ -101,6 +104,12 @@
   .count {
     font-size: 12px;
     color: var(--mute);
+  }
+  .as-of {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 400;
+    margin-left: 0.5rem;
   }
   ol {
     list-style: none;

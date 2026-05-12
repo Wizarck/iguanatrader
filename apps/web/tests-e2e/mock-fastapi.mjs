@@ -226,6 +226,34 @@ const server = createServer(async (req, res) => {
 
   const factsMatch = /^\/api\/v1\/research\/facts\/([A-Za-z0-9._-]+)$/.exec(url.pathname);
   if (req.method === 'GET' && factsMatch) {
+    // Slice factimeline-as-of-mode: honour ?as_of=<iso>. The mock returns
+    // a single-fact subset when as_of is set (simulates the bitemporal
+    // filter narrowing the result), and the full 2-fact set otherwise.
+    const asOf = url.searchParams.get('as_of');
+    if (asOf !== null) {
+      return send(res, 200, [
+        {
+          id: '00000000-0000-0000-0000-00000000f001',
+          source_id: `EDGAR 10-Q FY26 Q1 (as_of=${asOf})`,
+          symbol_universe_id: '00000000-0000-0000-0000-00000000bbbb',
+          fact_kind: 'price',
+          value_numeric: '180.0',
+          value_text: null,
+          value_jsonb: null,
+          unit: 'USD',
+          currency: 'USD',
+          effective_from: '2026-05-01T00:00:00Z',
+          effective_to: null,
+          recorded_from: '2026-05-01T00:00:00Z',
+          recorded_to: null,
+          source_url: 'https://example.test/edgar/q1',
+          retrieval_method: 'api',
+          retrieved_at: '2026-05-01T00:00:00Z',
+          confidence: null,
+          created_at: '2026-05-01T00:00:00Z'
+        }
+      ]);
+    }
     return send(res, 200, [
       {
         id: '00000000-0000-0000-0000-00000000f001',

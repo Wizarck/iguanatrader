@@ -31,7 +31,52 @@
   let refreshError = $state<string | null>(null);
   let currentBrief = $state(data.brief as Record<string, unknown> | null);
 
-  let facts = $derived(data.facts as FactRow[]);
+  // Latest-mode facts come from server-side load; as-of mode swaps in
+  // a client-side refetched list. `asOfInput` is the picker's bound
+  // value; `appliedAsOf` is the value currently driving the displayed
+  // facts (cleared when the picker is reset).
+  let asOfInput = $state('');
+  let appliedAsOf = $state<string | null>(null);
+  let asOfFacts = $state<FactRow[] | null>(null);
+  let asOfLoading = $state(false);
+  let asOfError = $state<string | null>(null);
+
+  let facts = $derived((asOfFacts ?? (data.facts as FactRow[])) as FactRow[]);
+
+  async function applyAsOf(): Promise<void> {
+    const raw = asOfInput.trim();
+    if (!raw) {
+      // Empty input → reset to latest mode.
+      appliedAsOf = null;
+      asOfFacts = null;
+      asOfError = null;
+      return;
+    }
+    asOfLoading = true;
+    asOfError = null;
+    try {
+      const url = `/api/v1/research/facts/${encodeURIComponent(data.symbol)}?as_of=${encodeURIComponent(raw)}`;
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) {
+        const text = await res.text();
+        asOfError = `as-of failed (${res.status}): ${text.slice(0, 200)}`;
+        return;
+      }
+      asOfFacts = (await res.json()) as FactRow[];
+      appliedAsOf = raw;
+    } catch (err) {
+      asOfError = err instanceof Error ? err.message : String(err);
+    } finally {
+      asOfLoading = false;
+    }
+  }
+
+  function resetAsOf(): void {
+    asOfInput = '';
+    appliedAsOf = null;
+    asOfFacts = null;
+    asOfError = null;
+  }
 
   // Build a fact-id → provenance lookup for the citation chip tooltips.
   let factById = $derived.by(() => {
@@ -122,7 +167,29 @@
     </article>
   {/if}
 
-  <FactTimeline {facts} />
+  <section class="as-of-controls" aria-label="As-of date picker">
+    <label for="as-of-input">As-of (UTC):</label>
+    <input
+      id="as-of-input"
+      type="datetime-local"
+      bind:value={asOfInput}
+      step="1"
+      disabled={asOfLoading}
+    />
+    <button type="button" onclick={applyAsOf} disabled={asOfLoading}>
+      {asOfLoading ? 'Loading…' : 'Apply'}
+    </button>
+    {#if appliedAsOf}
+      <button type="button" class="reset" onclick={resetAsOf} disabled={asOfLoading}>
+        Reset to latest
+      </button>
+    {/if}
+    {#if asOfError}
+      <span role="alert" class="error">{asOfError}</span>
+    {/if}
+  </section>
+
+  <FactTimeline {facts} asOf={appliedAsOf} />
 </section>
 
 <style>
@@ -210,6 +277,31 @@
     color: var(--warn-fg, #960);
     border-style: dashed;
     cursor: help;
+  }
+  .as-of-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0 0.5rem;
+    font-size: 13px;
+    color: var(--mute);
+  }
+  .as-of-controls input {
+    font-family: monospace;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid var(--mute);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .as-of-controls button {
+    padding: 0.25rem 0.6rem;
+    font-size: 12px;
+  }
+  .as-of-controls .reset {
+    background: transparent;
+    color: var(--mute);
+    border: 1px solid var(--mute);
   }
   .audit-link {
     margin: 0.5rem 0 1rem;
