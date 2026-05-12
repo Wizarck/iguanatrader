@@ -119,7 +119,67 @@ const server = createServer(async (req, res) => {
     return send(res, 200, MOCK_USER_PAYLOAD);
   }
 
-  // Slice research-frontend-extras-2 mocks — minimal Brief + Facts.
+  // Slice research-frontend-extras-2 + research-brief-by-version-endpoint mocks.
+  function _mockBrief(symbol, version) {
+    return {
+      id: '00000000-0000-0000-0000-00000000aaaa',
+      symbol_universe_id: '00000000-0000-0000-0000-00000000bbbb',
+      watchlist_config_id: '00000000-0000-0000-0000-00000000cccc',
+      version,
+      methodology: 'three_pillar',
+      thesis_text: 'short summary',
+      score_overall: '0.75',
+      score_components: null,
+      citations: [],
+      audit_trail: [
+        {
+          formula: 'pe = price / earnings',
+          inputs: [
+            { fact_id: '00000000-0000-0000-0000-00000000f001', value: '180.0' },
+            { fact_id: '00000000-0000-0000-0000-00000000f002', value: '6.0' }
+          ],
+          intermediate_steps: ['180.0 / 6.0 = 30.0'],
+          final_output: 30.0
+        }
+      ],
+      llm_provider: 'mock',
+      llm_model: 'mock-001',
+      llm_input_tokens: 0,
+      llm_output_tokens: 0,
+      llm_cache_hit_tokens: 0,
+      partial: false,
+      created_at: '2026-05-11T00:00:00Z',
+      body_markdown:
+        `## ${symbol} thesis\n\nStrong quarter per ` +
+        `[fact:00000000-0000-0000-0000-00000000f001] and growing earnings ` +
+        `per [fact:00000000-0000-0000-0000-00000000f002].\n\n- bullet one\n- bullet two`,
+      pillar_scores: null,
+      audit_trail_summary: null,
+      next_scheduled_refresh_at: null,
+      last_fact_recorded_at: null,
+      stale: false,
+      resolved_citations: []
+    };
+  }
+
+  const briefVersionMatch = /^\/api\/v1\/research\/briefs\/([A-Za-z0-9._-]+)\/versions\/(\d+)$/.exec(
+    url.pathname
+  );
+  if (req.method === 'GET' && briefVersionMatch) {
+    const symbol = briefVersionMatch[1].toUpperCase();
+    const version = parseInt(briefVersionMatch[2], 10);
+    // Mock pretends versions 1..3 exist; anything else → 404.
+    if (version < 1 || version > 3) {
+      return send(res, 404, {
+        type: 'urn:iguanatrader:error:not-found',
+        title: 'Not Found',
+        status: 404,
+        detail: `no brief at version ${version} for ${symbol}`
+      });
+    }
+    return send(res, 200, _mockBrief(symbol, version));
+  }
+
   const briefMatch = /^\/api\/v1\/research\/briefs\/([A-Za-z0-9._-]+)$/.exec(url.pathname);
   if (req.method === 'GET' && briefMatch) {
     const symbol = briefMatch[1].toUpperCase();

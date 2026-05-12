@@ -306,6 +306,34 @@ class ResearchRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return result.scalars().first()
 
+    async def brief_by_symbol_and_version(
+        self,
+        symbol: str,
+        version: int,
+    ) -> ResearchBrief | None:
+        """Return the brief for ``symbol`` at ``version``, or ``None`` if absent.
+
+        Slice ``research-brief-by-version-endpoint``: at most one row by
+        construction (UNIQUE on ``(tenant_id, symbol_universe_id, version)``).
+        Used by ``GET /api/v1/research/briefs/{symbol}/versions/{version}``
+        so the frontend audit-trail route can inspect prior versions of the
+        derivation chain.
+        """
+        from iguanatrader.contexts.research.models import SymbolUniverse
+
+        stmt = (
+            sa.select(ResearchBrief)
+            .join(
+                SymbolUniverse,
+                ResearchBrief.symbol_universe_id == SymbolUniverse.id,
+            )
+            .where(SymbolUniverse.symbol == symbol)
+            .where(ResearchBrief.version == version)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalars().first()
+
     async def insert_brief(
         self,
         *,
