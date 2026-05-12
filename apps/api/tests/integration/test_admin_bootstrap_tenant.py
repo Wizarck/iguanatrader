@@ -26,7 +26,7 @@ from iguanatrader.persistence import (
 )
 from iguanatrader.persistence.base import Base
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from typer.testing import CliRunner
 
 if sys.platform == "win32":
@@ -64,7 +64,7 @@ def db_url(tmp_path: Path) -> str:
 @pytest.fixture
 async def schema_session_factory(
     engine_with_schema: AsyncEngine,
-) -> async_sessionmaker[None]:
+) -> async_sessionmaker[AsyncSession]:
     return session_factory(engine_with_schema)
 
 
@@ -84,7 +84,7 @@ def _run_bootstrap(
 async def test_bootstrap_creates_tenant_and_user(
     db_url: str,
     engine_with_schema: AsyncEngine,
-    schema_session_factory: async_sessionmaker[None],
+    schema_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Fixtures order: schema must exist before the CLI hits the DB.
@@ -158,7 +158,7 @@ async def test_duplicate_slug_without_force_reset_exits_non_zero(
 async def test_force_reset_replaces_existing_tenant(
     db_url: str,
     engine_with_schema: AsyncEngine,
-    schema_session_factory: async_sessionmaker[None],
+    schema_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     code1, _ = _run_bootstrap(
