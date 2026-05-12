@@ -24,13 +24,13 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from iguanatrader.contexts.risk.models import Decision
+from iguanatrader.contexts.risk.models import CapType, Decision, Outcome
 from iguanatrader.contexts.risk.service import RiskService
 from iguanatrader.contexts.trading.events import ProposalCreated, ProposalRiskEvaluated
 from iguanatrader.shared.errors import KillSwitchActiveError
@@ -138,7 +138,13 @@ def test_handler_emits_one_event_when_proposal_exists(
         service = RiskService(repository=object(), bus=bus)  # type: ignore[arg-type]
 
         async def _fake_evaluate(_inp: Any) -> tuple[None, Decision]:
-            return (None, Decision(outcome=outcome, cap_type_breached=cap_type_breached))
+            return (
+                None,
+                Decision(
+                    outcome=cast(Outcome, outcome),
+                    cap_type_breached=cast("CapType | None", cap_type_breached),
+                ),
+            )
 
         monkeypatch.setattr(service, "evaluate_proposal", _fake_evaluate)
 
