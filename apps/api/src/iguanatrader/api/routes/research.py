@@ -54,6 +54,7 @@ from iguanatrader.contexts.research.synthesis import (
 from iguanatrader.contexts.research.synthesis.llm_client import LLMClient
 from iguanatrader.persistence import User
 from iguanatrader.shared.contextvars import session_var
+from iguanatrader.shared.errors import NotFoundError
 
 log = structlog.get_logger("iguanatrader.api.routes.research")
 
@@ -181,6 +182,53 @@ async def get_brief(
         log.warning(
             "api.research.brief.broken_citations",
             symbol=symbol,
+            broken_count=len(broken),
+        )
+    resolved_dtos = [
+        ResolvedCitationDetail(
+            fact_id=r.fact_id,
+            source_id=r.source_id,
+            source_url=r.source_url,
+            source_label=r.source_label,
+            retrieved_at=r.retrieved_at,
+            retrieval_method=r.retrieval_method,
+        )
+        for r in resolved
+    ]
+    return _project_brief(brief, resolved_citations=resolved_dtos)
+
+
+@router.get(
+    "/briefs/{symbol}/versions/{version}",
+    response_model=BriefResponse,
+)
+async def get_brief_by_version(
+    symbol: str,
+    version: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BriefResponse:
+    """Return the brief for ``symbol`` at the requested ``version``.
+
+    Slice ``research-brief-by-version-endpoint``: enables the audit-trail
+    nested route (`/research/[symbol]/audit-trail/[version]`) to inspect
+    prior versions of the FR70 derivation chain.
+    """
+    log.info("api.research.brief.get_by_version", symbol=symbol, version=version)
+    session_var.set(db)
+    repo = ResearchRepository()
+    brief = await repo.brief_by_symbol_and_version(symbol, version)
+    if brief is None:
+        raise NotFoundError(
+            detail=f"no brief at version {version} for {symbol}",
+        )
+    resolver = CitationResolver(repo)
+    resolved, broken = await resolver.resolve(brief.thesis_text)
+    if broken:
+        log.warning(
+            "api.research.brief.broken_citations",
+            symbol=symbol,
+            version=version,
             broken_count=len(broken),
         )
     resolved_dtos = [

@@ -1,10 +1,12 @@
 /**
- * Slice research-frontend-extras-2 — audit-trail page e2e.
+ * Slice research-frontend-extras-2 + research-brief-by-version-endpoint —
+ * audit-trail page e2e.
  *
  * Asserts:
  * - Direct navigation renders BriefHeader + AuditTrailViewer accordion.
  * - Accordion toggle on the first entry exposes formula/inputs/steps/output.
- * - Mismatched ?brief_version redirects to the current version.
+ * - Non-existent version (4+) yields a 404 page (no silent redirect now
+ *   that `[brief_version]` is load-bearing).
  */
 
 import { expect, test } from '@playwright/test';
@@ -44,10 +46,11 @@ test.describe('research audit trail', () => {
     await expect(region.getByText('180.0 / 6.0 = 30.0')).toBeVisible();
   });
 
-  test('mismatched brief_version redirects to current', async ({ page }) => {
+  test('non-existent version yields 404', async ({ page }) => {
     await login(page, '/research/AAPL/audit-trail/1');
-    // Direct navigation to a version that doesn't exist: should land on v1.
-    await page.goto('/research/AAPL/audit-trail/9');
-    await expect(page).toHaveURL(/\/research\/AAPL\/audit-trail\/1$/);
+    // Mock returns 404 for versions outside [1, 3]; SvelteKit renders the
+    // 404 page with a message containing the version + symbol.
+    const resp = await page.goto('/research/AAPL/audit-trail/9');
+    expect(resp?.status()).toBe(404);
   });
 });

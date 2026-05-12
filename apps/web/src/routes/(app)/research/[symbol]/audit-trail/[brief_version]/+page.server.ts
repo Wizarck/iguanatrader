@@ -1,16 +1,15 @@
 /**
- * Audit-trail detail loader — slice research-frontend-extras-2.
+ * Audit-trail detail loader — slice research-frontend-extras-2 +
+ * research-brief-by-version-endpoint.
  *
- * Fetches the current brief + recent facts for `[symbol]` and validates
- * `[brief_version]` against the brief's version. On mismatch redirects to
- * the canonical URL so deep links coming from older snapshots gracefully
- * land on the current version's trail.
- *
- * Future-proofing: when `/briefs/{symbol}/versions/{n}` lands, swap the
- * fetch to honour the URL parameter directly without touching this loader.
+ * Fetches the brief at the requested `[brief_version]` via
+ * `/api/v1/research/briefs/{symbol}/versions/{version}` (load-bearing —
+ * not decorative). 404 surfaces as SvelteKit `error(404, ...)` so deep
+ * links to non-existent versions yield a clean error page instead of
+ * a silent redirect to current.
  */
 
-import { error, redirect } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 
 import type { PageServerLoad } from './$types';
 
@@ -22,21 +21,19 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
   }
 
   const [briefRes, factsRes] = await Promise.all([
-    fetch(`/api/v1/research/briefs/${encodeURIComponent(symbol)}`),
+    fetch(
+      `/api/v1/research/briefs/${encodeURIComponent(symbol)}/versions/${requestedVersion}`
+    ),
     fetch(`/api/v1/research/facts/${encodeURIComponent(symbol)}`)
   ]);
 
   if (!briefRes.ok) {
-    if (briefRes.status === 404 || briefRes.status === 501) {
-      throw error(404, `No brief available for ${symbol}`);
+    if (briefRes.status === 404) {
+      throw error(404, `No brief at version ${requestedVersion} for ${symbol}`);
     }
     throw error(briefRes.status, `Failed to load brief: ${briefRes.statusText}`);
   }
   const brief = (await briefRes.json()) as Record<string, unknown>;
-  const currentVersion = Number(brief?.version ?? 0);
-  if (currentVersion !== requestedVersion) {
-    throw redirect(302, `/research/${encodeURIComponent(symbol)}/audit-trail/${currentVersion}`);
-  }
 
   let facts: unknown[] = [];
   if (factsRes.ok) {
