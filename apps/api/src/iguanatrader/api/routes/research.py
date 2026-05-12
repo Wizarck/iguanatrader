@@ -20,10 +20,11 @@ the request transaction; ``session_var.set(db)`` binds the session for
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iguanatrader.api.deps import get_current_user, get_db
@@ -54,7 +55,7 @@ from iguanatrader.contexts.research.synthesis import (
 from iguanatrader.contexts.research.synthesis.llm_client import LLMClient
 from iguanatrader.persistence import User
 from iguanatrader.shared.contextvars import session_var
-from iguanatrader.shared.errors import NotFoundError
+from iguanatrader.shared.errors import NotFoundError, ValidationError
 
 log = structlog.get_logger("iguanatrader.api.routes.research")
 
@@ -275,14 +276,41 @@ async def get_brief_audit_trail(
 @router.get("/facts/{symbol}", response_model=list[FactResponse])
 async def get_facts(
     symbol: str,
+    as_of: str | None = Query(
+        default=None,
+        description=(
+            "Optional ISO 8601 datetime — bitemporal point-in-time filter. "
+            "When set, returns facts visible at the given instant (per the "
+            "dual-axis predicate `effective_from <= at < effective_to` AND "
+            "`recorded_from <= at < recorded_to`). Omitted → latest 50 facts."
+        ),
+    ),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[FactResponse]:
-    """Return the latest facts for ``symbol`` (slice R5)."""
-    log.info("api.research.facts.get", symbol=symbol)
+    """Return facts for ``symbol`` (slice R5 + factimeline-as-of-mode).
+
+    Bitemporal ``?as_of=`` enables the FactTimeline's as-of mode in the
+    frontend (reconstructs the fact set visible at synthesis time).
+    """
+    log.info("api.research.facts.get", symbol=symbol, as_of=as_of)
     session_var.set(db)
     repo = ResearchRepository()
-    facts = await repo.facts_for_symbol(symbol, limit=50)
+    if as_of is not None:
+        try:
+            at = datetime.fromisoformat(as_of)
+        except ValueError as exc:
+            raise ValidationError(
+                detail=f"as_of must be ISO 8601 datetime; got {as_of!r}: {exc}",
+            ) from exc
+        if at.tzinfo is None:
+            # FastAPI Query strings carry no implicit timezone; treat
+            # naive input as UTC for the bitemporal query (matches the
+            # canonical project convention from shared.time.now).
+            at = at.replace(tzinfo=UTC)
+        facts = await repo.as_of(symbol, at)
+    else:
+        facts = await repo.facts_for_symbol(symbol, limit=50)
     return [_project_fact(f) for f in facts]
 
 
