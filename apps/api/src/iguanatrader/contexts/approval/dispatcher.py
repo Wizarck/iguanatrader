@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import structlog
 
 from iguanatrader.shared.channel_dispatch import (
+    LogOnlyMessageDispatcher,
     MessageDispatcher,
     MultiChannelMessageDispatcher,
     OutboundMessage,
@@ -416,10 +417,96 @@ def build_channel_dispatcher_from_env(
     return builders[kind](repository)
 
 
+def _compose_user_multi_dispatcher(
+    parts: dict[str, MessageDispatcher | None],
+) -> MessageDispatcher:
+    """Wrap the live subset of channel dispatchers for the user-context path.
+
+    Mirrors :func:`_compose_multi_dispatcher` but returns the generic
+    :class:`MessageDispatcher` shape (``dispatch(message, recipients)``)
+    instead of the approval-context :class:`ChannelDispatcher`
+    (``fanout(request, channels)``). The forgot-password endpoint — and
+    any future flow that fans to a single user without going through the
+    ``authorized_senders`` table — calls this directly.
+    """
+    live = {channel: d for channel, d in parts.items() if d is not None}
+    if not live:
+        log.error(
+            "user.channel.dispatcher.all_channels_disabled",
+            requested=sorted(parts.keys()),
+            fallback="log_only",
+        )
+        return LogOnlyMessageDispatcher()
+    return MultiChannelMessageDispatcher(dispatchers=live)
+
+
+def build_user_channel_dispatcher_from_env() -> MessageDispatcher:
+    """Composition root for flows that dispatch to a single user record.
+
+    The forgot-password endpoint (slice ``auth-forgot-password-flow``)
+    consumes this factory. Unlike :func:`build_channel_dispatcher_from_env`,
+    this variant does NOT require an :class:`ApprovalRepository`
+    because the recipient list is computed from the user record itself
+    (see :func:`iguanatrader.shared.channel_dispatch.recipients.resolve_recipients_for_user`),
+    not from the ``authorized_senders`` table.
+
+    Resolution mirrors :func:`build_channel_dispatcher_from_env`:
+
+    +--------------------------------------------------+-----------------------+
+    | ``IGUANATRADER_CHANNEL_DISPATCHER``              | Result                |
+    +==================================================+=======================+
+    | unset / ``""`` / ``"log_only"``                  | LogOnly fallback      |
+    +--------------------------------------------------+-----------------------+
+    | ``"telegram_hermes"``                            | Telegram + Hermes     |
+    +--------------------------------------------------+-----------------------+
+    | ``"telegram_hermes_email"``                      | Telegram + Hermes +   |
+    |                                                  | Email                 |
+    +--------------------------------------------------+-----------------------+
+    | ``"email"``                                      | Email only            |
+    +--------------------------------------------------+-----------------------+
+    | any other value                                  | LogOnly + warn log    |
+    +--------------------------------------------------+-----------------------+
+
+    Per-channel fallback: a missing credential for one channel falls back
+    to skipping that channel individually; remaining channels stay live.
+    If every requested channel is missing creds →
+    :class:`LogOnlyMessageDispatcher`.
+    """
+    kind = os.environ.get("IGUANATRADER_CHANNEL_DISPATCHER", "").strip().lower()
+    if kind in {"", "log_only"}:
+        return LogOnlyMessageDispatcher()
+    if kind == "telegram_hermes":
+        return _compose_user_multi_dispatcher(
+            {
+                "telegram": _build_telegram_from_env(),
+                "whatsapp": _build_hermes_from_env(),
+            }
+        )
+    if kind == "telegram_hermes_email":
+        return _compose_user_multi_dispatcher(
+            {
+                "telegram": _build_telegram_from_env(),
+                "whatsapp": _build_hermes_from_env(),
+                EMAIL_CHANNEL: _build_email_from_env(),
+            }
+        )
+    if kind == "email":
+        return _compose_user_multi_dispatcher(
+            {EMAIL_CHANNEL: _build_email_from_env()},
+        )
+    log.warning(
+        "user.channel.dispatcher.unknown_kind",
+        kind=kind,
+        fallback="log_only",
+    )
+    return LogOnlyMessageDispatcher()
+
+
 __all__ = [
     "ChannelDispatcher",
     "LogOnlyChannelDispatcher",
     "build_channel_dispatcher_from_env",
     "build_outbound_message_from_request",
+    "build_user_channel_dispatcher_from_env",
     "resolve_recipients_from_request",
 ]

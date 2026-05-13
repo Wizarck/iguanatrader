@@ -43,7 +43,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Text, Uuid, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from iguanatrader.persistence.base import Base
@@ -131,6 +131,19 @@ class User(Base):
     # in ``apps/api/src/iguanatrader/api/routes/auth.py``.
     password_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+        nullable=True,
+    )
+    # Added 2026-05-13 by slice ``auth-forgot-password-flow``. Opt-in
+    # recovery channels: the forgot-password endpoint fans the temporary
+    # credential out to whichever ones the operator set. NULL means "do
+    # not fan to this channel for this user"; email is the always-on
+    # channel via the NOT NULL ``email`` column above.
+    telegram_chat_id: Mapped[str | None] = mapped_column(
+        String(length=64),
+        nullable=True,
+    )
+    whatsapp_phone: Mapped[str | None] = mapped_column(
+        String(length=32),
         nullable=True,
     )
 

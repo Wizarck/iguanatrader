@@ -46,6 +46,32 @@ services:
       # default below is a non-functional placeholder so the container
       # fails loudly if the operator forgets the override.
       - IGUANATRADER_JWT_SECRET=${IGUANATRADER_JWT_SECRET:-CHANGE-ME-64-CHAR-HEX}
+      # Channel dispatcher (slice ``auth-forgot-password-flow`` wires
+      # the dormant Telegram + Hermes adapters into the MVP profile).
+      # Default ``email`` only — operator upgrades to
+      # ``telegram_hermes_email`` once Telegram + WhatsApp creds are
+      # populated. Per-channel fallback to log-only when individual
+      # creds are missing (see
+      # ``apps/api/src/iguanatrader/contexts/approval/dispatcher.py``).
+      - IGUANATRADER_CHANNEL_DISPATCHER=${IGUANATRADER_CHANNEL_DISPATCHER:-email}
+      # SMTP transport (provider-agnostic; from-address defaults to the
+      # canonical brand domain — operator overrides per-tenant).
+      - IGUANATRADER_SMTP_HOST=${IGUANATRADER_SMTP_HOST:-}
+      - IGUANATRADER_SMTP_PORT=${IGUANATRADER_SMTP_PORT:-587}
+      - IGUANATRADER_SMTP_USERNAME=${IGUANATRADER_SMTP_USERNAME:-}
+      - IGUANATRADER_SMTP_PASSWORD=${IGUANATRADER_SMTP_PASSWORD:-}
+      - IGUANATRADER_SMTP_FROM_ADDRESS=${IGUANATRADER_SMTP_FROM_ADDRESS:-iguanatrader@palafitofood.com}
+      - IGUANATRADER_SMTP_FROM_NAME=${IGUANATRADER_SMTP_FROM_NAME:-iguanatrader}
+      - IGUANATRADER_SMTP_USE_TLS=${IGUANATRADER_SMTP_USE_TLS:-true}
+      # Telegram bot (optional — empty disables that channel).
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # Hermes/WhatsApp (optional — empty disables that channel).
+      # NB: the SOPS .secrets/*.enc bundles still carry the legacy
+      # HERMES_WEBHOOK_URL + HERMES_AUTH_TOKEN names from ELIGIA — rename
+      # to HERMES_BASE_URL + HERMES_HMAC_SECRET when migrating, see
+      # docs/mvp-deploy.md Step 2.
+      - HERMES_BASE_URL=${HERMES_BASE_URL:-}
+      - HERMES_HMAC_SECRET=${HERMES_HMAC_SECRET:-}
     volumes:
       - iguanatrader_data:/data
     ports:

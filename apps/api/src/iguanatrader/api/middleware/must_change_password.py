@@ -57,6 +57,12 @@ MUST_CHANGE_PASSWORD_ALLOW_LIST: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/v1/auth/logout"),
         ("GET", "/api/v1/auth/me"),
         ("POST", "/api/v1/auth/login"),
+        # Slice ``auth-forgot-password-flow``: forgot-password is
+        # unauthenticated (no cookie ⇒ the gate already short-circuits).
+        # Allow-listing it explicitly codifies the intent so a future
+        # refactor that authenticates the route can't accidentally lock
+        # users out of self-service recovery.
+        ("POST", "/api/v1/auth/forgot-password"),
     }
 )
 

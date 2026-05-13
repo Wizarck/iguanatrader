@@ -61,12 +61,26 @@ from iguanatrader.api.deps import (
 from iguanatrader.api.dtos.auth import (
     MIN_PASSWORD_LENGTH,
     ChangePasswordRequest,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     LoginResponse,
     MeResponse,
 )
 from iguanatrader.api.limiting import limiter
+from iguanatrader.api.temp_password import generate_temp_password
+from iguanatrader.contexts.approval.dispatcher import (
+    build_user_channel_dispatcher_from_env,
+)
 from iguanatrader.persistence import User
+from iguanatrader.shared.channel_dispatch import (
+    MessageDispatcher,
+    OutboundMessage,
+)
+from iguanatrader.shared.channel_dispatch.recipients import (
+    resolve_recipients_for_user,
+)
+from iguanatrader.shared.channel_dispatch.templates import render_email_template
 from iguanatrader.shared.errors import (
     AuthError,
     AuthMismatchError,
@@ -363,6 +377,209 @@ async def change_password(
     return Response(status_code=204)
 
 
+#: Generic forgot-password response message (ES). Same wording whether
+#: the email matched a user or not — anti-enumeration. Centralised so
+#: copy edits land in one place + tests can import the exact string.
+FORGOT_PASSWORD_GENERIC_MESSAGE: str = (
+    "Si la dirección está registrada, recibirás instrucciones para recuperar la cuenta."
+)
+
+#: Test-only override hook for the channel dispatcher used by the
+#: forgot-password endpoint. Production calls
+#: :func:`build_user_channel_dispatcher_from_env` once per request (it
+#: is cheap — no I/O at construction time). Tests inject a fake
+#: :class:`MessageDispatcher` to assert the fan-out without running real
+#: SMTP / Telegram / WhatsApp transports.
+_forgot_password_dispatcher_override: MessageDispatcher | None = None
+
+
+def set_forgot_password_dispatcher_override(dispatcher: MessageDispatcher | None) -> None:
+    """Test-only — override the channel dispatcher used by ``/forgot-password``.
+
+    Pass ``None`` to clear the override. Mirrors the
+    :func:`iguanatrader.api.middleware.set_session_factory_override`
+    pattern used by the slice ``auth-change-password`` middleware tests.
+    """
+    global _forgot_password_dispatcher_override
+    _forgot_password_dispatcher_override = dispatcher
+
+
+def _resolve_forgot_password_dispatcher() -> MessageDispatcher:
+    """Return the per-request channel dispatcher (override-aware)."""
+    if _forgot_password_dispatcher_override is not None:
+        return _forgot_password_dispatcher_override
+    return build_user_channel_dispatcher_from_env()
+
+
+def _render_forgot_password_message(*, temp_password: str, correlation_id: str) -> OutboundMessage:
+    """Compose the :class:`OutboundMessage` carrying the temp credential.
+
+    Subject is the bare phrase ``Recuperación de contraseña``; the
+    :class:`EmailSMTPDispatcher` adds the ``[iguanatrader]`` prefix on
+    its own (re-prefixing would yield ``[iguanatrader] [iguanatrader]
+    ...``). The HTML body uses :func:`render_email_template` for the
+    branded layout; ``message.body`` carries the plain-text alternative
+    so Telegram / WhatsApp / text-only mail clients see a readable
+    payload.
+    """
+    headline = "Tu contraseña temporal"
+    body_html = (
+        "<p>Has solicitado recuperar tu contraseña de iguanatrader. "
+        "Usa esta contraseña temporal para entrar y, en el primer login, "
+        "se te pedirá que la cambies por una nueva.</p>"
+        f'<p class="creds"><strong>{temp_password}</strong></p>'
+        "<p><em>You requested a password recovery for iguanatrader. "
+        "Use this temporary password to sign in; on first login you "
+        "will be required to change it for a new one.</em></p>"
+    )
+    html, plain_text = render_email_template(
+        subject="Recuperación de contraseña",
+        preheader="Tu contraseña temporal para iguanatrader",
+        headline=headline,
+        body_html=body_html,
+    )
+    return OutboundMessage(
+        body=plain_text,
+        subject="Recuperación de contraseña",
+        correlation_id=correlation_id,
+        metadata={"html_body": html},
+    )
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit("3/hour")
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    session: AsyncSession = Depends(get_db),
+) -> ForgotPasswordResponse:
+    """Issue a temporary password + fan it out to the user's wired channels.
+
+    Flow (per spec ``web-authentication`` forgot-password addendum):
+
+    1. Lookup user by email (case-sensitive on the existing column;
+       same shape as :func:`login`). The DB collation determines
+       case-sensitivity — SQLite default is case-sensitive, PostgreSQL
+       depends on the column type; both are acceptable for MVP.
+    2. **Anti-enumeration**: if no user matches, return the same generic
+       200 payload as the success path — no timing-attack hardening
+       needed because Argon2 cost dwarfs any DB query latency.
+    3. Generate a 16-char temp password
+       (:func:`generate_temp_password`), hash with Argon2id, and write
+       it to ``users`` along with ``must_change_password=TRUE`` and a
+       fresh ``password_changed_at``. The user MUST rotate on first
+       login (gated by :class:`MustChangePasswordMiddleware`).
+    4. Resolve recipients via
+       :func:`resolve_recipients_for_user` (email always-on; Telegram +
+       WhatsApp opt-in via the new columns from slice
+       ``auth-forgot-password-flow``).
+    5. ``await dispatcher.dispatch(message=, recipients=)``. Per-channel
+       failures are isolated by :class:`MultiChannelMessageDispatcher`
+       and surface as ``status='failed'`` :class:`DispatchResult`
+       entries — they do NOT fail the request.
+    6. Return 200 with the generic message.
+
+    Rate-limit: ``3/hour`` keyed on the IP via slowapi's default
+    keyfunc behaviour for non-login routes (the login-specific
+    ``(ip, email)`` compound key is not used here — keep to per-IP to
+    avoid over-engineering; per-email keying is a separate slice).
+
+    Logging: emits ``auth.password.forgot.requested`` on every request
+    (with the email hashed for log safety) and
+    ``auth.password.forgot.dispatched`` on the success branch with the
+    per-channel result counts. NEVER logs the temp password itself.
+    """
+    email_hash = hash_email_for_log(body.email)
+    log.info("auth.password.forgot.requested", email_hash=email_hash)
+
+    # Step 1: bootstrap-path lookup — tenant_id_var is unset (the user
+    # is not authenticated yet). Same helper as ``POST /login``.
+    user = await bootstrap_load_user_by_email(session, body.email)
+
+    if user is None:
+        log.info(
+            "auth.password.forgot.email_unknown",
+            email_hash=email_hash,
+        )
+        # Step 2: anti-enumeration. Same payload + status as the
+        # success branch. NO dispatcher call.
+        return ForgotPasswordResponse(message=FORGOT_PASSWORD_GENERIC_MESSAGE)
+
+    # Step 3: generate + hash + persist. Raw SQL UPDATE — bypasses the
+    # ORM identity map (same pattern as :func:`change_password`).
+    temp_password = generate_temp_password()
+    new_hash = hash_password(temp_password)
+    await session.execute(
+        text(
+            "UPDATE users SET password_hash = :hash, "
+            "must_change_password = 1, "
+            "password_changed_at = CURRENT_TIMESTAMP, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = :uid"
+        ),
+        {"hash": new_hash, "uid": user.id.hex},
+    )
+    await session.commit()
+
+    # Step 4: resolve recipients from the user record. The dispatcher
+    # filters by channel internally, so over-listing recipients on
+    # channels that are not wired in the current dispatcher is safe
+    # (the multi-dispatcher just emits ``skipped`` for unknown
+    # channels).
+    recipients = resolve_recipients_for_user(user)
+    if not recipients:
+        log.warning(
+            "auth.password.forgot.no_recipients",
+            email_hash=email_hash,
+            user_id=str(user.id),
+            note="user record has no email/telegram/whatsapp populated",
+        )
+        # Still return the generic success message — anti-enumeration
+        # also covers the "user exists but has no channels" edge case.
+        return ForgotPasswordResponse(message=FORGOT_PASSWORD_GENERIC_MESSAGE)
+
+    # Step 5: dispatch. The dispatcher is responsible for per-channel
+    # isolation; we wrap the call in try/except as defense in depth so
+    # a constructor-time crash in the dispatcher tree cannot leak a 500
+    # to the caller (which would also be a side-channel — a 500 vs 200
+    # is observable enumeration).
+    dispatcher = _resolve_forgot_password_dispatcher()
+    message = _render_forgot_password_message(
+        temp_password=temp_password,
+        correlation_id=f"forgot-password:{user.id}",
+    )
+    try:
+        results = await dispatcher.dispatch(message=message, recipients=recipients)
+    except Exception as exc:
+        log.warning(
+            "auth.password.forgot.dispatch_failed",
+            email_hash=email_hash,
+            user_id=str(user.id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        # Still return generic success — the credential IS rotated;
+        # the operator can read the password from the DB or re-issue.
+        return ForgotPasswordResponse(message=FORGOT_PASSWORD_GENERIC_MESSAGE)
+
+    delivered = sum(1 for r in results if r.status == "delivered")
+    failed = sum(1 for r in results if r.status == "failed")
+    skipped = sum(1 for r in results if r.status == "skipped")
+    log.info(
+        "auth.password.forgot.dispatched",
+        email_hash=email_hash,
+        user_id=str(user.id),
+        delivered=delivered,
+        failed=failed,
+        skipped=skipped,
+        channels=[r.channel for r in results],
+    )
+
+    return ForgotPasswordResponse(message=FORGOT_PASSWORD_GENERIC_MESSAGE)
+
+
 __all__ = [
+    "FORGOT_PASSWORD_GENERIC_MESSAGE",
     "router",
+    "set_forgot_password_dispatcher_override",
 ]
