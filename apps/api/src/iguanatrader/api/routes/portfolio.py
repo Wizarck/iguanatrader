@@ -1,61 +1,234 @@
-"""Portfolio route stubs — 501 Problem until slice T4 lands the bodies.
+"""Portfolio read endpoints (slice trading-routes-portfolio-strategies-bodies).
 
-Per design D6 + slice-5 D9 precedent. Mirror of
-:mod:`iguanatrader.api.routes.trades` shape.
+Three GET endpoints powered by :class:`TradeRepository`,
+:class:`OrderRepository`, :class:`EquitySnapshotRepository`, and
+:class:`FillRepository`. Tenant scoping is automatic via the slice-3
+``tenant_listener``.
+
+The ``response_model=...`` declarations are intentional — they make
+the canonical response shape visible in ``/openapi.json`` so the
+slice-5 typegen pipeline emits the matching TypeScript interfaces in
+``packages/shared-types/src/index.ts``.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import UUID, uuid4
+
 import structlog
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from iguanatrader.api.deps import get_current_user
+from iguanatrader.api.deps import get_current_user, get_db
 from iguanatrader.api.dtos.trades import (
     EquitySnapshotOut,
+    OrderOut,
     PortfolioSummaryOut,
+    PositionListOut,
+    PositionOut,
+    TradeOut,
+)
+from iguanatrader.contexts.trading.models import EquitySnapshot, Trade
+from iguanatrader.contexts.trading.repository import (
+    EquitySnapshotRepository,
+    FillRepository,
+    OrderRepository,
+    TradeRepository,
 )
 from iguanatrader.persistence import User
-from iguanatrader.shared.errors import NotImplementedFeatureError
+from iguanatrader.shared.contextvars import session_var
+from iguanatrader.shared.errors import NotFoundError
 
 log = structlog.get_logger("iguanatrader.api.routes.portfolio")
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 
-def _stub(method: str, path: str) -> NotImplementedFeatureError:
-    """Build the canonical 501 raise for a trading-route stub."""
-    log.info(
-        "trading.routes.stub_invoked",
-        method=method,
-        path=path,
+def _synthesise_empty_equity(tenant_id: UUID) -> EquitySnapshotOut:
+    """Build a zero-valued :class:`EquitySnapshotOut` for an empty tenant.
+
+    ``GET /portfolio`` returns this when the tenant has no real snapshot
+    yet so the dashboard can render "Sin movimiento aún" without
+    special-casing 404. The ``snapshot_kind="empty"`` discriminator is
+    a DTO-only sentinel — it is NOT a valid value for the DB-level
+    CHECK constraint (``'event' | 'minute' | 'daily'``) and the row is
+    never persisted.
+    """
+    return EquitySnapshotOut(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        mode="paper",
+        account_equity=Decimal("0"),
+        cash_balance=Decimal("0"),
+        realized_pnl_today=Decimal("0"),
+        unrealized_pnl=Decimal("0"),
+        currency="USD",
+        snapshot_kind="empty",
+        created_at=datetime.now(UTC),
     )
-    return NotImplementedFeatureError(
-        detail=(f"{method} /api/v1{path} will be wired in slice T4 (trading-routes-and-daemon)."),
+
+
+async def _compute_avg_entry_price(
+    fill_repo: FillRepository,
+    trade_id: UUID,
+) -> Decimal | None:
+    """Return ``sum(fill_price * quantity_filled) / sum(quantity_filled)``.
+
+    Returns ``None`` when the trade has no fills recorded yet (the
+    proposal was approved + the order submitted but the broker has not
+    reported execution). Frontend renders ``—`` for null values.
+    """
+    fills = await fill_repo.list_for_trade(trade_id)
+    if not fills:
+        return None
+    total_qty = Decimal("0")
+    weighted_sum = Decimal("0")
+    for fill in fills:
+        qty = Decimal(fill.quantity_filled)
+        price = Decimal(fill.fill_price)
+        total_qty += qty
+        weighted_sum += qty * price
+    if total_qty == Decimal("0"):
+        return None
+    return weighted_sum / total_qty
+
+
+def _trade_to_position(
+    trade: Trade,
+    avg_entry_price: Decimal | None,
+) -> PositionOut:
+    """Project a :class:`Trade` row + computed avg-entry into a DTO row.
+
+    ``last_price`` and ``unrealized_pnl`` are intentionally null in v1.
+    The market-data hook that populates them is owned by the follow-up
+    slice ``market-data-snapshot-port``.
+    """
+    return PositionOut(
+        trade_id=trade.id,
+        symbol=trade.symbol,
+        side=trade.side,
+        quantity=Decimal(trade.quantity),
+        avg_entry_price=avg_entry_price,
+        last_price=None,
+        unrealized_pnl=None,
+        opened_at=trade.opened_at,
     )
 
 
 @router.get("", response_model=PortfolioSummaryOut)
 async def get_portfolio(
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> PortfolioSummaryOut:
-    """Return a snapshot of the current portfolio. (T4 fills.)"""
-    raise _stub("GET", "/portfolio")
+    """Return a snapshot of the current portfolio.
+
+    Returns the latest :class:`EquitySnapshot` for the tenant (or a
+    synthesised zero snapshot with ``snapshot_kind="empty"`` when the
+    tenant has none yet), plus the open trades and open orders. The
+    synthesised-empty branch is deliberate so the dashboard can render
+    a stable shape from first boot without special-casing 404. The
+    sibling ``GET /portfolio/equity`` keeps the 404 contract for
+    callers that specifically want history.
+    """
+    session_var.set(db)
+
+    equity_repo = EquitySnapshotRepository()
+    trade_repo = TradeRepository()
+    order_repo = OrderRepository()
+
+    latest_equity: EquitySnapshot | None = await equity_repo.get_latest_for_tenant()
+    open_trades = await trade_repo.list_open_for_tenant()
+    open_orders = await order_repo.list_open_for_tenant()
+
+    if latest_equity is None:
+        equity_out = _synthesise_empty_equity(user.tenant_id)
+    else:
+        equity_out = EquitySnapshotOut.model_validate(latest_equity)
+
+    log.info(
+        "portfolio.summary.fetched",
+        tenant_id=str(user.tenant_id),
+        open_trades=len(open_trades),
+        open_orders=len(open_orders),
+        equity_synthesised=latest_equity is None,
+    )
+
+    return PortfolioSummaryOut(
+        equity=equity_out,
+        open_trades=[TradeOut.model_validate(t) for t in open_trades],
+        open_orders=[OrderOut.model_validate(o) for o in open_orders],
+    )
 
 
-@router.get("/positions")
+@router.get("/positions", response_model=PositionListOut)
 async def list_positions(
     user: User = Depends(get_current_user),
-) -> dict[str, str]:
-    """List open positions. (T4 fills the response_model + body.)"""
-    raise _stub("GET", "/portfolio/positions")
+    db: AsyncSession = Depends(get_db),
+) -> PositionListOut:
+    """List derived positions — one row per open trade.
+
+    A "position" is computed from each open :class:`Trade` plus the
+    cumulative fills attached to its order(s):
+
+    * ``avg_entry_price`` = ``sum(fill_price * quantity_filled) /
+      sum(quantity_filled)`` across fills, or ``None`` if no fills yet.
+    * ``last_price`` and ``unrealized_pnl`` are intentionally ``None``
+      in v1 (the market-data hook is a follow-up slice).
+
+    Sorted ``opened_at DESC``. Empty list when no open trades.
+    """
+    session_var.set(db)
+    trade_repo = TradeRepository()
+    fill_repo = FillRepository()
+
+    open_trades = await trade_repo.list_open_for_tenant()
+    positions: list[PositionOut] = []
+    for trade in open_trades:
+        avg = await _compute_avg_entry_price(fill_repo, trade.id)
+        positions.append(_trade_to_position(trade, avg))
+
+    log.info(
+        "portfolio.positions.fetched",
+        tenant_id=str(user.tenant_id),
+        position_count=len(positions),
+    )
+
+    return PositionListOut(items=positions, total=len(positions))
 
 
 @router.get("/equity", response_model=EquitySnapshotOut)
 async def latest_equity(
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> EquitySnapshotOut:
-    """Return the latest equity snapshot. (T4 fills.)"""
-    raise _stub("GET", "/portfolio/equity")
+    """Return the latest equity snapshot for the tenant.
+
+    Returns 404 when the tenant has zero snapshots — distinct from the
+    ``GET /portfolio`` synthesised-empty branch because callers of
+    ``/equity`` specifically want history. The frontend renders the
+    404 inline as "Sin snapshots aún".
+    """
+    session_var.set(db)
+    repo = EquitySnapshotRepository()
+    snapshot = await repo.get_latest_for_tenant()
+    if snapshot is None:
+        log.info(
+            "portfolio.equity.fetched",
+            tenant_id=str(user.tenant_id),
+            outcome="not_found",
+        )
+        raise NotFoundError(
+            detail=f"No equity snapshots recorded for tenant {user.tenant_id}.",
+        )
+    log.info(
+        "portfolio.equity.fetched",
+        tenant_id=str(user.tenant_id),
+        outcome="hit",
+        snapshot_id=str(snapshot.id),
+    )
+    return EquitySnapshotOut.model_validate(snapshot)
 
 
 __all__ = ["router"]

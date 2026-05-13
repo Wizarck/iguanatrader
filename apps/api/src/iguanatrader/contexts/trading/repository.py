@@ -106,6 +106,73 @@ class StrategyConfigRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_tenant(self) -> list[StrategyConfig]:
+        """List all strategy configs for the current tenant.
+
+        Ordered ``(symbol ASC, strategy_kind ASC)`` — matches the v1 UI's
+        deterministic-listing expectation. Tenant filter is automatic
+        via the slice-3 ``tenant_listener``.
+        """
+        stmt = select(StrategyConfig).order_by(
+            StrategyConfig.symbol.asc(),
+            StrategyConfig.strategy_kind.asc(),
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_first_enabled_by_symbol(self, symbol: str) -> StrategyConfig | None:
+        """Return the oldest enabled config for ``symbol`` (or None).
+
+        Backend allows multiple kinds per symbol (composite UNIQUE is
+        ``(tenant_id, strategy_kind, symbol)``); the v1 GET-by-symbol UI
+        resolves the ambiguity by picking the oldest-``created_at``
+        enabled row. Multi-kind UI is a v1.5 follow-up
+        (``strategies-multi-kind-ui``).
+        """
+        stmt = (
+            select(StrategyConfig)
+            .where(StrategyConfig.symbol == symbol)
+            .where(StrategyConfig.enabled.is_(True))
+            .order_by(StrategyConfig.created_at.asc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return cast("StrategyConfig | None", result.scalars().first())
+
+    async def list_all_by_symbol(self, symbol: str) -> list[StrategyConfig]:
+        """Return every config (enabled or disabled) for ``symbol``.
+
+        Used by :meth:`disable_all_by_symbol` so the soft-disable touches
+        every row a tenant owns for that symbol — including already-
+        disabled rows (idempotent re-disable). Tenant filter is automatic.
+        """
+        stmt = select(StrategyConfig).where(StrategyConfig.symbol == symbol)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def disable_all_by_symbol(self, symbol: str) -> int:
+        """Soft-disable every config for ``symbol`` (set ``enabled=False``).
+
+        Returns the number of rows touched. Performed via per-row UPDATE
+        through the ORM (NOT a bulk ``update().where()`` statement) so:
+
+        * The slice-3 ``tenant_listener`` filters the preceding SELECT to
+          rows the caller's tenant owns (bulk UPDATE bypasses the listener).
+        * The ``StrategyConfig.before_update`` hook fires per row, bumping
+          ``version`` and emitting ``trading.config.changed``.
+        * No DELETE is issued — audit history is preserved.
+
+        Rows already at ``enabled=False`` are kept as-is (no version bump
+        if nothing actually changed).
+        """
+        rows = await self.list_all_by_symbol(symbol)
+        touched = 0
+        for row in rows:
+            if row.enabled:
+                row.enabled = False
+                touched += 1
+        return touched
+
 
 class TradeProposalRepository(BaseRepository):
     """Persistence operations for :class:`TradeProposal` (slice T4).
@@ -149,6 +216,16 @@ class TradeRepository(BaseRepository):
         by ``created_at DESC`` (most-recent first); pagination is v2.
         """
         stmt = select(Trade).order_by(Trade.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_open_for_tenant(self) -> list[Trade]:
+        """List open trades for the current tenant.
+
+        ``state == 'open'``, ordered ``opened_at DESC``. Tenant filter
+        is automatic via the slice-3 ``tenant_listener``.
+        """
+        stmt = select(Trade).where(Trade.state == "open").order_by(Trade.opened_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -200,6 +277,18 @@ class OrderRepository(BaseRepository):
         stmt = select(Order).where(Order.broker_order_id == broker_order_id)
         result = await self.session.execute(stmt)
         return cast("Order | None", result.scalars().first())
+
+    async def list_open_for_tenant(self) -> list[Order]:
+        """List orders in an open state for the current tenant.
+
+        ``state in {'new', 'submitted', 'partially_filled'}``, ordered
+        ``created_at DESC``. Tenant filter is automatic via the
+        slice-3 ``tenant_listener``.
+        """
+        open_states = ("new", "submitted", "partially_filled")
+        stmt = select(Order).where(Order.state.in_(open_states)).order_by(Order.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
 
 class FillRepository(BaseRepository):
@@ -256,6 +345,17 @@ class EquitySnapshotRepository(BaseRepository):
 
     async def add(self, snapshot: EquitySnapshot) -> None:
         self.session.add(snapshot)
+
+    async def get_latest_for_tenant(self) -> EquitySnapshot | None:
+        """Return the most-recent equity snapshot for the current tenant.
+
+        Ordered ``created_at DESC LIMIT 1``. Returns ``None`` when the
+        tenant has zero snapshots yet (first-boot path). Tenant filter
+        is automatic via the slice-3 ``tenant_listener``.
+        """
+        stmt = select(EquitySnapshot).order_by(EquitySnapshot.created_at.desc()).limit(1)
+        result = await self.session.execute(stmt)
+        return cast("EquitySnapshot | None", result.scalars().first())
 
 
 __all__ = [
