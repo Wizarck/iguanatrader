@@ -18,11 +18,12 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iguanatrader.api.deps import get_current_user, get_db
 from iguanatrader.api.dtos.trades import (
+    EquitySnapshotListOut,
     EquitySnapshotOut,
     OrderOut,
     PortfolioSummaryOut,
@@ -139,6 +140,7 @@ async def get_portfolio(
     order_repo = OrderRepository()
 
     latest_equity: EquitySnapshot | None = await equity_repo.get_latest_for_tenant()
+    day_open: EquitySnapshot | None = await equity_repo.get_first_snapshot_today_for_tenant()
     open_trades = await trade_repo.list_open_for_tenant()
     open_orders = await order_repo.list_open_for_tenant()
 
@@ -147,18 +149,27 @@ async def get_portfolio(
     else:
         equity_out = EquitySnapshotOut.model_validate(latest_equity)
 
+    day_pnl_abs: Decimal | None = None
+    day_pnl_pct: Decimal | None = None
+    if latest_equity is not None and day_open is not None and day_open.account_equity > 0:
+        day_pnl_abs = latest_equity.account_equity - day_open.account_equity
+        day_pnl_pct = day_pnl_abs / day_open.account_equity
+
     log.info(
         "portfolio.summary.fetched",
         tenant_id=str(user.tenant_id),
         open_trades=len(open_trades),
         open_orders=len(open_orders),
         equity_synthesised=latest_equity is None,
+        day_pnl_computed=day_pnl_abs is not None,
     )
 
     return PortfolioSummaryOut(
         equity=equity_out,
         open_trades=[TradeOut.model_validate(t) for t in open_trades],
         open_orders=[OrderOut.model_validate(o) for o in open_orders],
+        day_pnl_abs=day_pnl_abs,
+        day_pnl_pct=day_pnl_pct,
     )
 
 
@@ -229,6 +240,31 @@ async def latest_equity(
         snapshot_id=str(snapshot.id),
     )
     return EquitySnapshotOut.model_validate(snapshot)
+
+
+@router.get("/equity/series", response_model=EquitySnapshotListOut)
+async def equity_series(
+    days: int = Query(default=30, ge=1, le=365),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> EquitySnapshotListOut:
+    """Return equity snapshots for the last ``days`` days (ordered ASC).
+
+    ``days`` defaults to 30 (sparkline horizon) and is clamped 1..365.
+    Returns ``items=[]`` (NOT 404) when no snapshots fall in the window —
+    the dashboard sparkline renders "Sin datos aún" inline.
+    """
+    session_var.set(db)
+    repo = EquitySnapshotRepository()
+    snapshots = await repo.list_for_tenant_window(days)
+    items = [EquitySnapshotOut.model_validate(s) for s in snapshots]
+    log.info(
+        "portfolio.equity_series.fetched",
+        tenant_id=str(user.tenant_id),
+        days=days,
+        count=len(items),
+    )
+    return EquitySnapshotListOut(items=items, total=len(items), next_cursor=None)
 
 
 __all__ = ["router"]
