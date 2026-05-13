@@ -74,7 +74,9 @@ from iguanatrader.contexts.approval.dispatcher import (
 )
 from iguanatrader.persistence import User
 from iguanatrader.shared.channel_dispatch import (
+    LogOnlyMessageDispatcher,
     MessageDispatcher,
+    MultiChannelMessageDispatcher,
     OutboundMessage,
 )
 from iguanatrader.shared.channel_dispatch.recipients import (
@@ -411,6 +413,41 @@ def _resolve_forgot_password_dispatcher() -> MessageDispatcher:
     return build_user_channel_dispatcher_from_env()
 
 
+def _dispatcher_can_deliver(dispatcher: MessageDispatcher) -> bool:
+    """Return ``True`` iff ``dispatcher`` can actually transmit the temp password.
+
+    Guards slice ``auth-forgot-password-guardrail``. The parent slice
+    ``auth-forgot-password-flow`` (PR #135) shipped a footgun: when
+    ``IGUANATRADER_CHANNEL_DISPATCHER`` is unset (the default MVP profile)
+    OR resolves to a tree whose every leaf is
+    :class:`LogOnlyMessageDispatcher`,
+    :func:`build_user_channel_dispatcher_from_env` returns a dispatcher
+    that emits ``channel_dispatch.log_only.would_send`` (envelope metadata
+    only — NO body). The temp password is therefore never readable by
+    anyone, yet the route had already rotated ``users.password_hash`` →
+    silent account lockout.
+
+    Detection rules:
+
+    * a bare :class:`LogOnlyMessageDispatcher` → ``False``.
+    * a :class:`MultiChannelMessageDispatcher` whose every inner
+      dispatcher is (transitively) log-only → ``False``. ``ANY`` inner
+      non-log-only entry → ``True`` (mixed deliveries are acceptable —
+      at least one real channel will carry the credential).
+    * any other shape (concrete adapter, test double, custom impl) →
+      ``True``. The contract is opt-in: only the in-tree LogOnly path
+      is treated as "cannot deliver".
+    """
+    if isinstance(dispatcher, LogOnlyMessageDispatcher):
+        return False
+    if isinstance(dispatcher, MultiChannelMessageDispatcher):
+        inner = dispatcher._dispatchers.values()
+        if not inner:
+            return False
+        return any(_dispatcher_can_deliver(d) for d in inner)
+    return True
+
+
 def _render_forgot_password_message(*, temp_password: str, correlation_id: str) -> OutboundMessage:
     """Compose the :class:`OutboundMessage` carrying the temp credential.
 
@@ -464,6 +501,13 @@ async def forgot_password(
     2. **Anti-enumeration**: if no user matches, return the same generic
        200 payload as the success path — no timing-attack hardening
        needed because Argon2 cost dwarfs any DB query latency.
+    2.5. **Guardrail** (slice ``auth-forgot-password-guardrail``): refuse
+       to rotate the hash if the resolved dispatcher cannot actually
+       transmit the temp password (i.e., the tree is a transitive
+       :class:`LogOnlyMessageDispatcher`). Same generic 200 payload —
+       only the WARN log
+       ``auth.password.forgot.no_recovery_channel_configured`` exposes
+       the dropped request to operators.
     3. Generate a 16-char temp password
        (:func:`generate_temp_password`), hash with Argon2id, and write
        it to ``users`` along with ``must_change_password=TRUE`` and a
@@ -505,6 +549,32 @@ async def forgot_password(
         # success branch. NO dispatcher call.
         return ForgotPasswordResponse(message=FORGOT_PASSWORD_GENERIC_MESSAGE)
 
+    # Step 2.5: GUARDRAIL (slice ``auth-forgot-password-guardrail``).
+    # Resolve the dispatcher EARLY (before rotating the hash) so we can
+    # detect the log-only fallback path — see :func:`_dispatcher_can_deliver`
+    # docstring for the footgun this prevents. If the resolved tree
+    # cannot actually transmit the temp password we MUST NOT rotate
+    # ``password_hash`` / ``must_change_password`` / ``password_changed_at``
+    # — otherwise the user's credential is destroyed with no recovery
+    # path. We still return the generic 200 to preserve anti-enumeration
+    # (an unauthenticated caller MUST NOT be able to probe "is recovery
+    # configured?" via status code or response body). Operators see the
+    # dropped request via the WARN log below.
+    dispatcher = _resolve_forgot_password_dispatcher()
+    if not _dispatcher_can_deliver(dispatcher):
+        log.warning(
+            "auth.password.forgot.no_recovery_channel_configured",
+            email_hash=email_hash,
+            user_id=str(user.id),
+            note=(
+                "resolved dispatcher is log-only — refusing to rotate the "
+                "password hash to avoid silent account lockout. Configure "
+                "IGUANATRADER_CHANNEL_DISPATCHER + the relevant transport "
+                "credentials and retry."
+            ),
+        )
+        return ForgotPasswordResponse(message=FORGOT_PASSWORD_GENERIC_MESSAGE)
+
     # Step 3: generate + hash + persist. Raw SQL UPDATE — bypasses the
     # ORM identity map (same pattern as :func:`change_password`).
     temp_password = generate_temp_password()
@@ -542,8 +612,9 @@ async def forgot_password(
     # isolation; we wrap the call in try/except as defense in depth so
     # a constructor-time crash in the dispatcher tree cannot leak a 500
     # to the caller (which would also be a side-channel — a 500 vs 200
-    # is observable enumeration).
-    dispatcher = _resolve_forgot_password_dispatcher()
+    # is observable enumeration). ``dispatcher`` was already resolved
+    # above by the guardrail (Step 2.5) — we reuse the same instance so
+    # the dispatcher tree is constructed exactly once per request.
     message = _render_forgot_password_message(
         temp_password=temp_password,
         correlation_id=f"forgot-password:{user.id}",
