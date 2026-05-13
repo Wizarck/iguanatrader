@@ -225,11 +225,7 @@ class TradeRepository(BaseRepository):
         ``state == 'open'``, ordered ``opened_at DESC``. Tenant filter
         is automatic via the slice-3 ``tenant_listener``.
         """
-        stmt = (
-            select(Trade)
-            .where(Trade.state == "open")
-            .order_by(Trade.opened_at.desc())
-        )
+        stmt = select(Trade).where(Trade.state == "open").order_by(Trade.opened_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -290,11 +286,7 @@ class OrderRepository(BaseRepository):
         slice-3 ``tenant_listener``.
         """
         open_states = ("new", "submitted", "partially_filled")
-        stmt = (
-            select(Order)
-            .where(Order.state.in_(open_states))
-            .order_by(Order.created_at.desc())
-        )
+        stmt = select(Order).where(Order.state.in_(open_states)).order_by(Order.created_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -361,11 +353,7 @@ class EquitySnapshotRepository(BaseRepository):
         tenant has zero snapshots yet (first-boot path). Tenant filter
         is automatic via the slice-3 ``tenant_listener``.
         """
-        stmt = (
-            select(EquitySnapshot)
-            .order_by(EquitySnapshot.created_at.desc())
-            .limit(1)
-        )
+        stmt = select(EquitySnapshot).order_by(EquitySnapshot.created_at.desc()).limit(1)
         result = await self.session.execute(stmt)
         return cast("EquitySnapshot | None", result.scalars().first())
 
