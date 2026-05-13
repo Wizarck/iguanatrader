@@ -13,10 +13,16 @@ Public surface:
 * :class:`MultiChannelMessageDispatcher` — per-channel routing with FR-isolation.
 * :class:`AsyncTokenBucket` — rate-limit helper.
 * :func:`hmac_sha256_hex` — HMAC payload-signing helper.
-* Adapters (under :mod:`.adapters`) — concrete Telegram + Hermes/WhatsApp
-  dispatchers wrapping injectable HTTP transports.
+* Adapters (under :mod:`.adapters`) — concrete Telegram + Hermes/WhatsApp +
+  Email SMTP dispatchers wrapping injectable transports.
+* :func:`render_email_template` — branded email rendering helper.
 """
 
+from iguanatrader.shared.channel_dispatch.adapters.email_smtp import (
+    EMAIL_CHANNEL,
+    EMAIL_DEFAULT_RATE_PER_SECOND,
+    EmailSMTPDispatcher,
+)
 from iguanatrader.shared.channel_dispatch.log_only import LogOnlyMessageDispatcher
 from iguanatrader.shared.channel_dispatch.multi import MultiChannelMessageDispatcher
 from iguanatrader.shared.channel_dispatch.protocol import (
@@ -26,6 +32,7 @@ from iguanatrader.shared.channel_dispatch.protocol import (
 )
 from iguanatrader.shared.channel_dispatch.rate_limit import AsyncTokenBucket
 from iguanatrader.shared.channel_dispatch.sign import hmac_sha256_hex
+from iguanatrader.shared.channel_dispatch.templates import render_email_template
 from iguanatrader.shared.channel_dispatch.types import (
     DispatchResult,
     OutboundMessage,
@@ -33,8 +40,11 @@ from iguanatrader.shared.channel_dispatch.types import (
 )
 
 __all__ = [
+    "EMAIL_CHANNEL",
+    "EMAIL_DEFAULT_RATE_PER_SECOND",
     "AsyncTokenBucket",
     "DispatchResult",
+    "EmailSMTPDispatcher",
     "LogOnlyMessageDispatcher",
     "MessageDispatcher",
     "MultiChannelMessageDispatcher",
@@ -43,4 +53,5 @@ __all__ = [
     "RateLimiter",
     "Recipient",
     "hmac_sha256_hex",
+    "render_email_template",
 ]

@@ -52,7 +52,7 @@ class _BehaviorDispatcher:
         ]
 
 
-_KNOWN_CHANNELS = ["telegram", "whatsapp"]
+_KNOWN_CHANNELS = ["telegram", "whatsapp", "email"]
 _UNKNOWN_CHANNELS = ["signal", "discord", "irc"]
 
 _recipient_strategy = st.builds(
@@ -76,8 +76,13 @@ def test_multi_dispatch_never_silently_drops(recipients: list[Recipient]) -> Non
     async def _run() -> None:
         good_telegram = _BehaviorDispatcher(status="delivered")
         bad_whatsapp = _BehaviorDispatcher(status="delivered", raise_at_index=0)
+        good_email = _BehaviorDispatcher(status="delivered")
         multi = MultiChannelMessageDispatcher(
-            dispatchers={"telegram": good_telegram, "whatsapp": bad_whatsapp}
+            dispatchers={
+                "telegram": good_telegram,
+                "whatsapp": bad_whatsapp,
+                "email": good_email,
+            }
         )
         message = OutboundMessage(body="x", correlation_id="c")
         results = await multi.dispatch(message=message, recipients=recipients)
@@ -99,5 +104,12 @@ def test_multi_dispatch_never_silently_drops(recipients: list[Recipient]) -> Non
         whatsapp_results = [dr for dr in results if dr.channel == "whatsapp"]
         if whatsapp_results:
             assert all(dr.status == "failed" for dr in whatsapp_results)
+        # Invariant 6: email recipients (when present) are uniformly delivered
+        # because good_email is wired live alongside the failing whatsapp
+        # adapter — FR32 isolation means one bad channel can't poison the
+        # rest of the fanout.
+        email_results = [dr for dr in results if dr.channel == "email"]
+        if email_results:
+            assert all(dr.status == "delivered" for dr in email_results)
 
     asyncio.run(_run())

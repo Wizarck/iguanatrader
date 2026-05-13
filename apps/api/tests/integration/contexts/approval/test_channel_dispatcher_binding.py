@@ -18,11 +18,27 @@ import sys
 from collections.abc import AsyncIterator, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
+import aiosmtplib
+
+# Side-effect imports — ``Base.metadata.create_all`` needs every mapped
+# table registered. The approval-context test only seeds Tenant +
+# AuthorizedSender rows, but ``approval_requests`` carries an FK to
+# ``trade_proposals`` so the schema generator refuses to emit the FK
+# without the trading model in the registry. Importing the model modules
+# here is enough to register them.
+import iguanatrader.contexts.approval.models as _approval_models
+import iguanatrader.contexts.risk.orm as _risk_orm
+import iguanatrader.contexts.trading.models as _trading_models
 import pytest
 from iguanatrader.contexts.approval.channels.types import ApprovalRequestRow
-from iguanatrader.contexts.approval.dispatcher import _MessageDispatcherChannelAdapter
+from iguanatrader.contexts.approval.dispatcher import (
+    LogOnlyChannelDispatcher,
+    _MessageDispatcherChannelAdapter,
+    build_channel_dispatcher_from_env,
+)
 from iguanatrader.contexts.approval.repository import ApprovalRepository
 from iguanatrader.persistence import (
     AuthorizedSender,
@@ -40,6 +56,10 @@ from iguanatrader.shared.channel_dispatch import (
 )
 from iguanatrader.shared.contextvars import session_var, with_tenant_context
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+# Side-effect aliases (mypy/ruff happy) — referenced via ``_REGISTERED``
+# below to keep the imports alive without F401 noise.
+_REGISTERED = (_approval_models, _risk_orm, _trading_models)
 
 # Same Windows event-loop quirk as other integration suites.
 if sys.platform == "win32":
@@ -226,3 +246,111 @@ async def test_binding_no_recipients_skips_dispatch(
         await adapter.fanout(request=request, channels=["telegram"])
 
     assert inner.calls == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_hermes_email_selector_dispatches_email(
+    monkeypatch: pytest.MonkeyPatch,
+    sf: async_sessionmaker[AsyncSession],
+) -> None:
+    """Selector ``telegram_hermes_email`` composes a multi dispatcher that
+    routes an ``email`` recipient through the SMTP adapter (transport patched
+    so no socket is opened)."""
+    # Patch aiosmtplib.send to capture envelopes without touching the network.
+    sent: list[dict[str, str | None]] = []
+
+    async def _fake_send(msg: Any, **kwargs: Any) -> tuple[dict[str, Any], str]:
+        sent.append(
+            {
+                "from": str(msg["From"]),
+                "to": str(msg["To"]),
+                "subject": str(msg["Subject"]),
+                "hostname": kwargs.get("hostname"),
+                "username": kwargs.get("username"),
+            }
+        )
+        return ({}, "250 OK")
+
+    monkeypatch.setattr(aiosmtplib, "send", _fake_send)
+
+    # Wire env vars: telegram + hermes intentionally missing → those channels
+    # fall back to log-only individually, but the email channel stays live.
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("HERMES_BASE_URL", raising=False)
+    monkeypatch.delenv("HERMES_HMAC_SECRET", raising=False)
+    monkeypatch.setenv("IGUANATRADER_CHANNEL_DISPATCHER", "telegram_hermes_email")
+    monkeypatch.setenv("IGUANATRADER_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("IGUANATRADER_SMTP_PORT", "587")
+    monkeypatch.setenv("IGUANATRADER_SMTP_USERNAME", "user@example.com")
+    monkeypatch.setenv("IGUANATRADER_SMTP_PASSWORD", "supersecret")
+    monkeypatch.setenv("IGUANATRADER_SMTP_FROM_ADDRESS", "iguanatrader@palafitofood.com")
+    monkeypatch.setenv("IGUANATRADER_SMTP_FROM_NAME", "iguanatrader")
+    monkeypatch.setenv("IGUANATRADER_SMTP_USE_TLS", "true")
+
+    tenant_id = uuid4()
+    async with sf() as s:
+        s.add(Tenant(id=tenant_id, name="email-tenant", feature_flags={}))
+        await s.commit()
+
+    async with with_tenant_context(tenant_id), sf() as s:
+        s.add(
+            AuthorizedSender(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                channel="email",
+                external_id="alice@example.com",
+                display_name="Alice",
+                enabled=True,
+            )
+        )
+        await s.commit()
+
+    request = ApprovalRequestRow(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        proposal_id=uuid4(),
+        delivered_to_channels=["email"],
+        timeout_seconds=300,
+        expires_at=datetime.now(UTC) + timedelta(seconds=300),
+        created_at=datetime.now(UTC),
+    )
+
+    async with with_tenant_context(tenant_id), sf() as session:
+        session_var.set(session)
+        repository = ApprovalRepository()
+        dispatcher = build_channel_dispatcher_from_env(repository=repository)
+        # Must NOT be the LogOnly fallback — at least the email leg is live.
+        assert not isinstance(dispatcher, LogOnlyChannelDispatcher)
+        await dispatcher.fanout(request=request, channels=["email"])
+
+    assert len(sent) == 1
+    envelope = sent[0]
+    assert envelope["to"] == "alice@example.com"
+    assert envelope["from"] == "iguanatrader <iguanatrader@palafitofood.com>"
+    assert envelope["hostname"] == "smtp.example.com"
+    assert envelope["username"] == "user@example.com"
+    # Subject carries the canonical brand prefix.
+    assert envelope["subject"] is not None and envelope["subject"].startswith("[iguanatrader]")
+
+
+def test_unset_selector_returns_log_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default behaviour (no selector env var set) yields :class:`LogOnly`."""
+    monkeypatch.delenv("IGUANATRADER_CHANNEL_DISPATCHER", raising=False)
+    assert isinstance(build_channel_dispatcher_from_env(), LogOnlyChannelDispatcher)
+
+
+def test_email_selector_without_credentials_falls_back_to_log_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``email`` selector + missing SMTP creds → LogOnly + error log."""
+    monkeypatch.setenv("IGUANATRADER_CHANNEL_DISPATCHER", "email")
+    for var in (
+        "IGUANATRADER_SMTP_HOST",
+        "IGUANATRADER_SMTP_USERNAME",
+        "IGUANATRADER_SMTP_PASSWORD",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    # Repository is provided but every channel falls back → LogOnly.
+    repository = ApprovalRepository()
+    dispatcher = build_channel_dispatcher_from_env(repository=repository)
+    assert isinstance(dispatcher, LogOnlyChannelDispatcher)

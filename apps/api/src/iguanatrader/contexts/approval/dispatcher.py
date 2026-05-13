@@ -33,6 +33,7 @@ without code changes.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -45,8 +46,15 @@ from iguanatrader.shared.channel_dispatch import (
     Recipient,
 )
 from iguanatrader.shared.channel_dispatch.adapters import (
+    EmailSMTPDispatcher,
     HermesWhatsAppMessageDispatcher,
     TelegramBotMessageDispatcher,
+)
+from iguanatrader.shared.channel_dispatch.adapters.email_smtp import (
+    EMAIL_CHANNEL,
+    EMAIL_DEFAULT_FROM_ADDRESS,
+    EMAIL_DEFAULT_FROM_NAME,
+    EMAIL_DEFAULT_PORT,
 )
 
 if TYPE_CHECKING:
@@ -210,21 +218,29 @@ class _MessageDispatcherChannelAdapter:
             )
 
 
-def _build_telegram_hermes_from_env(
-    repository: ApprovalRepository,
-) -> ChannelDispatcher:
-    """Construct the production telegram + hermes stack from env vars.
+def _build_telegram_from_env() -> MessageDispatcher | None:
+    """Return a Telegram dispatcher if ``TELEGRAM_BOT_TOKEN`` is set; else None.
 
-    Falls back to :class:`LogOnlyChannelDispatcher` if any required
-    credential is missing (the daemon stays up + the gap is visible via
-    structured logs; operator wires SOPS bundle without code changes).
+    Per-channel fallback: a missing token disables Telegram only — other
+    channels in the same selector keep running.
     """
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not bot_token:
+        log.error(
+            "approval.channel.dispatcher.missing_credentials",
+            channel="telegram",
+            missing=["TELEGRAM_BOT_TOKEN"],
+            fallback="log_only",
+        )
+        return None
+    return TelegramBotMessageDispatcher(bot_token=bot_token)
+
+
+def _build_hermes_from_env() -> MessageDispatcher | None:
+    """Return a Hermes/WhatsApp dispatcher if both env vars are set."""
     hermes_url = os.environ.get("HERMES_BASE_URL", "").strip()
     hermes_secret = os.environ.get("HERMES_HMAC_SECRET", "").strip()
     missing: list[str] = []
-    if not bot_token:
-        missing.append("TELEGRAM_BOT_TOKEN")
     if not hermes_url:
         missing.append("HERMES_BASE_URL")
     if not hermes_secret:
@@ -232,18 +248,117 @@ def _build_telegram_hermes_from_env(
     if missing:
         log.error(
             "approval.channel.dispatcher.missing_credentials",
+            channel="whatsapp",
             missing=missing,
             fallback="log_only",
         )
-        return LogOnlyChannelDispatcher()
-
-    telegram = TelegramBotMessageDispatcher(bot_token=bot_token)
-    hermes = HermesWhatsAppMessageDispatcher(
+        return None
+    return HermesWhatsAppMessageDispatcher(
         base_url=hermes_url,
         hmac_secret=hermes_secret.encode("utf-8"),
     )
-    multi = MultiChannelMessageDispatcher(dispatchers={"telegram": telegram, "whatsapp": hermes})
+
+
+def _build_email_from_env() -> MessageDispatcher | None:
+    """Return an :class:`EmailSMTPDispatcher` if required SMTP creds are set."""
+    host = os.environ.get("IGUANATRADER_SMTP_HOST", "").strip()
+    username = os.environ.get("IGUANATRADER_SMTP_USERNAME", "").strip()
+    password = os.environ.get("IGUANATRADER_SMTP_PASSWORD", "").strip()
+    missing: list[str] = []
+    if not host:
+        missing.append("IGUANATRADER_SMTP_HOST")
+    if not username:
+        missing.append("IGUANATRADER_SMTP_USERNAME")
+    if not password:
+        missing.append("IGUANATRADER_SMTP_PASSWORD")
+    if missing:
+        log.error(
+            "approval.channel.dispatcher.missing_credentials",
+            channel="email",
+            missing=missing,
+            fallback="log_only",
+        )
+        return None
+    port_raw = os.environ.get("IGUANATRADER_SMTP_PORT", "").strip()
+    try:
+        port = int(port_raw) if port_raw else EMAIL_DEFAULT_PORT
+    except ValueError:
+        log.warning(
+            "approval.channel.dispatcher.invalid_smtp_port",
+            value=port_raw,
+            fallback=EMAIL_DEFAULT_PORT,
+        )
+        port = EMAIL_DEFAULT_PORT
+    from_address = (
+        os.environ.get("IGUANATRADER_SMTP_FROM_ADDRESS", "").strip() or EMAIL_DEFAULT_FROM_ADDRESS
+    )
+    from_name = os.environ.get("IGUANATRADER_SMTP_FROM_NAME", "").strip() or EMAIL_DEFAULT_FROM_NAME
+    use_tls_raw = os.environ.get("IGUANATRADER_SMTP_USE_TLS", "true").strip().lower()
+    use_tls = use_tls_raw not in {"0", "false", "no", "off"}
+    return EmailSMTPDispatcher(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        from_address=from_address,
+        from_name=from_name,
+        use_tls=use_tls,
+    )
+
+
+def _compose_multi_dispatcher(
+    *,
+    repository: ApprovalRepository,
+    parts: dict[str, MessageDispatcher | None],
+) -> ChannelDispatcher:
+    """Wrap the live subset of channel dispatchers; LogOnly if all fall back."""
+    live = {channel: d for channel, d in parts.items() if d is not None}
+    if not live:
+        log.error(
+            "approval.channel.dispatcher.all_channels_disabled",
+            requested=sorted(parts.keys()),
+            fallback="log_only",
+        )
+        return LogOnlyChannelDispatcher()
+    multi = MultiChannelMessageDispatcher(dispatchers=live)
     return _MessageDispatcherChannelAdapter(inner=multi, repository=repository)
+
+
+def _build_telegram_hermes_from_env(
+    repository: ApprovalRepository,
+) -> ChannelDispatcher:
+    """Construct the telegram + hermes stack with per-channel fallback."""
+    return _compose_multi_dispatcher(
+        repository=repository,
+        parts={
+            "telegram": _build_telegram_from_env(),
+            "whatsapp": _build_hermes_from_env(),
+        },
+    )
+
+
+def _build_telegram_hermes_email_from_env(
+    repository: ApprovalRepository,
+) -> ChannelDispatcher:
+    """Telegram + Hermes + Email with per-channel fallback."""
+    return _compose_multi_dispatcher(
+        repository=repository,
+        parts={
+            "telegram": _build_telegram_from_env(),
+            "whatsapp": _build_hermes_from_env(),
+            EMAIL_CHANNEL: _build_email_from_env(),
+        },
+    )
+
+
+def _build_email_only_from_env(
+    repository: ApprovalRepository,
+) -> ChannelDispatcher:
+    """Email-only path — for tenants without Telegram/Hermes wiring."""
+    return _compose_multi_dispatcher(
+        repository=repository,
+        parts={EMAIL_CHANNEL: _build_email_from_env()},
+    )
 
 
 def build_channel_dispatcher_from_env(
@@ -253,41 +368,52 @@ def build_channel_dispatcher_from_env(
 
     Resolution table:
 
-    +-------------------------------------------+-----------------------+
-    | ``IGUANATRADER_CHANNEL_DISPATCHER``       | Result                |
-    +===========================================+=======================+
-    | unset / ``""`` / ``"log_only"``           | LogOnly fallback      |
-    +-------------------------------------------+-----------------------+
-    | ``"telegram_hermes"`` (repository set,    | Production multi      |
-    | all credentials present)                  | dispatcher            |
-    +-------------------------------------------+-----------------------+
-    | ``"telegram_hermes"`` (any missing piece) | LogOnly + error log   |
-    +-------------------------------------------+-----------------------+
-    | any other value                           | LogOnly + warn log    |
-    +-------------------------------------------+-----------------------+
+    +--------------------------------------------------+-----------------------+
+    | ``IGUANATRADER_CHANNEL_DISPATCHER``              | Result                |
+    +==================================================+=======================+
+    | unset / ``""`` / ``"log_only"``                  | LogOnly fallback      |
+    +--------------------------------------------------+-----------------------+
+    | ``"telegram_hermes"`` (repository set)           | Telegram + Hermes     |
+    +--------------------------------------------------+-----------------------+
+    | ``"telegram_hermes_email"`` (repository set)     | Telegram + Hermes +   |
+    |                                                  | Email                 |
+    +--------------------------------------------------+-----------------------+
+    | ``"email"`` (repository set)                     | Email only            |
+    +--------------------------------------------------+-----------------------+
+    | any other value                                  | LogOnly + warn log    |
+    +--------------------------------------------------+-----------------------+
 
-    The ``repository`` argument is required only for ``telegram_hermes``;
-    callers using the default LogOnly path may omit it for backward
-    compatibility with the slice ``p1-followup-channel-fanout`` signature.
+    Per-channel fallback: a missing credential for one channel falls back to
+    log-only individually; remaining channels stay live. If every requested
+    channel is missing creds → :class:`LogOnlyChannelDispatcher`.
+
+    The ``repository`` argument is required for every selector other than
+    ``log_only`` / unset; callers using the default LogOnly path may omit it.
     """
     kind = os.environ.get("IGUANATRADER_CHANNEL_DISPATCHER", "").strip().lower()
     if kind in {"", "log_only"}:
         return LogOnlyChannelDispatcher()
-    if kind == "telegram_hermes":
-        if repository is None:
-            log.error(
-                "approval.channel.dispatcher.no_repository",
-                fallback="log_only",
-                hint="pass repository=ApprovalRepository() to build_channel_dispatcher_from_env",
-            )
-            return LogOnlyChannelDispatcher()
-        return _build_telegram_hermes_from_env(repository)
-    log.warning(
-        "approval.channel.dispatcher.unknown_kind",
-        kind=kind,
-        fallback="log_only",
-    )
-    return LogOnlyChannelDispatcher()
+    builders: dict[str, Callable[[ApprovalRepository], ChannelDispatcher]] = {
+        "telegram_hermes": _build_telegram_hermes_from_env,
+        "telegram_hermes_email": _build_telegram_hermes_email_from_env,
+        "email": _build_email_only_from_env,
+    }
+    if kind not in builders:
+        log.warning(
+            "approval.channel.dispatcher.unknown_kind",
+            kind=kind,
+            fallback="log_only",
+        )
+        return LogOnlyChannelDispatcher()
+    if repository is None:
+        log.error(
+            "approval.channel.dispatcher.no_repository",
+            kind=kind,
+            fallback="log_only",
+            hint="pass repository=ApprovalRepository() to build_channel_dispatcher_from_env",
+        )
+        return LogOnlyChannelDispatcher()
+    return builders[kind](repository)
 
 
 __all__ = [
