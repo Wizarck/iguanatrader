@@ -113,7 +113,8 @@ async def bootstrap_load_user_by_id(session: AsyncSession, user_id: UUID) -> Use
     back to ORM ``select(User).where(...)``.
     """
     sql = text(
-        "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at "
+        "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at, "
+        "must_change_password, password_changed_at "
         "FROM users WHERE id = :uid LIMIT 1"
     )
     # SQLAlchemy 2.x ``Uuid`` column on SQLite stores as 32-char hex
@@ -134,7 +135,8 @@ async def bootstrap_load_user_by_email(session: AsyncSession, email: str) -> Use
     See :func:`bootstrap_load_user_by_id` docstring for rationale.
     """
     sql = text(
-        "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at "
+        "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at, "
+        "must_change_password, password_changed_at "
         "FROM users WHERE email = :email LIMIT 1"
     )
     result = await session.execute(sql, {"email": email})
@@ -154,6 +156,13 @@ def _row_to_user(row: Any) -> User:
     """
     raw_id = row.id
     raw_tid = row.tenant_id
+    # ``must_change_password`` was added by slice ``auth-change-password``
+    # (migration 0013). Pre-migration tests may construct rows without it;
+    # default to False for forward compatibility. SQLite stores BOOLEAN as
+    # INTEGER 0/1 — coerce via ``bool()`` so the ORM attribute is a real
+    # Python bool regardless of driver shape.
+    must_change_raw = getattr(row, "must_change_password", 0)
+    password_changed_at_raw = getattr(row, "password_changed_at", None)
     return User(
         id=raw_id if isinstance(raw_id, UUID) else UUID(raw_id),
         tenant_id=raw_tid if isinstance(raw_tid, UUID) else UUID(raw_tid),
@@ -162,6 +171,8 @@ def _row_to_user(row: Any) -> User:
         role=row.role,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        must_change_password=bool(must_change_raw),
+        password_changed_at=password_changed_at_raw,
     )
 
 

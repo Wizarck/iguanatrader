@@ -263,8 +263,52 @@ class OverrideAuditMissingError(ValidationError):
     default_status: ClassVar[int] = 400
 
 
+# Added 2026-05-13 by slice ``auth-change-password`` per proposal §Errors.
+# Two new URN types:
+#
+# * ``AuthMismatchError`` — raised by ``POST /api/v1/auth/change-password``
+#   when ``old_password`` does not match the stored hash. Distinct from the
+#   generic :class:`AuthError` so the change-password UI can render a
+#   specific "wrong current password" message without parsing ``detail``.
+# * ``PasswordChangeRequiredError`` — raised by the
+#   :mod:`must_change_password` middleware when an authenticated user with
+#   ``must_change_password=True`` hits any non-allow-listed route. 403,
+#   not 401: the user IS authenticated; they're just gated.
+class AuthMismatchError(IguanaError):
+    """Submitted credentials did not match stored hash (HTTP 401).
+
+    Distinguished from the generic :class:`AuthError` so the
+    change-password UI can render a route-specific "current password is
+    wrong" message instead of the generic "Authentication Required"
+    copy. The wire status is still 401 — same handler chain renders the
+    Problem body via :meth:`IguanaError.to_problem_dict`.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:auth-mismatch"
+    default_title: ClassVar[str] = "Authentication Mismatch"
+    default_status: ClassVar[int] = 401
+
+
+class PasswordChangeRequiredError(IguanaError):
+    """Authenticated user has ``must_change_password=True`` (HTTP 403).
+
+    Raised by :class:`MustChangePasswordMiddleware` when the user has
+    not yet rotated their provisional credential. The handler chain
+    renders the Problem body with the canonical URN type so frontends
+    can recognise the gate and redirect to ``/account/change-password``
+    without parsing ``detail`` (the SvelteKit ``hooks.server.ts`` reads
+    ``must_change_password`` directly off ``/auth/me`` for the same
+    purpose; this error class exists for API-only consumers).
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:password-change-required"
+    default_title: ClassVar[str] = "Password Change Required"
+    default_status: ClassVar[int] = 403
+
+
 __all__ = [
     "AuthError",
+    "AuthMismatchError",
     "BootstrapNotReadyError",
     "ConflictError",
     "CurrencyMismatchError",
@@ -276,6 +320,7 @@ __all__ = [
     "NotFoundError",
     "NotImplementedFeatureError",
     "OverrideAuditMissingError",
+    "PasswordChangeRequiredError",
     "RateLimitError",
     "RiskCapBreachedError",
     "ValidationError",

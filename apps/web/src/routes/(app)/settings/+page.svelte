@@ -66,6 +66,20 @@
     </div>
   {/if}
 
+  <h2>Security</h2>
+  <div class="security-row">
+    <div class="security-row__copy">
+      <p class="security-row__title">Password</p>
+      <p class="security-row__help">
+        Rotate your password. Required at first login for provisional
+        credentials issued by an admin.
+      </p>
+    </div>
+    <a class="security-row__action" href="/account/change-password">
+      Change password
+    </a>
+  </div>
+
   <h2>Feature flags</h2>
 
   <div class="flag-row">
@@ -159,5 +173,40 @@
     padding: 0.5rem 0.75rem;
     border-radius: 4px;
     margin: 12px 0;
+  }
+  .security-row {
+    border: 1px solid var(--mute);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 12px;
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .security-row__copy {
+    flex: 1;
+  }
+  .security-row__title {
+    margin: 0;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .security-row__help {
+    margin: 4px 0 0;
+    color: var(--mute);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .security-row__action {
+    padding: 8px 14px;
+    background: var(--accent, oklch(72% 0.14 195));
+    color: var(--accent-fg, oklch(15% 0.02 250));
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
   }
 </style>

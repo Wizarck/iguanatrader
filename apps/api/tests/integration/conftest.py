@@ -31,6 +31,7 @@ from iguanatrader.api import deps as api_deps
 from iguanatrader.api.app import create_app
 from iguanatrader.api.auth import hash_password
 from iguanatrader.api.limiting import limiter
+from iguanatrader.api.middleware import set_session_factory_override
 from iguanatrader.persistence import (
     Tenant,
     User,
@@ -131,10 +132,16 @@ async def app_with_overrides(
             yield s
 
     app.dependency_overrides[api_deps.get_db] = _override_get_db
+    # Slice ``auth-change-password``: the gate middleware is Starlette-
+    # level and cannot be intercepted via ``dependency_overrides``;
+    # inject the test session factory through the module-level hook
+    # (see :func:`set_session_factory_override`).
+    set_session_factory_override(lambda: schema_session_factory)
     try:
         yield app
     finally:
         app.dependency_overrides.clear()
+        set_session_factory_override(None)
 
 
 @pytest.fixture

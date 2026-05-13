@@ -58,10 +58,21 @@ from iguanatrader.api.deps import (
     get_db,
     is_secure_cookie,
 )
-from iguanatrader.api.dtos.auth import LoginRequest, LoginResponse, MeResponse
+from iguanatrader.api.dtos.auth import (
+    MIN_PASSWORD_LENGTH,
+    ChangePasswordRequest,
+    LoginRequest,
+    LoginResponse,
+    MeResponse,
+)
 from iguanatrader.api.limiting import limiter
 from iguanatrader.persistence import User
-from iguanatrader.shared.errors import AuthError, BootstrapNotReadyError
+from iguanatrader.shared.errors import (
+    AuthError,
+    AuthMismatchError,
+    BootstrapNotReadyError,
+    ValidationError,
+)
 
 log = structlog.get_logger("iguanatrader.api.routes.auth")
 
@@ -244,7 +255,112 @@ async def me(user: User = Depends(get_current_user)) -> MeResponse:
         email=user.email,
         role=user.role_enum,
         created_at=user.created_at,
+        must_change_password=bool(user.must_change_password),
     )
+
+
+def _validate_new_password(plaintext: str, *, old_plaintext: str) -> None:
+    """Enforce the slice ``auth-change-password`` plaintext invariants.
+
+    Raises :class:`ValidationError` (400 + ``urn:iguanatrader:error:
+    validation``) on:
+
+    * length < :data:`MIN_PASSWORD_LENGTH` (12)
+    * no digit AND no non-alphanumeric character (i.e. all-alpha is
+      rejected)
+    * equals the old plaintext
+
+    The validator is a private route helper rather than a Pydantic
+    validator because the "new != old" rule needs both plaintexts at
+    once — Pydantic's field validators only see one field at a time
+    (the model validator would work but introduces a less-obvious code
+    path; a route-level helper is simpler).
+    """
+    if len(plaintext) < MIN_PASSWORD_LENGTH:
+        raise ValidationError(
+            detail=(f"New password must be at least {MIN_PASSWORD_LENGTH} characters."),
+        )
+    has_digit = any(c.isdigit() for c in plaintext)
+    has_symbol = any(not c.isalnum() for c in plaintext)
+    if not (has_digit or has_symbol):
+        raise ValidationError(
+            detail="New password must include at least one digit or symbol.",
+        )
+    if plaintext == old_plaintext:
+        raise ValidationError(
+            detail="New password must be different from the current password.",
+        )
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    """Rotate the authenticated user's password.
+
+    Flow (per slice ``auth-change-password`` proposal §Backend):
+
+    1. Verify ``old_password`` against the stored Argon2id hash. Mismatch
+       → 401 ``urn:iguanatrader:error:auth-mismatch``.
+    2. Validate ``new_password`` (length ≥ 12, ≥1 digit or symbol,
+       NOT equal to ``old_password``). Failure → 400
+       ``urn:iguanatrader:error:validation``.
+    3. Hash ``new_password`` with Argon2id, ``UPDATE users SET
+       password_hash=:hash, must_change_password=0,
+       password_changed_at=NOW(), updated_at=NOW() WHERE id=:uid``.
+    4. Return 204 No Content.
+
+    Tenant isolation: :func:`get_current_user` already set
+    :data:`tenant_id_var` so the slice-3 tenant listener filters the
+    UPDATE to the caller's tenant. The ``WHERE id = :uid`` guard makes
+    cross-user writes impossible even if the listener were bypassed.
+
+    Email is hashed for logging (``hash_email_for_log``) per AGENTS.md
+    §4 — never log raw PII.
+    """
+    email_hash = hash_email_for_log(user.email)
+    old_plaintext = body.old_password.get_secret_value()
+    new_plaintext = body.new_password.get_secret_value()
+
+    if not verify_password(old_plaintext, user.password_hash):
+        log.info(
+            "auth.password.change_failed",
+            email_hash=email_hash,
+            user_id=str(user.id),
+            reason="old_password_mismatch",
+        )
+        raise AuthMismatchError(detail="Current password is incorrect.")
+
+    _validate_new_password(new_plaintext, old_plaintext=old_plaintext)
+
+    new_hash = hash_password(new_plaintext)
+
+    # Raw SQL UPDATE — bypasses the ORM identity map so we don't need to
+    # re-fetch the User row (the dependency yielded a transient instance
+    # via the bootstrap-path helper anyway — see :func:`get_current_user`
+    # for the gotcha #23 explanation). ``func.now()`` is server-side so
+    # the timestamp comes from the DB clock, not the app process.
+    await session.execute(
+        text(
+            "UPDATE users SET password_hash = :hash, "
+            "must_change_password = 0, "
+            "password_changed_at = CURRENT_TIMESTAMP, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = :uid"
+        ),
+        {"hash": new_hash, "uid": user.id.hex},
+    )
+    await session.commit()
+
+    log.info(
+        "auth.password.changed",
+        email_hash=email_hash,
+        user_id=str(user.id),
+    )
+
+    return Response(status_code=204)
 
 
 __all__ = [

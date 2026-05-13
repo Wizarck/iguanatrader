@@ -15,7 +15,15 @@ import { API_BASE_URL, COOKIE_NAME } from '$lib/config';
  * The `(auth)/login/` route is OUTSIDE the gated group so it can render
  * for unauthenticated users; the root `/` is also ungated for now (slice
  * W1 will mount the dashboard there and bring it under `(app)`).
+ *
+ * Slice `auth-change-password`: when `/auth/me` reports
+ * `must_change_password=true`, redirect every `(app)` route (except the
+ * change-password page itself) to `/account/change-password?required=1`.
+ * The API-side middleware enforces the same gate for non-browser API
+ * consumers; this hook is the browser UX layer.
  */
+const PASSWORD_CHANGE_PATH = '/account/change-password';
+
 export const handle: Handle = async ({ event, resolve }) => {
   event.locals.user = null;
 
@@ -39,6 +47,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   const userPayload = (await meResponse.json()) as App.Locals['user'];
   event.locals.user = userPayload;
+
+  // Slice `auth-change-password` gate: route browsers away from any
+  // `(app)` route until the password is rotated, EXCEPT the
+  // change-password page itself (otherwise we'd loop). The path check
+  // uses `startsWith` so any future child route under
+  // `/account/change-password/` (eg. a success splash) is also exempt.
+  if (
+    userPayload?.must_change_password &&
+    !event.url.pathname.startsWith(PASSWORD_CHANGE_PATH)
+  ) {
+    throw redirect(302, `${PASSWORD_CHANGE_PATH}?required=1`);
+  }
 
   return resolve(event);
 };
