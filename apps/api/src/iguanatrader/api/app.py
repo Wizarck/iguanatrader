@@ -37,6 +37,7 @@ from slowapi.errors import RateLimitExceeded
 
 from iguanatrader.api.errors import register_error_handlers
 from iguanatrader.api.limiting import BufferLoginEmailMiddleware, limiter
+from iguanatrader.api.middleware import MustChangePasswordMiddleware
 from iguanatrader.api.routes import register_routers
 from iguanatrader.api.sse import register_sse
 from iguanatrader.contexts.observability.structlog_config import (
@@ -169,6 +170,16 @@ def create_app() -> FastAPI:
     # Body-buffering middleware MUST run before the slowapi route
     # decorator pulls the key — install it first.
     app.add_middleware(BufferLoginEmailMiddleware)
+
+    # Slice ``auth-change-password``: gate every non-allow-listed API
+    # route for users with ``users.must_change_password=TRUE``. The
+    # middleware decodes the session cookie + runs a one-column DB
+    # lookup; allow-listed paths (login, logout, me, change-password,
+    # healthz, docs) bypass entirely. Failure modes (no cookie, invalid
+    # JWT, deleted user, DB blip) fail open so downstream auth still
+    # gets to render its 401 — the gate ONLY adds a 403 on the
+    # explicit ``must_change_password=TRUE`` branch.
+    app.add_middleware(MustChangePasswordMiddleware)
 
     # slowapi wiring (per slice 4 design D5).
     app.state.limiter = limiter

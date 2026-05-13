@@ -68,6 +68,12 @@ class MeResponse(BaseModel):
     that could leak via the typed client (slice 5 generates a TS client
     from the OpenAPI schema — anything in this model is fair game for
     the browser).
+
+    ``must_change_password`` (added 2026-05-13 by slice
+    ``auth-change-password``) IS safe to expose — the SvelteKit
+    ``hooks.server.ts`` reads it to gate ``(app)`` routes via a 302
+    redirect to ``/account/change-password``, mirroring the API-side
+    middleware behaviour for browser users.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -77,9 +83,46 @@ class MeResponse(BaseModel):
     email: EmailStr
     role: Role
     created_at: datetime
+    must_change_password: bool
+
+
+#: Minimum acceptable plaintext length for a new password. The 12-char
+#: floor is the slice ``auth-change-password`` proposal §Backend
+#: contract. The validator at :class:`ChangePasswordRequest` enforces
+#: both this floor AND the "≥1 digit or symbol" rule; "new != old" is
+#: enforced at the route level (the validator does not see the old
+#: plaintext).
+MIN_PASSWORD_LENGTH: int = 12
+
+
+class ChangePasswordRequest(BaseModel):
+    """Body for ``POST /api/v1/auth/change-password``.
+
+    Validation:
+
+    * ``old_password`` MUST be non-empty (the route verifies it against
+      the stored Argon2id hash; an empty string would be a guaranteed
+      mismatch but the explicit min_length=1 keeps the error shape clean
+      — Pydantic 422 vs the route's ``AuthMismatchError`` 401).
+    * ``new_password`` MUST be at least :data:`MIN_PASSWORD_LENGTH`
+      characters AND contain at least one digit or symbol (defined as
+      any non-alphanumeric character). The "new != old" invariant is
+      enforced by the route handler because the validator does not have
+      access to ``old_password`` at the time the field validator runs.
+
+    The :class:`SecretStr` wrapper keeps the plaintext out of accidental
+    ``repr()`` / structlog rendering (mirrors :class:`LoginRequest`).
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    old_password: SecretStr = Field(min_length=1)
+    new_password: SecretStr = Field(min_length=1)
 
 
 __all__ = [
+    "MIN_PASSWORD_LENGTH",
+    "ChangePasswordRequest",
     "LoginRequest",
     "LoginResponse",
     "MeResponse",

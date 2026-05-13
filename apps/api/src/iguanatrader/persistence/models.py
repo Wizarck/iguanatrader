@@ -114,6 +114,25 @@ class User(Base):
         nullable=False,
         server_default=func.current_timestamp(),
     )
+    # Added 2026-05-13 by slice ``auth-change-password``. When True, the
+    # ``must_change_password`` middleware gates every route except the
+    # change-password / logout / me allow-list until the user rotates
+    # the password. Used by admin-issued provisional credentials and the
+    # future ``auth-forgot-password-flow`` slice.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="0",
+        default=False,
+    )
+    # NULL until the first successful password write (the bootstrap path
+    # plants users without a baseline). Set via ``func.now()`` on every
+    # subsequent rotation — see the change-password route + the gotcha
+    # in ``apps/api/src/iguanatrader/api/routes/auth.py``.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     @property
     def role_enum(self) -> Role:
