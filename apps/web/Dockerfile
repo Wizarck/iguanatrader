@@ -38,6 +38,13 @@ COPY apps/web ./apps/web
 # the .svelte-kit directory writable.
 RUN pnpm --filter @iguanatrader/web build
 
+# `pnpm deploy` produces a self-contained, flat node_modules directory
+# free of workspace symlinks — the only layout the runtime node process
+# can resolve `@sveltejs/kit` etc. against. Without this, the workspace
+# pnpm store at the repo root leaks into the image but the per-app
+# node_modules where adapter-node's deps live does not.
+RUN pnpm --filter @iguanatrader/web deploy --prod --legacy /deploy
+
 
 # ---------------------------------------------------------------------------
 # Stage 2 — runtime: adapter-node output + minimal node deps.
@@ -55,13 +62,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Adapter-node output already bundles everything it needs except for
-# devDeps not present in the bundle; copying node_modules of the web
-# workspace is unnecessary because vite externalises adapter-node deps
-# via its own bundle. The adapter-node entry is `build/index.js`.
+# /deploy provides a flat, non-workspace node_modules (pnpm deploy's
+# output) — required so `@sveltejs/kit` etc. resolve at runtime. The
+# adapter-node build output lives at apps/web/build and is copied
+# separately because pnpm deploy doesn't include it by default.
 COPY --from=builder --chown=app:app /build/apps/web/build ./build
-COPY --from=builder --chown=app:app /build/apps/web/package.json ./package.json
-COPY --from=builder --chown=app:app /build/node_modules ./node_modules
+COPY --from=builder --chown=app:app /deploy/package.json ./package.json
+COPY --from=builder --chown=app:app /deploy/node_modules ./node_modules
 
 USER app
 EXPOSE 5173

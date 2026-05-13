@@ -54,9 +54,20 @@
   // `eager: true` resolves modules synchronously at build time so we
   // can read `meta` exports without an awaited async loop. Vite resolves
   // the glob against the project root.
-  const routeModules = import.meta.glob<RouteModule>(
-    '/src/routes/(app)/*/+page.svelte',
+  //
+  // We deliberately glob `**/+page.svelte` and filter for the `(app)`
+  // route group via regex: tinyglobby (Vite's glob backend) treats
+  // literal `(app)` as an extglob group, which silently matches nothing
+  // in production builds. The broader pattern + post-filter is the
+  // robust shape.
+  const allRouteModules = import.meta.glob<RouteModule>(
+    '/src/routes/**/+page.svelte',
     { eager: true }
+  );
+  const routeModules: Record<string, RouteModule> = Object.fromEntries(
+    Object.entries(allRouteModules).filter(([key]) =>
+      /^\/src\/routes\/\(app\)\/[^/]+\/\+page\.svelte$/.test(key)
+    )
   );
 
   /**

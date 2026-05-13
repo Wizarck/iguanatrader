@@ -62,8 +62,9 @@ services:
       - NODE_ENV=production
       - HOST=0.0.0.0
       - PORT=5173
-      # The SvelteKit form action + hooks.server.ts proxy /api/v1/*
-      # to this URL. Inside the compose network, resolve via DNS.
+      # SvelteKit form actions, page-server load fns, and the catch-all
+      # `/api/v1/[...path]/+server.ts` proxy hit the API at this URL.
+      # Inside the compose network, `api` resolves via Docker DNS.
       - IGUANATRADER_API_BASE_URL=http://api:8000
     ports:
       - "5173:5173"

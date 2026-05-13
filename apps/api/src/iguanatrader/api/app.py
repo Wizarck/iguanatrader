@@ -182,6 +182,13 @@ def create_app() -> FastAPI:
     register_sse(app)
     register_error_handlers(app)
 
+    # Liveness probe for compose / docker healthchecks. Stays outside
+    # the /api/v1 prefix so orchestrators don't have to know the API
+    # versioning scheme.
+    @app.get("/healthz", include_in_schema=False)
+    async def _healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
     return app
 
 
