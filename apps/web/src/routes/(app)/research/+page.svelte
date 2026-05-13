@@ -12,13 +12,21 @@
   } as const;
 </script>
 
+<script lang="ts">
+  import PlaceholderCard from '$lib/components/PlaceholderCard.svelte';
+</script>
+
 <svelte:head>
   <title>Research · iguanatrader</title>
 </svelte:head>
 
-<section aria-busy="true" aria-live="polite">
+<section aria-live="polite">
   <h1>Research</h1>
-  <p>loading…</p>
+  <PlaceholderCard
+    apiPath="/api/v1/research/briefs/{'{symbol}'}"
+    sliceRef="research-brief-synthesis"
+    hint="Watchlist + briefs sintetizados. Requiere ANTHROPIC_API_KEY + claves Tier-A para generar briefs reales."
+  />
 </section>
 
 <style>
@@ -29,9 +37,5 @@
     font-size: 22px;
     font-weight: 600;
     margin: 0 0 8px;
-  }
-  p {
-    color: var(--mute);
-    margin: 0;
   }
 </style>

@@ -12,13 +12,21 @@
   } as const;
 </script>
 
+<script lang="ts">
+  import PlaceholderCard from '$lib/components/PlaceholderCard.svelte';
+</script>
+
 <svelte:head>
   <title>Strategies · iguanatrader</title>
 </svelte:head>
 
-<section aria-busy="true" aria-live="polite">
+<section aria-live="polite">
   <h1>Strategies</h1>
-  <p>loading…</p>
+  <PlaceholderCard
+    apiPath="/api/v1/strategies"
+    sliceRef="trading-routes-and-daemon"
+    hint="Listado + configuración de strategies (Donchian MVP + futuras)."
+  />
 </section>
 
 <style>
@@ -29,9 +37,5 @@
     font-size: 22px;
     font-weight: 600;
     margin: 0 0 8px;
-  }
-  p {
-    color: var(--mute);
-    margin: 0;
   }
 </style>
