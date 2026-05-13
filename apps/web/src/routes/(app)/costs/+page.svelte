@@ -12,13 +12,21 @@
   } as const;
 </script>
 
+<script lang="ts">
+  import PlaceholderCard from '$lib/components/PlaceholderCard.svelte';
+</script>
+
 <svelte:head>
   <title>Costs · iguanatrader</title>
 </svelte:head>
 
-<section aria-busy="true" aria-live="polite">
+<section aria-live="polite">
   <h1>Costs</h1>
-  <p>loading…</p>
+  <PlaceholderCard
+    apiPath="/api/v1/costs/summary + /by-provider + /per-trade"
+    sliceRef="observability-cost-meter"
+    hint="Gasto LLM + broker tracking. Vacío hasta que se hagan llamadas reales (FakeLLM en MVP no cuenta)."
+  />
 </section>
 
 <style>
@@ -29,9 +37,5 @@
     font-size: 22px;
     font-weight: 600;
     margin: 0 0 8px;
-  }
-  p {
-    color: var(--mute);
-    margin: 0;
   }
 </style>
