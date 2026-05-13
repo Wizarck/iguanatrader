@@ -66,6 +66,17 @@ COPY --from=builder --chown=app:app /build/.venv /opt/venv
 COPY --chown=app:app apps/api ./apps/api
 COPY --chown=app:app pyproject.toml poetry.lock README.md ./
 
+# Root pyproject is `package-mode = false`, so Poetry does NOT install
+# the project nor its `[tool.poetry.scripts]` entries. Install a thin
+# shell wrapper that mirrors the documented `iguanatrader <subcommand>`
+# operator UX.
+RUN echo '#!/bin/sh' > /usr/local/bin/iguanatrader && echo 'exec python -m iguanatrader.cli "$@"' >> /usr/local/bin/iguanatrader && chmod +x /usr/local/bin/iguanatrader
+
+# Pre-create /data with app ownership. Docker copies these perms onto
+# a fresh named volume the first time it mounts, so the app user can
+# write the SQLite file without an out-of-band chown step.
+RUN mkdir -p /data && chown app:app /data
+
 USER app
 EXPOSE 8000
 

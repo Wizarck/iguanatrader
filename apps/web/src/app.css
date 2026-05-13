@@ -11,7 +11,16 @@
 
 @import 'tailwindcss';
 
-:root[data-theme='dark'] {
+/*
+ * MVP-scope: light-variant vars are deferred (design D10 / gotcha #74),
+ * so apply the dark palette regardless of `data-theme`. Without this,
+ * a browser that reports `prefers-color-scheme: light` makes the store
+ * set `data-theme="light"`, which leaves every CSS var undefined and
+ * renders the page as illegible default colours.
+ */
+:root,
+:root[data-theme='dark'],
+:root[data-theme='light'] {
   /* Surfaces */
   --bg: oklch(18% 0.02 250);
   --surface: oklch(22% 0.02 250);
