@@ -114,7 +114,8 @@ async def bootstrap_load_user_by_id(session: AsyncSession, user_id: UUID) -> Use
     """
     sql = text(
         "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at, "
-        "must_change_password, password_changed_at "
+        "must_change_password, password_changed_at, "
+        "telegram_chat_id, whatsapp_phone "
         "FROM users WHERE id = :uid LIMIT 1"
     )
     # SQLAlchemy 2.x ``Uuid`` column on SQLite stores as 32-char hex
@@ -136,7 +137,8 @@ async def bootstrap_load_user_by_email(session: AsyncSession, email: str) -> Use
     """
     sql = text(
         "SELECT id, tenant_id, email, password_hash, role, created_at, updated_at, "
-        "must_change_password, password_changed_at "
+        "must_change_password, password_changed_at, "
+        "telegram_chat_id, whatsapp_phone "
         "FROM users WHERE email = :email LIMIT 1"
     )
     result = await session.execute(sql, {"email": email})
@@ -163,6 +165,10 @@ def _row_to_user(row: Any) -> User:
     # Python bool regardless of driver shape.
     must_change_raw = getattr(row, "must_change_password", 0)
     password_changed_at_raw = getattr(row, "password_changed_at", None)
+    # Slice ``auth-forgot-password-flow`` (migration 0014). Pre-migration
+    # rows lack these columns; default to None for forward compatibility.
+    telegram_chat_id_raw = getattr(row, "telegram_chat_id", None)
+    whatsapp_phone_raw = getattr(row, "whatsapp_phone", None)
     return User(
         id=raw_id if isinstance(raw_id, UUID) else UUID(raw_id),
         tenant_id=raw_tid if isinstance(raw_tid, UUID) else UUID(raw_tid),
@@ -173,6 +179,8 @@ def _row_to_user(row: Any) -> User:
         updated_at=row.updated_at,
         must_change_password=bool(must_change_raw),
         password_changed_at=password_changed_at_raw,
+        telegram_chat_id=telegram_chat_id_raw,
+        whatsapp_phone=whatsapp_phone_raw,
     )
 
 

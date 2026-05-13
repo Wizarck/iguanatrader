@@ -120,9 +120,41 @@ class ChangePasswordRequest(BaseModel):
     new_password: SecretStr = Field(min_length=1)
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Body for ``POST /api/v1/auth/forgot-password``.
+
+    Single field: the email to recover. The route is unauthenticated and
+    treats unknown emails the same as known ones (anti-enumeration),
+    so the validation here is shape-only — Pydantic enforces a valid
+    ``EmailStr`` syntax; the route does the actual lookup + dispatch.
+
+    ``extra='forbid'`` rejects any additional keys (defense in depth
+    against a misconfigured client smuggling a ``user_id`` field).
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Generic response body for the forgot-password endpoint.
+
+    The same payload is returned whether the email matched a user or
+    not — defeats user-enumeration. The route always returns 200 with
+    this body unless rate-limited (429) or rejected by Pydantic (422).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str
+
+
 __all__ = [
     "MIN_PASSWORD_LENGTH",
     "ChangePasswordRequest",
+    "ForgotPasswordRequest",
+    "ForgotPasswordResponse",
     "LoginRequest",
     "LoginResponse",
     "MeResponse",

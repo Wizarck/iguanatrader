@@ -344,3 +344,82 @@ describe('login form action', () => {
     fetchSpy.mockRestore();
   });
 });
+
+// --------------------------------------------------------------------- //
+// 4. Forgot-password form action (slice auth-forgot-password-flow)
+// --------------------------------------------------------------------- //
+
+describe('forgot-password form action', () => {
+  async function importAction() {
+    const mod = await import(
+      '../src/routes/(auth)/forgot-password/+page.server'
+    );
+    return mod.actions.default;
+  }
+
+  function buildEvent(opts: { email?: string }) {
+    const fd = new FormData();
+    if (opts.email !== undefined) fd.append('email', opts.email);
+    return {
+      request: {
+        formData: async () => fd
+      },
+      fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args)
+    };
+  }
+
+  it('returns submitted=true on FastAPI 200 with the generic message', async () => {
+    const action = await importAction();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message:
+            'Si la dirección está registrada, recibirás instrucciones para recuperar la cuenta.'
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    );
+
+    const event = buildEvent({ email: 'alice@example.com' });
+    const result = await action(event as never);
+
+    expect((result as { submitted: boolean }).submitted).toBe(true);
+    expect((result as { message: string }).message).toContain(
+      'recibirás instrucciones'
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('returns 429 fail with retry_after on FastAPI 429', async () => {
+    const action = await importAction();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{}', {
+        status: 429,
+        headers: {
+          'content-type': 'application/problem+json',
+          'retry-after': '120'
+        }
+      })
+    );
+
+    const event = buildEvent({ email: 'alice@example.com' });
+    const result = await action(event as never);
+    expect((result as { status: number }).status).toBe(429);
+    expect((result as { data: { retry_after: number } }).data.retry_after).toBe(
+      120
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('returns 400 fail when the email field is missing', async () => {
+    const action = await importAction();
+    const event = buildEvent({});
+    const result = await action(event as never);
+    expect((result as { status: number }).status).toBe(400);
+    expect(
+      (result as { data: { alert_variant: string } }).data.alert_variant
+    ).toBe('destructive');
+  });
+});

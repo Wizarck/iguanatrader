@@ -97,6 +97,10 @@
           Sign in
         {/if}
       </button>
+
+      <p class="forgot-link">
+        <a href="/forgot-password">¿Olvidaste tu contraseña?</a>
+      </p>
     </form>
 
     <div class="login-help">
@@ -246,6 +250,16 @@
   button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .forgot-link {
+    margin-top: 12px;
+    margin-bottom: 0;
+    font-size: 13px;
+    text-align: center;
+  }
+  .forgot-link a {
+    color: var(--accent);
   }
 
   .login-help {
