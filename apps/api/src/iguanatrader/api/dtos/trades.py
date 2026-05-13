@@ -189,6 +189,39 @@ class PortfolioSummaryOut(BaseModel):
     open_orders: list[OrderOut]
 
 
+class PositionOut(BaseModel):
+    """Derived position projection — one row per open :class:`Trade`.
+
+    Computed at read time from open trades plus their cumulative fills.
+    ``last_price`` and ``unrealized_pnl`` are intentionally null in v1;
+    a follow-up slice (``market-data-snapshot-port``) wires the market-
+    data hook that populates them.
+    """
+
+    model_config = ConfigDict(extra="forbid", from_attributes=False)
+
+    trade_id: UUID
+    symbol: str = Field(examples=["SPY"])
+    side: str = Field(examples=["buy"])
+    quantity: Decimal = Field(examples=[Decimal("10.0")])
+    avg_entry_price: Decimal | None = Field(
+        default=None,
+        examples=[Decimal("450.25")],
+    )
+    last_price: Decimal | None = None
+    unrealized_pnl: Decimal | None = None
+    opened_at: datetime
+
+
+class PositionListOut(BaseModel):
+    """List wrapper for :class:`PositionOut`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PositionOut]
+    total: int | None = None
+
+
 __all__ = [
     "EquitySnapshotListOut",
     "EquitySnapshotOut",
@@ -197,6 +230,8 @@ __all__ = [
     "OrderListOut",
     "OrderOut",
     "PortfolioSummaryOut",
+    "PositionListOut",
+    "PositionOut",
     "StrategyConfigIn",
     "StrategyConfigListOut",
     "StrategyConfigOut",
