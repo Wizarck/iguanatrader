@@ -113,6 +113,29 @@ class RiskCaps(BaseModel):
     #: revenge-trading after a stopout without blocking unrelated
     #: signals on other symbols.
     cooldown_seconds: int | None = Field(default=None, ge=1)
+    #: v1.5 trailing-stops trigger — favorable-move fraction (e.g.
+    #: ``Decimal("0.03")`` = 3%) that arms the trailing logic. ``None``
+    #: means trailing is disabled (the default — opt-in semantics
+    #: matching ``stoploss_guard_threshold`` + ``cooldown_seconds``).
+    #: Unlike the seven pre-trade protections this field is NOT read
+    #: by ``engine.evaluate``; it is consumed by
+    #: ``contexts.risk.stop_management.compute_trailing_stop`` from a
+    #: future cron sweep slice. Stored on :class:`RiskCaps` so the
+    #: single tenant-level policy object owns every knob the risk
+    #: layer reads, even when the consumer is the stop-management
+    #: service rather than the pre-trade engine.
+    trail_trigger_pct: Decimal | None = Field(default=None)
+    #: Multiplier on Wilder ATR for the trailing-stop distance below
+    #: the highest post-entry close. ``1.5`` is the Freqtrade default;
+    #: lower = tighter trail (faster stop-out on pullbacks), higher =
+    #: looser. Read only when :attr:`trail_trigger_pct` is set.
+    trail_atr_mult: Decimal = Field(default=Decimal("1.5"))
+    #: ATR period passed into the trailing-stop helper. ``14`` matches
+    #: the period used by every strategy's entry-time ATR stop sizing
+    #: (``donchian_atr``, ``volume_donchian``, ``rsi_mean_reversion``,
+    #: ``macd_cross``, ``bollinger_breakout``) so the trail distance
+    #: and the initial stop distance move on the same indicator.
+    trail_atr_period: int = Field(default=14, ge=2)
 
 
 class RiskState(BaseModel):
