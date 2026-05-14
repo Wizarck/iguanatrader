@@ -19,6 +19,7 @@
   import FactTimeline, {
     type FactTimelineRow
   } from '$lib/components/research/FactTimeline.svelte';
+  import { readRecent, recordRecent, writeRecent } from '$lib/research/recent';
   import { renderBriefBody, type FactProvenance } from '$lib/research/render-brief-body';
 
   import type { PageData } from './$types';
@@ -26,6 +27,18 @@
   type FactRow = FactTimelineRow;
 
   let { data }: { data: PageData } = $props();
+
+  // Slice `research-tab-ui`: record this visited symbol into the
+  // landing-page's recent-symbols localStorage list. SSR-safe via
+  // `readRecent` / `writeRecent`; pure dedupe-and-cap via
+  // `recordRecent`. Nothing else in this file changes.
+  const RECENT_STORAGE_KEY = 'iguanatrader.research.recent';
+  $effect(() => {
+    const symbol = data.symbol;
+    if (!symbol) return;
+    const next = recordRecent(readRecent(RECENT_STORAGE_KEY), symbol);
+    writeRecent(RECENT_STORAGE_KEY, next);
+  });
 
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
