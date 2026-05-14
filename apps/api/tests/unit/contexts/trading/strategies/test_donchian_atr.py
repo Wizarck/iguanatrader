@@ -26,12 +26,20 @@ def _bar(*, t: datetime, close: Decimal, high: Decimal, low: Decimal) -> Bar:
 
 
 def _ramp_history(start_close: Decimal = Decimal("100"), n: int = 50) -> BarHistory:
-    """Generate a synthetic price-ramp history that BREAKS OUT on the last bar."""
+    """Generate a synthetic price-ramp history that breaks out on bar ``n - 2``.
+
+    The strategy wrapper slices ``bars[:-1]`` (drops the current bar to enforce
+    no-lookahead), so to make the breakout the latest bar that
+    ``_compute_signal_impl`` actually sees, the spike must be placed at index
+    ``n - 2`` of the full history.
+    """
     base = datetime(2024, 1, 1, tzinfo=UTC)
     bars: list[Bar] = []
     for i in range(n):
-        # Most bars hover around start_close; final bar pushes high.
-        if i == n - 1:
+        # Most bars hover around start_close; bar n-2 pushes high so that
+        # after the wrapper drops bars[-1], bars[-1] (==index n-2) is the
+        # breakout bar.
+        if i == n - 2:
             close = start_close + Decimal("10")
             high = close + Decimal("1")
             low = start_close
@@ -73,20 +81,7 @@ def _config() -> StrategyConfigSnapshot:
 def test_donchian_emits_proposal_on_breakout() -> None:
     strategy = DonchianATRStrategy()
     history = _ramp_history()
-    # The wrapper drops the breakout bar — the truncated history may NOT
-    # have a breakout. Generate a history where the breakout is on bar
-    # n-2 so after wrapper truncation the latest bar is the breakout.
-    # The wrapper slices bars[:-1], so we need the n-2 bar to be the
-    # breakout: replicate by adding one more flat bar after the ramp.
-    extra_bar = _bar(
-        t=history.bars[-1].timestamp + timedelta(days=1),
-        close=Decimal("100"),
-        high=Decimal("100.5"),
-        low=Decimal("99.5"),
-    )
-    bars = [*history.bars, extra_bar]
-    history_with_extra = BarHistory(symbol="AAPL", bars=tuple(bars))
-    proposal = strategy.evaluate(symbol="AAPL", bars=history_with_extra, config=_config())
+    proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
     assert proposal is not None
     assert proposal.side == "buy"
     assert proposal.quantity > Decimal("0")
@@ -96,6 +91,46 @@ def test_donchian_emits_proposal_on_breakout() -> None:
 def test_donchian_returns_none_on_flat_history() -> None:
     strategy = DonchianATRStrategy()
     proposal = strategy.evaluate(symbol="AAPL", bars=_flat_history(), config=_config())
+    assert proposal is None
+
+
+def test_donchian_no_signal_when_close_below_channel() -> None:
+    """Regression: confirm no proposal when latest close < channel-high.
+
+    Guards against re-introducing the slice bug where ``window_highs``
+    included ``bars[-1].high`` and made the breakout test trivially fail —
+    the SYMMETRIC failure (always-fire) would be equally wrong. This test
+    builds a history whose latest close sits below the prior channel-high
+    and asserts the strategy correctly returns ``None``.
+    """
+    strategy = DonchianATRStrategy()
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    bars: list[Bar] = []
+    # 48 bars climbing to ~110, then 2 bars where the close pulls back
+    # below the channel high. After the wrapper drops bars[-1], the
+    # truncated view's latest close (~101) sits well below the prior
+    # 20-bar channel-high (~111), so no breakout should fire.
+    for i in range(48):
+        close = Decimal("100") + Decimal(i) * Decimal("0.25")
+        bars.append(
+            _bar(
+                t=base + timedelta(days=i),
+                close=close,
+                high=close + Decimal("0.5"),
+                low=close - Decimal("0.5"),
+            )
+        )
+    for i in range(48, 50):
+        bars.append(
+            _bar(
+                t=base + timedelta(days=i),
+                close=Decimal("101"),
+                high=Decimal("101.5"),
+                low=Decimal("100.5"),
+            )
+        )
+    history = BarHistory(symbol="AAPL", bars=tuple(bars))
+    proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
     assert proposal is None
 
 
