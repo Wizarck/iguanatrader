@@ -7,6 +7,8 @@ Public exports:
   ``bars[:-1]`` before delegating to the subclass implementation.
 * :class:`DonchianATRStrategy` — Donchian-channel breakout with
   ATR-based stop + risk-pct sizing (the MVP strategy).
+* :class:`RSIMeanReversionStrategy` — Wilder RSI(14) cross-UP-from-oversold
+  long-only counter-trend strategy (first v1.5 counter-trend addition).
 * :class:`SMACrossStrategy` — SMA(fast)/SMA(slow) cross sanity-check
   (validates the manager's multi-strategy dispatch).
 * :class:`StrategyManager` — per-tenant orchestrator: instantiates
@@ -19,10 +21,14 @@ from __future__ import annotations
 from iguanatrader.contexts.trading.strategies.base import Strategy
 from iguanatrader.contexts.trading.strategies.donchian_atr import DonchianATRStrategy
 from iguanatrader.contexts.trading.strategies.manager import StrategyManager
+from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
+    RSIMeanReversionStrategy,
+)
 from iguanatrader.contexts.trading.strategies.sma_cross import SMACrossStrategy
 
 __all__ = [
     "DonchianATRStrategy",
+    "RSIMeanReversionStrategy",
     "SMACrossStrategy",
     "Strategy",
     "StrategyManager",
