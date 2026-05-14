@@ -22,6 +22,24 @@ export type TradeOut = {
   created_at: string;
 };
 
+export type OrderOut = {
+  id: string;
+  tenant_id: string;
+  trade_id: string;
+  broker: string;
+  broker_order_id: string | null;
+  order_type: string;
+  side: string;
+  quantity: string;
+  limit_price: string | null;
+  stop_price: string | null;
+  state: string;
+  submitted_at: string | null;
+  acknowledged_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+};
+
 export type FillOut = {
   id: string;
   tenant_id: string;
