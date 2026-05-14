@@ -34,15 +34,13 @@ async def _login(client: AsyncClient) -> None:
 
 
 #: Endpoints that legitimately still raise 501 + Problem JSON until their
-#: owning slice lands. Trades + portfolio + strategies were wired by
-#: their respective slices (see ``test_trade_routes.py``,
-#: ``test_portfolio_routes.py``, ``test_strategies_routes.py``).
-#: ``GET /proposals/{id}`` is also wired (returns 404 on miss); the
-#: only remaining stub is the list endpoint, owned by the future
-#: ``proposals-list-endpoint`` slice.
-STUB_ENDPOINTS: list[tuple[str, str]] = [
-    ("GET", "/api/v1/proposals"),
-]
+#: owning slice lands. Intentionally empty after slice
+#: ``proposals-list-endpoint`` shipped — zero remaining 501 stubs in the
+#: trading route surface. The parametrized
+#: ``test_trading_stub_returns_501_problem`` test becomes a no-op; the
+#: ``test_openapi_surfaces_all_four_trading_route_prefixes`` smoke test
+#: stays as the canonical surface check.
+STUB_ENDPOINTS: list[tuple[str, str]] = []
 
 
 @pytest.mark.parametrize("method,path", STUB_ENDPOINTS)
