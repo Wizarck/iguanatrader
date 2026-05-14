@@ -40,7 +40,14 @@ Outcome = Literal["allow", "reject", "clip"]
 #: ``daily_loss`` / ``weekly_loss`` (NOT ``daily`` / ``weekly``); the
 #: openspec spec.md uses the short forms in prose but the migration +
 #: ORM CHECK constraint match the data-model wire form.
-CapType = Literal["per_trade", "daily_loss", "weekly_loss", "max_open", "max_drawdown"]
+CapType = Literal[
+    "per_trade",
+    "daily_loss",
+    "weekly_loss",
+    "max_open",
+    "max_drawdown",
+    "stoploss_guard",
+]
 
 #: Activation source for ``kill_switch_events.source``. Includes the
 #: ``cli`` value added by K1 (per design D7 open question + tasks.md 2.6).
@@ -85,6 +92,18 @@ class RiskCaps(BaseModel):
     weekly_loss_pct: Decimal = Field(default=Decimal("0.15"))
     max_open_positions: int = Field(default=10, ge=0)
     max_drawdown_pct: Decimal = Field(default=Decimal("0.15"))
+    #: v1.5 ``stoploss_guard`` cap — N consecutive stoploss-triggered
+    #: exits in the trailing M closed trades that trip the guard.
+    #: ``None`` means the protection is disabled (the default — so
+    #: existing tenants see no behavioural change until they opt in).
+    stoploss_guard_threshold: int | None = Field(default=None, ge=1)
+    #: Lookback window M — how many of the most-recent closed trades
+    #: the service-layer state builder scans when computing
+    #: :attr:`RiskState.recent_stoploss_count_trailing`. Five is the
+    #: Freqtrade default; the engine itself does not read this field,
+    #: it is supplied only for ``current_pct`` denominator computation
+    #: when the guard trips.
+    stoploss_guard_lookback: int = Field(default=5, ge=1)
 
 
 class RiskState(BaseModel):
@@ -108,6 +127,19 @@ class RiskState(BaseModel):
     week_to_date_loss_pct: Decimal = Field(default=Decimal("0"))
     open_positions_count: int = Field(default=0, ge=0)
     peak_to_trough_drawdown_pct: Decimal = Field(default=Decimal("0"))
+    #: v1.5 ``stoploss_guard`` input — count of ``exit_reason == "stop"``
+    #: rows among the trailing ``RiskCaps.stoploss_guard_lookback`` closed
+    #: trades. Derived by the service-layer state builder; defaults to 0
+    #: so the engine is inert when the upstream builder has not yet been
+    #: wired (legacy seed rows + the pre-``chore-add-exit-reason-column``
+    #: era both fall through to "guard never trips").
+    recent_stoploss_count_trailing: int = Field(default=0, ge=0)
+    #: Denominator the service builder used to compute the count above.
+    #: Mirrors :attr:`RiskCaps.stoploss_guard_lookback` at the moment of
+    #: state derivation; reported back through ``Decision.current_pct``
+    #: when the guard rejects so observability consumers can chart
+    #: "3 of 5 trailing trades stopped" uniformly.
+    recent_trades_lookback: int = Field(default=0, ge=0)
 
 
 class TradeProposalInput(BaseModel):
