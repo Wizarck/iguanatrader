@@ -219,6 +219,7 @@ class RiskService:
             tenant_id=row.tenant_id,
             notional_value=Decimal(str(row.quantity)) * Decimal(str(row.entry_price_indicative)),
             side=row.side,
+            symbol=row.symbol,
         )
 
     # ------------------------------------------------------------------

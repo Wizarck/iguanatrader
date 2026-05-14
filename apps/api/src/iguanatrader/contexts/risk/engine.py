@@ -15,9 +15,10 @@ Composition order (per design D2 + tasks 3.7) is fixed:
 4. ``max_open``  — open-positions count cap.
 5. ``max_drawdown`` — peak-to-trough drawdown cap.
 6. ``stoploss_guard`` — consecutive-stoploss streak halt (v1.5).
+7. ``cooldown_period`` — per-symbol cooldown after last close (v1.5).
 
 Short-circuit semantics: the first non-allow Decision is returned
-(later protections are not evaluated). When all six pass, the engine
+(later protections are not evaluated). When all seven pass, the engine
 returns ``Decision(outcome="allow", state_snapshot=<rendered RiskState>)``.
 
 The ``state_snapshot`` is rendered via ``state.model_dump(mode="json")``
@@ -34,7 +35,7 @@ PURITY PROHIBITED CALL PATTERNS:
 * ``.now()``, ``.utcnow()``, ``.commit()``, ``.execute()``, ``.add()``,
   ``.delete()``
 
-Adding a seventh protection in a future slice is a 1-line edit to
+Adding an eighth protection in a future slice is a 1-line edit to
 ``_PROTECTIONS`` below + a new file under ``protections/``.
 """
 
@@ -50,6 +51,7 @@ from iguanatrader.contexts.risk.models import (
     TradeProposalInput,
 )
 from iguanatrader.contexts.risk.protections import (
+    cooldown_period,
     daily,
     max_drawdown,
     max_open,
@@ -58,7 +60,7 @@ from iguanatrader.contexts.risk.protections import (
     weekly,
 )
 
-#: Protection callable signature shared by all five protection modules.
+#: Protection callable signature shared by all seven protection modules.
 ProtectionFn = Callable[[TradeProposalInput, RiskState, RiskCaps], Decision]
 
 #: Fixed composition order — per design D2. Order is part of the FR45
@@ -70,6 +72,7 @@ _PROTECTIONS: tuple[ProtectionFn, ...] = (
     max_open.evaluate,
     max_drawdown.evaluate,
     stoploss_guard.evaluate,
+    cooldown_period.evaluate,
 )
 
 
@@ -90,7 +93,7 @@ def evaluate(
     state: RiskState,
     caps: RiskCaps,
 ) -> Decision:
-    """Compose the five protections; return the first non-allow Decision.
+    """Compose the seven protections; return the first non-allow Decision.
 
     When every protection returns ``Decision(outcome="allow")``, the
     engine returns its own ``allow`` Decision with the state snapshot

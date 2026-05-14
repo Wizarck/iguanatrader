@@ -47,6 +47,7 @@ CapType = Literal[
     "max_open",
     "max_drawdown",
     "stoploss_guard",
+    "cooldown_period",
 ]
 
 #: Activation source for ``kill_switch_events.source``. Includes the
@@ -104,6 +105,14 @@ class RiskCaps(BaseModel):
     #: it is supplied only for ``current_pct`` denominator computation
     #: when the guard trips.
     stoploss_guard_lookback: int = Field(default=5, ge=1)
+    #: v1.5 ``cooldown_period`` cap — minimum wait, in seconds, after
+    #: a closed trade on a given symbol before a new proposal on the
+    #: same symbol is allowed. ``None`` means the protection is
+    #: disabled (the default — so existing tenants see no behavioural
+    #: change until they opt in). Per-symbol scoping prevents
+    #: revenge-trading after a stopout without blocking unrelated
+    #: signals on other symbols.
+    cooldown_seconds: int | None = Field(default=None, ge=1)
 
 
 class RiskState(BaseModel):
@@ -140,6 +149,15 @@ class RiskState(BaseModel):
     #: when the guard rejects so observability consumers can chart
     #: "3 of 5 trailing trades stopped" uniformly.
     recent_trades_lookback: int = Field(default=0, ge=0)
+    #: v1.5 ``cooldown_period`` input — for each symbol that has at
+    #: least one closed trade, the integer number of seconds elapsed
+    #: between the moment of state derivation and the most-recent
+    #: close on that symbol. Populated by the service-layer state
+    #: builder via a single ``datetime.now()`` read (the only clock
+    #: read in the build; per design D5 the engine itself stays pure).
+    #: Symbols with no prior close are absent from the dict — the
+    #: protection treats absence as "no cooldown applies".
+    seconds_since_last_close_by_symbol: dict[str, int] = Field(default_factory=dict)
 
 
 class TradeProposalInput(BaseModel):
@@ -163,6 +181,12 @@ class TradeProposalInput(BaseModel):
     * ``side`` — informational; not used by current protections (per
       design D2's "fixed-order composition") but available for future
       protections that distinguish long/short exposure.
+    * ``symbol`` — the instrument the proposal targets (e.g. ``"SPY"``).
+      Read by the v1.5 ``cooldown_period`` protection to look up the
+      per-symbol seconds-since-last-close in
+      :attr:`RiskState.seconds_since_last_close_by_symbol`. Other
+      protections currently ignore it; future per-symbol caps would
+      key off this field too.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -171,6 +195,7 @@ class TradeProposalInput(BaseModel):
     tenant_id: UUID
     notional_value: Decimal
     side: Literal["buy", "sell"]
+    symbol: str = Field(default="", min_length=0)
 
 
 class Decision(BaseModel):
