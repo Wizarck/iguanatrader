@@ -20,6 +20,9 @@ from iguanatrader.contexts.trading.ports import (
     Proposal,
     StrategyConfigSnapshot,
 )
+from iguanatrader.contexts.trading.strategies.bollinger_breakout import (
+    BollingerBreakoutStrategy,
+)
 from iguanatrader.contexts.trading.strategies.donchian_atr import DonchianATRStrategy
 from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
     RSIMeanReversionStrategy,
@@ -35,6 +38,7 @@ logger = logging.getLogger(__name__)
 #: Strategy-kind dispatch table. Adding a 3rd strategy is a one-line
 #: addition here + a new module under ``strategies/``.
 STRATEGY_REGISTRY: dict[str, type[Strategy]] = {
+    "bollinger_breakout": BollingerBreakoutStrategy,
     "donchian_atr": DonchianATRStrategy,
     "rsi_mean_reversion": RSIMeanReversionStrategy,
     "sma_cross": SMACrossStrategy,
