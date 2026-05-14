@@ -2,8 +2,8 @@
   /**
    * Route metadata — consumed by the dynamic Sidebar (slice W1, design D2).
    *
-   * Slice R5 (`research-brief-synthesis`) replaces the body. `meta`
-   * stays.
+   * Slice `research-tab-ui` replaces the `PlaceholderCard` body with a
+   * search-card + recent-symbols landing. `meta` stays.
    */
   export const meta = {
     label: 'Research',
@@ -13,7 +13,10 @@
 </script>
 
 <script lang="ts">
-  import PlaceholderCard from '$lib/components/PlaceholderCard.svelte';
+  import RecentSymbolsList from '$lib/components/RecentSymbolsList.svelte';
+  import SymbolSearchCard from '$lib/components/SymbolSearchCard.svelte';
+
+  const STORAGE_KEY = 'iguanatrader.research.recent';
 </script>
 
 <svelte:head>
@@ -22,11 +25,11 @@
 
 <section aria-live="polite">
   <h1>Research</h1>
-  <PlaceholderCard
-    apiPath="/api/v1/research/briefs/{'{symbol}'}"
-    sliceRef="research-brief-synthesis"
-    hint="Watchlist + briefs sintetizados. Requiere ANTHROPIC_API_KEY + claves Tier-A para generar briefs reales."
-  />
+  <p class="lead">
+    Busca un symbol para abrir su brief sintetizado, o vuelve a uno reciente.
+  </p>
+  <SymbolSearchCard />
+  <RecentSymbolsList storageKey={STORAGE_KEY} />
 </section>
 
 <style>
@@ -37,5 +40,12 @@
     font-size: 22px;
     font-weight: 600;
     margin: 0 0 8px;
+  }
+  .lead {
+    margin: 0 0 16px;
+    color: var(--mute);
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 640px;
   }
 </style>
