@@ -5,6 +5,9 @@ Public exports:
 * :class:`Strategy` — :class:`StrategyPort`-conforming abstract base.
   Enforces the no-lookahead invariant by slicing the history to
   ``bars[:-1]`` before delegating to the subclass implementation.
+* :class:`BollingerBreakoutStrategy` — SMA(20) ± 2-stdev upper-band breakout
+  with optional squeeze filter (second v1.5 trend-following strategy;
+  volatility-adaptive complement to Donchian).
 * :class:`DonchianATRStrategy` — Donchian-channel breakout with
   ATR-based stop + risk-pct sizing (the MVP strategy).
 * :class:`RSIMeanReversionStrategy` — Wilder RSI(14) cross-UP-from-oversold
@@ -19,6 +22,9 @@ Public exports:
 from __future__ import annotations
 
 from iguanatrader.contexts.trading.strategies.base import Strategy
+from iguanatrader.contexts.trading.strategies.bollinger_breakout import (
+    BollingerBreakoutStrategy,
+)
 from iguanatrader.contexts.trading.strategies.donchian_atr import DonchianATRStrategy
 from iguanatrader.contexts.trading.strategies.manager import StrategyManager
 from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
@@ -27,6 +33,7 @@ from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
 from iguanatrader.contexts.trading.strategies.sma_cross import SMACrossStrategy
 
 __all__ = [
+    "BollingerBreakoutStrategy",
     "DonchianATRStrategy",
     "RSIMeanReversionStrategy",
     "SMACrossStrategy",
