@@ -21,6 +21,9 @@ from iguanatrader.contexts.trading.ports import (
     StrategyConfigSnapshot,
 )
 from iguanatrader.contexts.trading.strategies.donchian_atr import DonchianATRStrategy
+from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
+    RSIMeanReversionStrategy,
+)
 from iguanatrader.contexts.trading.strategies.sma_cross import SMACrossStrategy
 
 if TYPE_CHECKING:
@@ -33,6 +36,7 @@ logger = logging.getLogger(__name__)
 #: addition here + a new module under ``strategies/``.
 STRATEGY_REGISTRY: dict[str, type[Strategy]] = {
     "donchian_atr": DonchianATRStrategy,
+    "rsi_mean_reversion": RSIMeanReversionStrategy,
     "sma_cross": SMACrossStrategy,
 }
 
