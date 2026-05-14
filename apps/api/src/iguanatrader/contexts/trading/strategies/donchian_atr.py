@@ -25,6 +25,7 @@ from iguanatrader.contexts.trading.ports import (
     Proposal,
     StrategyConfigSnapshot,
 )
+from iguanatrader.contexts.trading.strategies._indicators import _compute_atr
 from iguanatrader.contexts.trading.strategies.base import Strategy
 from iguanatrader.shared.time import now as utc_now
 
@@ -129,24 +130,6 @@ def _to_decimal(value: Any, *, default: Decimal) -> Decimal:
         return Decimal(str(value))
     except Exception:
         return default
-
-
-def _compute_atr(bars: Any) -> Decimal | None:
-    """Wilder ATR over ``bars`` — needs at least 2 bars."""
-    from itertools import pairwise
-
-    if len(bars) < 2:
-        return None
-    true_ranges: list[Decimal] = []
-    for prev, cur in pairwise(bars):
-        tr1 = cur.high - cur.low
-        tr2 = abs(cur.high - prev.close)
-        tr3 = abs(cur.low - prev.close)
-        true_ranges.append(max(tr1, tr2, tr3))
-    if not true_ranges:
-        return None
-    total = sum(true_ranges, Decimal("0"))
-    return total / Decimal(len(true_ranges))
 
 
 __all__ = [

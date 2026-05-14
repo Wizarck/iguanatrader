@@ -24,6 +24,7 @@ from iguanatrader.contexts.trading.strategies.bollinger_breakout import (
     BollingerBreakoutStrategy,
 )
 from iguanatrader.contexts.trading.strategies.donchian_atr import DonchianATRStrategy
+from iguanatrader.contexts.trading.strategies.macd_cross import MACDCrossStrategy
 from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
     RSIMeanReversionStrategy,
 )
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 STRATEGY_REGISTRY: dict[str, type[Strategy]] = {
     "bollinger_breakout": BollingerBreakoutStrategy,
     "donchian_atr": DonchianATRStrategy,
+    "macd_cross": MACDCrossStrategy,
     "rsi_mean_reversion": RSIMeanReversionStrategy,
     "sma_cross": SMACrossStrategy,
 }
