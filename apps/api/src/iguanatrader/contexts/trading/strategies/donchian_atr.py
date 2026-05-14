@@ -69,9 +69,11 @@ class DonchianATRStrategy(Strategy):
             return None
 
         latest_close = bars[-1].close
-        # Donchian channel: max of the prior `lookback` bars' high (NOT
-        # including bars[-1] — already excluded by the wrapper).
-        window_highs = [bar.high for bar in bars[-lookback:]]
+        # Donchian channel: max of the prior `lookback` bars' high,
+        # EXCLUDING the current bar (we test whether the current close
+        # breaks the prior channel; including bars[-1] would make the
+        # comparison trivially fail because bars[-1].high >= bars[-1].close).
+        window_highs = [bar.high for bar in bars[-lookback - 1 : -1]]
         channel_high = max(window_highs)
 
         # Breakout test: today's close >= channel_high.
