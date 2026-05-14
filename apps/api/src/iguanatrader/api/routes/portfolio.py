@@ -31,6 +31,8 @@ from iguanatrader.api.dtos.trades import (
     PositionOut,
     TradeOut,
 )
+from iguanatrader.contexts.trading.market_data import MarketDataNotAvailableError
+from iguanatrader.contexts.trading.market_data.db import DBMarketDataAdapter
 from iguanatrader.contexts.trading.models import EquitySnapshot, Trade
 from iguanatrader.contexts.trading.repository import (
     EquitySnapshotRepository,
@@ -96,24 +98,54 @@ async def _compute_avg_entry_price(
     return weighted_sum / total_qty
 
 
+async def _fetch_last_price(
+    adapter: DBMarketDataAdapter,
+    symbol: str,
+) -> Decimal | None:
+    """Return last 1d-bar close for ``symbol``, or ``None`` if no bars exist."""
+    try:
+        bars = await adapter.get_bars(symbol=symbol, timeframe="1d", lookback_bars=1)
+    except MarketDataNotAvailableError:
+        return None
+    if not bars.bars:
+        return None
+    return Decimal(bars.bars[-1].close)
+
+
+def _compute_unrealized_pnl(
+    *,
+    trade: Trade,
+    avg_entry: Decimal | None,
+    last_price: Decimal | None,
+) -> Decimal | None:
+    """Compute mark-to-market unrealized P&L for an open trade.
+
+    Returns ``None`` when either ``avg_entry`` or ``last_price`` is missing
+    (frontend renders "—" for the position row). Sign convention:
+    ``buy`` side → ``(last - entry) * qty``; ``sell`` side → ``(entry - last) * qty``.
+    """
+    if avg_entry is None or last_price is None:
+        return None
+    # WHY: longs profit when price rises; shorts profit when price falls.
+    delta = last_price - avg_entry if trade.side == "buy" else avg_entry - last_price
+    return delta * Decimal(trade.quantity)
+
+
 def _trade_to_position(
     trade: Trade,
     avg_entry_price: Decimal | None,
+    last_price: Decimal | None,
+    unrealized_pnl: Decimal | None,
 ) -> PositionOut:
-    """Project a :class:`Trade` row + computed avg-entry into a DTO row.
-
-    ``last_price`` and ``unrealized_pnl`` are intentionally null in v1.
-    The market-data hook that populates them is owned by the follow-up
-    slice ``market-data-snapshot-port``.
-    """
+    """Project a :class:`Trade` row + computed fields into a DTO row."""
     return PositionOut(
         trade_id=trade.id,
         symbol=trade.symbol,
         side=trade.side,
         quantity=Decimal(trade.quantity),
         avg_entry_price=avg_entry_price,
-        last_price=None,
-        unrealized_pnl=None,
+        last_price=last_price,
+        unrealized_pnl=unrealized_pnl,
         opened_at=trade.opened_at,
     )
 
@@ -185,25 +217,40 @@ async def list_positions(
 
     * ``avg_entry_price`` = ``sum(fill_price * quantity_filled) /
       sum(quantity_filled)`` across fills, or ``None`` if no fills yet.
-    * ``last_price`` and ``unrealized_pnl`` are intentionally ``None``
-      in v1 (the market-data hook is a follow-up slice).
+    * ``last_price`` = latest 1d-bar close from ``market_data_bars`` via
+      :class:`DBMarketDataAdapter`, ``None`` when no bars exist.
+    * ``unrealized_pnl`` = mark-to-market against ``last_price`` per the
+      buy/sell sign convention, ``None`` when either input is missing.
+
+    Per-symbol cache: 1 SELECT per unique symbol regardless of position
+    count. Stale-MD silently degrades to ``None`` — frontend renders "—".
 
     Sorted ``opened_at DESC``. Empty list when no open trades.
     """
     session_var.set(db)
     trade_repo = TradeRepository()
     fill_repo = FillRepository()
+    md_adapter = DBMarketDataAdapter()
 
     open_trades = await trade_repo.list_open_for_tenant()
+
+    last_price_by_symbol: dict[str, Decimal | None] = {}
+    for trade in open_trades:
+        if trade.symbol not in last_price_by_symbol:
+            last_price_by_symbol[trade.symbol] = await _fetch_last_price(md_adapter, trade.symbol)
+
     positions: list[PositionOut] = []
     for trade in open_trades:
         avg = await _compute_avg_entry_price(fill_repo, trade.id)
-        positions.append(_trade_to_position(trade, avg))
+        last_price = last_price_by_symbol[trade.symbol]
+        unrealized = _compute_unrealized_pnl(trade=trade, avg_entry=avg, last_price=last_price)
+        positions.append(_trade_to_position(trade, avg, last_price, unrealized))
 
     log.info(
         "portfolio.positions.fetched",
         tenant_id=str(user.tenant_id),
         position_count=len(positions),
+        symbols_with_market_data=sum(1 for v in last_price_by_symbol.values() if v is not None),
     )
 
     return PositionListOut(items=positions, total=len(positions))

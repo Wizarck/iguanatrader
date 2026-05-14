@@ -30,6 +30,7 @@ from iguanatrader.api import deps as api_deps
 from iguanatrader.api.app import create_app
 from iguanatrader.api.auth import encode_jwt, hash_password
 from iguanatrader.api.deps import COOKIE_NAME
+from iguanatrader.contexts.trading.market_data.models import MarketDataBar
 from iguanatrader.contexts.trading.models import (
     EquitySnapshot,
     Fill,
@@ -263,6 +264,37 @@ async def _seed_equity_snapshot(
     return snap_id
 
 
+async def _seed_market_data_bar(
+    sf: async_sessionmaker[AsyncSession],
+    *,
+    tenant_id: UUID,
+    symbol: str,
+    close: Decimal,
+    timeframe: str = "1d",
+    ts: datetime | None = None,
+) -> UUID:
+    bar_id = uuid4()
+    ts_val = ts if ts is not None else datetime.now(UTC)
+    async with with_tenant_context(tenant_id), sf() as s:
+        s.add(
+            MarketDataBar(
+                id=bar_id,
+                tenant_id=tenant_id,
+                symbol=symbol,
+                timeframe=timeframe,
+                ts=ts_val,
+                open=close,
+                high=close,
+                low=close,
+                close=close,
+                volume=100000,
+                source="test",
+            )
+        )
+        await s.commit()
+    return bar_id
+
+
 # ---------------------------------------------------------------------------
 # GET /portfolio
 # ---------------------------------------------------------------------------
@@ -398,6 +430,102 @@ async def test_get_positions_open_trade_with_no_fills_yields_null_avg_entry(
     assert row["avg_entry_price"] is None
     assert row["last_price"] is None
     assert row["unrealized_pnl"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_positions_with_market_data_computes_last_price_and_unrealized_pnl(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    tid = seed["tenant_id"]
+    uid = seed["user_id"]
+    # BUY 10 @ avg entry 100; latest bar close 110 → unrealized = (110-100)*10 = 100.
+    await _seed_open_trade_with_fills(
+        sf,
+        tenant_id=tid,
+        symbol="AAPL",
+        quantity=Decimal("10"),
+        fills=[(Decimal("10"), Decimal("100"))],
+    )
+    await _seed_market_data_bar(sf, tenant_id=tid, symbol="AAPL", close=Decimal("110"))
+    cookie = _login_cookie(uid, tid)
+    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 1
+    row = body["items"][0]
+    assert row["symbol"] == "AAPL"
+    assert Decimal(row["avg_entry_price"]) == Decimal("100")
+    assert Decimal(row["last_price"]) == Decimal("110")
+    assert Decimal(row["unrealized_pnl"]) == Decimal("100")
+
+
+@pytest.mark.asyncio
+async def test_get_positions_without_market_data_leaves_last_price_null(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    tid = seed["tenant_id"]
+    uid = seed["user_id"]
+    await _seed_open_trade_with_fills(
+        sf,
+        tenant_id=tid,
+        symbol="AAPL",
+        quantity=Decimal("10"),
+        fills=[(Decimal("10"), Decimal("100"))],
+    )
+    # No MarketDataBar seeded.
+    cookie = _login_cookie(uid, tid)
+    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 1
+    row = body["items"][0]
+    assert row["symbol"] == "AAPL"
+    assert Decimal(row["avg_entry_price"]) == Decimal("100")
+    assert row["last_price"] is None
+    assert row["unrealized_pnl"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_positions_mixed_market_data(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    tid = seed["tenant_id"]
+    uid = seed["user_id"]
+    # Trade A — AAPL with bar.
+    await _seed_open_trade_with_fills(
+        sf,
+        tenant_id=tid,
+        symbol="AAPL",
+        quantity=Decimal("10"),
+        fills=[(Decimal("10"), Decimal("100"))],
+        opened_offset_seconds=0,
+    )
+    # Trade B — MSFT without bar. Newer (sorted first by opened_at DESC).
+    await _seed_open_trade_with_fills(
+        sf,
+        tenant_id=tid,
+        symbol="MSFT",
+        quantity=Decimal("5"),
+        fills=[(Decimal("5"), Decimal("200"))],
+        opened_offset_seconds=60,
+    )
+    await _seed_market_data_bar(sf, tenant_id=tid, symbol="AAPL", close=Decimal("110"))
+    cookie = _login_cookie(uid, tid)
+    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 2
+    by_symbol = {row["symbol"]: row for row in body["items"]}
+    assert by_symbol["MSFT"]["last_price"] is None
+    assert by_symbol["MSFT"]["unrealized_pnl"] is None
+    assert Decimal(by_symbol["AAPL"]["last_price"]) == Decimal("110")
+    assert Decimal(by_symbol["AAPL"]["unrealized_pnl"]) == Decimal("100")
 
 
 # ---------------------------------------------------------------------------
