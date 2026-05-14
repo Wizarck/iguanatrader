@@ -14,9 +14,10 @@ Composition order (per design D2 + tasks 3.7) is fixed:
 3. ``weekly_loss`` — blanket halt on week-to-date loss.
 4. ``max_open``  — open-positions count cap.
 5. ``max_drawdown`` — peak-to-trough drawdown cap.
+6. ``stoploss_guard`` — consecutive-stoploss streak halt (v1.5).
 
 Short-circuit semantics: the first non-allow Decision is returned
-(later protections are not evaluated). When all five pass, the engine
+(later protections are not evaluated). When all six pass, the engine
 returns ``Decision(outcome="allow", state_snapshot=<rendered RiskState>)``.
 
 The ``state_snapshot`` is rendered via ``state.model_dump(mode="json")``
@@ -33,7 +34,7 @@ PURITY PROHIBITED CALL PATTERNS:
 * ``.now()``, ``.utcnow()``, ``.commit()``, ``.execute()``, ``.add()``,
   ``.delete()``
 
-Adding a sixth protection in a future slice is a 1-line edit to
+Adding a seventh protection in a future slice is a 1-line edit to
 ``_PROTECTIONS`` below + a new file under ``protections/``.
 """
 
@@ -53,6 +54,7 @@ from iguanatrader.contexts.risk.protections import (
     max_drawdown,
     max_open,
     per_trade,
+    stoploss_guard,
     weekly,
 )
 
@@ -67,6 +69,7 @@ _PROTECTIONS: tuple[ProtectionFn, ...] = (
     weekly.evaluate,
     max_open.evaluate,
     max_drawdown.evaluate,
+    stoploss_guard.evaluate,
 )
 
 
