@@ -37,6 +37,7 @@ from iguanatrader.contexts.trading.ports import (
     Proposal,
     StrategyConfigSnapshot,
 )
+from iguanatrader.contexts.trading.strategies._indicators import compute_atr
 from iguanatrader.contexts.trading.strategies.base import Strategy
 from iguanatrader.shared.time import now as utc_now
 
@@ -114,7 +115,7 @@ class BollingerBreakoutStrategy(Strategy):
         ):
             return None
 
-        atr = _compute_atr(bars[-(atr_period + 1) :])
+        atr = compute_atr(bars[-(atr_period + 1) :])
         if atr is None or atr <= Decimal("0"):
             return None
 
@@ -244,35 +245,6 @@ def _squeeze_compressed(
         if bandwidth_ratio >= threshold:
             return False
     return True
-
-
-# Forward-pointer comment (strategies-indicators-shared): ATR helper
-# duplicated from ``donchian_atr``; hoist scheduled for the slice that
-# brings the 4th caller (per cross-slice agreement after PR #155 retro —
-# 3rd caller now present, decision is to defer hoist until MACD lands).
-def _compute_atr(bars: Any) -> Decimal | None:
-    """Wilder ATR over ``bars`` — needs at least 2 bars.
-
-    Copy of :func:`donchian_atr._compute_atr` /
-    :func:`rsi_mean_reversion._compute_atr` per
-    ``openspec/changes/strategy-bollinger-breakout/proposal.md`` §"
-    ``_compute_atr`` reuse" (decision: still copy at the 3rd caller; hoist
-    when the 4th caller emerges).
-    """
-    from itertools import pairwise
-
-    if len(bars) < 2:
-        return None
-    true_ranges: list[Decimal] = []
-    for prev, cur in pairwise(bars):
-        tr1 = cur.high - cur.low
-        tr2 = abs(cur.high - prev.close)
-        tr3 = abs(cur.low - prev.close)
-        true_ranges.append(max(tr1, tr2, tr3))
-    if not true_ranges:
-        return None
-    total = sum(true_ranges, Decimal("0"))
-    return total / Decimal(len(true_ranges))
 
 
 __all__ = [

@@ -30,6 +30,7 @@ from iguanatrader.contexts.trading.ports import (
     Proposal,
     StrategyConfigSnapshot,
 )
+from iguanatrader.contexts.trading.strategies._indicators import compute_atr
 from iguanatrader.contexts.trading.strategies.base import Strategy
 from iguanatrader.shared.time import now as utc_now
 
@@ -92,7 +93,7 @@ class RSIMeanReversionStrategy(Strategy):
         if not (rsi_prev < oversold and rsi_now >= oversold):
             return None
 
-        atr = _compute_atr(bars[-(atr_period + 1) :])
+        atr = compute_atr(bars[-(atr_period + 1) :])
         if atr is None or atr <= Decimal("0"):
             return None
 
@@ -202,31 +203,6 @@ def _rsi_from_avgs(avg_gain: Decimal, avg_loss: Decimal) -> Decimal:
         return Decimal("100")
     rs = avg_gain / avg_loss
     return Decimal("100") - (Decimal("100") / (Decimal("1") + rs))
-
-
-# TODO(strategies-indicators-shared): hoist when 3rd caller lands.
-def _compute_atr(bars: Any) -> Decimal | None:
-    """Wilder ATR over ``bars`` — needs at least 2 bars.
-
-    Copy of :func:`donchian_atr._compute_atr` per
-    ``openspec/changes/strategy-rsi-mean-reversion/proposal.md`` §"
-    ``_compute_atr`` reuse" (decision A: copy-paste; hoist when the 3rd
-    caller lands).
-    """
-    from itertools import pairwise
-
-    if len(bars) < 2:
-        return None
-    true_ranges: list[Decimal] = []
-    for prev, cur in pairwise(bars):
-        tr1 = cur.high - cur.low
-        tr2 = abs(cur.high - prev.close)
-        tr3 = abs(cur.low - prev.close)
-        true_ranges.append(max(tr1, tr2, tr3))
-    if not true_ranges:
-        return None
-    total = sum(true_ranges, Decimal("0"))
-    return total / Decimal(len(true_ranges))
 
 
 __all__ = [
