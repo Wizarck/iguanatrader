@@ -304,7 +304,8 @@ async def test_get_portfolio_empty_tenant_returns_synthesised_empty_equity(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["equity"]["snapshot_kind"] == "empty"
@@ -335,7 +336,8 @@ async def test_get_portfolio_with_seeded_data_echoes_back(
         account_equity=Decimal("100000"),
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["equity"]["snapshot_kind"] == "event"
@@ -356,7 +358,8 @@ async def test_get_positions_no_open_trades_returns_empty(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/positions")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["items"] == []
@@ -390,7 +393,8 @@ async def test_get_positions_with_fills_computes_weighted_avg_entry_price(
         opened_offset_seconds=60,
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/positions")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total"] == 2
@@ -421,7 +425,8 @@ async def test_get_positions_open_trade_with_no_fills_yields_null_avg_entry(
         fills=[],
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/positions")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total"] == 1
@@ -450,7 +455,8 @@ async def test_get_positions_with_market_data_computes_last_price_and_unrealized
     )
     await _seed_market_data_bar(sf, tenant_id=tid, symbol="AAPL", close=Decimal("110"))
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/positions")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total"] == 1
@@ -478,7 +484,8 @@ async def test_get_positions_without_market_data_leaves_last_price_null(
     )
     # No MarketDataBar seeded.
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/positions")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total"] == 1
@@ -517,7 +524,8 @@ async def test_get_positions_mixed_market_data(
     )
     await _seed_market_data_bar(sf, tenant_id=tid, symbol="AAPL", close=Decimal("110"))
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/positions")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total"] == 2
@@ -537,7 +545,8 @@ async def test_get_equity_returns_404_when_no_snapshots(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp = await client.get("/api/v1/portfolio/equity", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/equity")
     assert resp.status_code == 404, resp.text
     body = resp.json()
     assert body["type"] == "urn:iguanatrader:error:not-found"
@@ -561,7 +570,8 @@ async def test_get_equity_returns_latest_snapshot(
         created_offset_seconds=60,
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio/equity", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/equity")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["id"] == str(newest)
@@ -589,17 +599,18 @@ async def test_portfolio_isolated_across_tenants(
     await _seed_equity_snapshot(sf, tenant_id=a["tenant_id"], account_equity=Decimal("9999"))
     # Tenant B: nothing.
     cookie_b = _login_cookie(b["user_id"], b["tenant_id"])
+    client.cookies.set(COOKIE_NAME, cookie_b)
     # GET /portfolio for B should be empty (B sees no A data).
-    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie_b})
+    resp = await client.get("/api/v1/portfolio")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["equity"]["snapshot_kind"] == "empty"
     assert body["open_trades"] == []
     # GET /portfolio/equity for B should 404 even though A has a snapshot.
-    resp_eq = await client.get("/api/v1/portfolio/equity", cookies={COOKIE_NAME: cookie_b})
+    resp_eq = await client.get("/api/v1/portfolio/equity")
     assert resp_eq.status_code == 404, resp_eq.text
     # GET /portfolio/positions for B should be empty list.
-    resp_pos = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie_b})
+    resp_pos = await client.get("/api/v1/portfolio/positions")
     assert resp_pos.status_code == 200, resp_pos.text
     assert resp_pos.json()["items"] == []
 
@@ -625,7 +636,8 @@ async def test_get_portfolio_day_pnl_null_when_no_today_snapshot(
         created_at=yesterday,
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["day_pnl_abs"] is None
@@ -654,7 +666,8 @@ async def test_get_portfolio_day_pnl_computed_with_baseline(
         created_at=today_midnight + timedelta(hours=14),
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert Decimal(body["day_pnl_abs"]) == Decimal("2500")
@@ -683,7 +696,8 @@ async def test_get_portfolio_day_pnl_negative(
         created_at=today_midnight + timedelta(hours=14),
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert Decimal(body["day_pnl_abs"]) == Decimal("-1000")
@@ -699,7 +713,8 @@ async def test_get_equity_series_empty_returns_empty_items(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp = await client.get("/api/v1/portfolio/equity/series", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/equity/series")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["items"] == []
@@ -726,9 +741,8 @@ async def test_get_equity_series_returns_only_in_window(
         sf, tenant_id=tid, account_equity=Decimal("300"), created_at=now - timedelta(days=45)
     )
     cookie = _login_cookie(uid, tid)
-    resp = await client.get(
-        "/api/v1/portfolio/equity/series?days=30", cookies={COOKIE_NAME: cookie}
-    )
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/portfolio/equity/series?days=30")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total"] == 2
@@ -743,13 +757,10 @@ async def test_get_equity_series_clamps_days_param(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp_low = await client.get(
-        "/api/v1/portfolio/equity/series?days=0", cookies={COOKIE_NAME: cookie}
-    )
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp_low = await client.get("/api/v1/portfolio/equity/series?days=0")
     assert resp_low.status_code == 422, resp_low.text
-    resp_high = await client.get(
-        "/api/v1/portfolio/equity/series?days=400", cookies={COOKIE_NAME: cookie}
-    )
+    resp_high = await client.get("/api/v1/portfolio/equity/series?days=400")
     assert resp_high.status_code == 422, resp_high.text
 
 
@@ -768,7 +779,8 @@ async def test_equity_series_isolated_across_tenants(
         created_at=now - timedelta(days=2),
     )
     cookie_b = _login_cookie(b["user_id"], b["tenant_id"])
-    resp = await client.get("/api/v1/portfolio/equity/series", cookies={COOKIE_NAME: cookie_b})
+    client.cookies.set(COOKIE_NAME, cookie_b)
+    resp = await client.get("/api/v1/portfolio/equity/series")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["items"] == []

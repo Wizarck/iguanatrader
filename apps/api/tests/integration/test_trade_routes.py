@@ -220,9 +220,9 @@ async def test_list_trades_returns_tenant_trades_sorted_desc(
     newer = await _seed_trade(sf, tenant_id=tid, symbol="MSFT", created_offset_seconds=60)
 
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     resp = await client.get(
         "/api/v1/trades",
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -241,7 +241,8 @@ async def test_list_trades_empty_for_new_tenant(
     tid: UUID = seed["tenant_id"]
     uid: UUID = seed["user_id"]
     cookie = _login_cookie(str(uid), str(tid))
-    resp = await client.get("/api/v1/trades", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/trades")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["items"] == []
@@ -258,9 +259,9 @@ async def test_get_trade_returns_200_on_hit(
     uid: UUID = seed["user_id"]
     ids = await _seed_trade(sf, tenant_id=tid)
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     resp = await client.get(
         f"/api/v1/trades/{ids['trade_id']}",
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -277,10 +278,10 @@ async def test_get_trade_returns_404_on_miss(
     uid: UUID = seed["user_id"]
     tid: UUID = seed["tenant_id"]
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     bogus = uuid4()
     resp = await client.get(
         f"/api/v1/trades/{bogus}",
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp.status_code == 404, resp.text
     body = resp.json()
@@ -298,9 +299,9 @@ async def test_list_trade_fills_joins_via_orders(
     uid: UUID = seed["user_id"]
     ids = await _seed_trade(sf, tenant_id=tid)
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     resp = await client.get(
         f"/api/v1/trades/{ids['trade_id']}/fills",
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()

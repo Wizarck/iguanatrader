@@ -129,9 +129,9 @@ async def test_get_feature_flags_returns_default_off(
     tid: UUID = seed["tenant_id"]
     uid: UUID = seed["user_id"]
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     resp = await client.get(
         "/api/v1/settings/feature-flags",
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -146,9 +146,9 @@ async def test_put_feature_flags_persists_toggle(
     tid: UUID = seed["tenant_id"]
     uid: UUID = seed["user_id"]
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     resp = await client.put(
         "/api/v1/settings/feature-flags",
-        cookies={COOKIE_NAME: cookie},
         json={"hindsight_recall_enabled": True},
     )
     assert resp.status_code == 200, resp.text
@@ -157,7 +157,6 @@ async def test_put_feature_flags_persists_toggle(
     # GET reflects the change.
     resp2 = await client.get(
         "/api/v1/settings/feature-flags",
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp2.json()["hindsight_recall_enabled"] is True
 
@@ -170,9 +169,9 @@ async def test_put_feature_flags_rejects_unknown_key(
     tid: UUID = seed["tenant_id"]
     uid: UUID = seed["user_id"]
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     resp = await client.put(
         "/api/v1/settings/feature-flags",
-        cookies={COOKIE_NAME: cookie},
         json={"hindsight_recall_enabled": True, "made_up_key": "yes"},
     )
     assert resp.status_code == 422, resp.text  # Pydantic validation error

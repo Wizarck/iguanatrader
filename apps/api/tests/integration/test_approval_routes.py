@@ -162,9 +162,9 @@ async def test_dashboard_approve_happy_path(
         await session.commit()
 
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     resp = await client.post(
         f"/api/v1/approvals/{request.id}/approve",
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -201,13 +201,12 @@ async def test_idempotent_retry_returns_409_or_dedup(
         await session.commit()
 
     cookie = _login_cookie(str(uid), str(tid))
+    client.cookies.set(COOKIE_NAME, cookie)
     r1 = await client.post(
         f"/api/v1/approvals/{request.id}/approve",
-        cookies={COOKIE_NAME: cookie},
     )
     r2 = await client.post(
         f"/api/v1/approvals/{request.id}/approve",
-        cookies={COOKIE_NAME: cookie},
     )
     assert r1.status_code == 200
     # Second attempt is suppressed by the in-process dedup cache or

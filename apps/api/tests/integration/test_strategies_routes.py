@@ -182,7 +182,8 @@ async def test_list_strategies_empty_tenant_returns_empty_items(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp = await client.get("/api/v1/strategies", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/strategies")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["items"] == []
@@ -201,7 +202,8 @@ async def test_list_strategies_returns_all_configs_sorted(
     await _seed_strategy_config(sf, tenant_id=tid, symbol="SPY", strategy_kind="donchian_atr")
     await _seed_strategy_config(sf, tenant_id=tid, symbol="AAPL", strategy_kind="sma_cross")
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/strategies", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/strategies")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total"] == 2
@@ -219,7 +221,8 @@ async def test_get_strategy_by_symbol_returns_404_when_missing(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp = await client.get("/api/v1/strategies/SPY", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/strategies/SPY")
     assert resp.status_code == 404, resp.text
     body = resp.json()
     assert body["type"] == "urn:iguanatrader:error:not-found"
@@ -235,7 +238,8 @@ async def test_get_strategy_by_symbol_returns_single_enabled_config(
     uid = seed["user_id"]
     config_id = await _seed_strategy_config(sf, tenant_id=tid, symbol="MSFT")
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/strategies/MSFT", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/strategies/MSFT")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["id"] == str(config_id)
@@ -258,7 +262,8 @@ async def test_get_strategy_by_symbol_with_two_kinds_returns_oldest_enabled(
     )
     await _seed_strategy_config(sf, tenant_id=tid, symbol="TSLA", strategy_kind="sma_cross")
     cookie = _login_cookie(uid, tid)
-    resp = await client.get("/api/v1/strategies/TSLA", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.get("/api/v1/strategies/TSLA")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     # Older config wins.
@@ -275,6 +280,7 @@ async def test_put_strategy_creates_then_bumps_version_on_second_put(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
+    client.cookies.set(COOKIE_NAME, cookie)
     payload = {
         "strategy_kind": "donchian_atr",
         "params": {"lookback": 20, "atr_mult": 2.0},
@@ -284,7 +290,6 @@ async def test_put_strategy_creates_then_bumps_version_on_second_put(
     resp1 = await client.put(
         "/api/v1/strategies/NVDA",
         json=payload,
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp1.status_code == 200, resp1.text
     body1 = resp1.json()
@@ -299,7 +304,6 @@ async def test_put_strategy_creates_then_bumps_version_on_second_put(
     resp2 = await client.put(
         "/api/v1/strategies/NVDA",
         json=payload2,
-        cookies={COOKIE_NAME: cookie},
     )
     assert resp2.status_code == 200, resp2.text
     body2 = resp2.json()
@@ -321,7 +325,8 @@ async def test_delete_strategy_soft_disables_rows_without_deleting(
     uid = seed["user_id"]
     config_id = await _seed_strategy_config(sf, tenant_id=tid, symbol="META")
     cookie = _login_cookie(uid, tid)
-    resp = await client.delete("/api/v1/strategies/META", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.delete("/api/v1/strategies/META")
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"status": "disabled", "symbol": "META"}
 
@@ -339,7 +344,8 @@ async def test_delete_strategy_returns_404_when_symbol_unknown(
     seed: dict[str, UUID],
 ) -> None:
     cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
-    resp = await client.delete("/api/v1/strategies/UNKNOWN", cookies={COOKIE_NAME: cookie})
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.delete("/api/v1/strategies/UNKNOWN")
     assert resp.status_code == 404, resp.text
     body = resp.json()
     assert body["type"] == "urn:iguanatrader:error:not-found"
@@ -358,15 +364,16 @@ async def test_strategies_isolated_across_tenants(
     # Tenant A has one config; tenant B has none.
     await _seed_strategy_config(sf, tenant_id=a["tenant_id"], symbol="SPY")
     cookie_b = _login_cookie(b["user_id"], b["tenant_id"])
+    client.cookies.set(COOKIE_NAME, cookie_b)
     # GET list for B is empty.
-    resp_list = await client.get("/api/v1/strategies", cookies={COOKIE_NAME: cookie_b})
+    resp_list = await client.get("/api/v1/strategies")
     assert resp_list.status_code == 200, resp_list.text
     assert resp_list.json()["items"] == []
     # GET by symbol for B is 404 (does not leak A's row).
-    resp_get = await client.get("/api/v1/strategies/SPY", cookies={COOKIE_NAME: cookie_b})
+    resp_get = await client.get("/api/v1/strategies/SPY")
     assert resp_get.status_code == 404
     # DELETE by symbol for B is 404 (does not affect A's row).
-    resp_del = await client.delete("/api/v1/strategies/SPY", cookies={COOKIE_NAME: cookie_b})
+    resp_del = await client.delete("/api/v1/strategies/SPY")
     assert resp_del.status_code == 404
     # Confirm A's config still enabled.
     async with with_tenant_context(a["tenant_id"]), sf() as s:
