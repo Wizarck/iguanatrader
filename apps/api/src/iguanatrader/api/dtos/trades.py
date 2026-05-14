@@ -187,6 +187,14 @@ class PortfolioSummaryOut(BaseModel):
     equity: EquitySnapshotOut
     open_trades: list[TradeOut]
     open_orders: list[OrderOut]
+    day_pnl_abs: Decimal | None = Field(
+        default=None,
+        examples=[Decimal("237.45")],
+    )
+    day_pnl_pct: Decimal | None = Field(
+        default=None,
+        examples=[Decimal("0.00237")],
+    )
 
 
 class PositionOut(BaseModel):

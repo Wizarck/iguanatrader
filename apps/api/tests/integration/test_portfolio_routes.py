@@ -236,8 +236,14 @@ async def _seed_equity_snapshot(
     tenant_id: UUID,
     account_equity: Decimal,
     created_offset_seconds: int = 0,
+    created_at: datetime | None = None,
 ) -> UUID:
     snap_id = uuid4()
+    ts = (
+        created_at
+        if created_at is not None
+        else datetime.now(UTC) + timedelta(seconds=created_offset_seconds)
+    )
     async with with_tenant_context(tenant_id), sf() as s:
         s.add(
             EquitySnapshot(
@@ -250,7 +256,7 @@ async def _seed_equity_snapshot(
                 unrealized_pnl=Decimal("0"),
                 currency="USD",
                 snapshot_kind="event",
-                created_at=datetime.now(UTC) + timedelta(seconds=created_offset_seconds),
+                created_at=ts,
             )
         )
         await s.commit()
@@ -468,3 +474,174 @@ async def test_portfolio_isolated_across_tenants(
     resp_pos = await client.get("/api/v1/portfolio/positions", cookies={COOKIE_NAME: cookie_b})
     assert resp_pos.status_code == 200, resp_pos.text
     assert resp_pos.json()["items"] == []
+
+
+# ---------------------------------------------------------------------------
+# GET /portfolio — day P&L (slice portfolio-pnl-and-equity-series)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_get_portfolio_day_pnl_null_when_no_today_snapshot(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    tid = seed["tenant_id"]
+    uid = seed["user_id"]
+    yesterday = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+        hours=1
+    )
+    await _seed_equity_snapshot(
+        sf,
+        tenant_id=tid,
+        account_equity=Decimal("100000"),
+        created_at=yesterday,
+    )
+    cookie = _login_cookie(uid, tid)
+    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["day_pnl_abs"] is None
+    assert body["day_pnl_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_portfolio_day_pnl_computed_with_baseline(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    tid = seed["tenant_id"]
+    uid = seed["user_id"]
+    today_midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_equity_snapshot(
+        sf,
+        tenant_id=tid,
+        account_equity=Decimal("100000"),
+        created_at=today_midnight + timedelta(hours=9),
+    )
+    await _seed_equity_snapshot(
+        sf,
+        tenant_id=tid,
+        account_equity=Decimal("102500"),
+        created_at=today_midnight + timedelta(hours=14),
+    )
+    cookie = _login_cookie(uid, tid)
+    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert Decimal(body["day_pnl_abs"]) == Decimal("2500")
+    assert Decimal(body["day_pnl_pct"]) == Decimal("0.025")
+
+
+@pytest.mark.asyncio
+async def test_get_portfolio_day_pnl_negative(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    tid = seed["tenant_id"]
+    uid = seed["user_id"]
+    today_midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_equity_snapshot(
+        sf,
+        tenant_id=tid,
+        account_equity=Decimal("100000"),
+        created_at=today_midnight + timedelta(hours=9),
+    )
+    await _seed_equity_snapshot(
+        sf,
+        tenant_id=tid,
+        account_equity=Decimal("99000"),
+        created_at=today_midnight + timedelta(hours=14),
+    )
+    cookie = _login_cookie(uid, tid)
+    resp = await client.get("/api/v1/portfolio", cookies={COOKIE_NAME: cookie})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert Decimal(body["day_pnl_abs"]) == Decimal("-1000")
+    assert Decimal(body["day_pnl_pct"]) == Decimal("-0.01")
+
+
+# ---------------------------------------------------------------------------
+# GET /portfolio/equity/series (slice portfolio-pnl-and-equity-series)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_get_equity_series_empty_returns_empty_items(
+    client: AsyncClient,
+    seed: dict[str, UUID],
+) -> None:
+    cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
+    resp = await client.get("/api/v1/portfolio/equity/series", cookies={COOKIE_NAME: cookie})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+    assert body["next_cursor"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_equity_series_returns_only_in_window(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    tid = seed["tenant_id"]
+    uid = seed["user_id"]
+    now = datetime.now(UTC)
+    await _seed_equity_snapshot(
+        sf, tenant_id=tid, account_equity=Decimal("100"), created_at=now - timedelta(days=5)
+    )
+    await _seed_equity_snapshot(
+        sf, tenant_id=tid, account_equity=Decimal("200"), created_at=now - timedelta(days=15)
+    )
+    await _seed_equity_snapshot(
+        sf, tenant_id=tid, account_equity=Decimal("300"), created_at=now - timedelta(days=45)
+    )
+    cookie = _login_cookie(uid, tid)
+    resp = await client.get(
+        "/api/v1/portfolio/equity/series?days=30", cookies={COOKIE_NAME: cookie}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 2
+    # Chronological ASC: -15d (200) then -5d (100).
+    assert Decimal(body["items"][0]["account_equity"]) == Decimal("200")
+    assert Decimal(body["items"][1]["account_equity"]) == Decimal("100")
+
+
+@pytest.mark.asyncio
+async def test_get_equity_series_clamps_days_param(
+    client: AsyncClient,
+    seed: dict[str, UUID],
+) -> None:
+    cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
+    resp_low = await client.get(
+        "/api/v1/portfolio/equity/series?days=0", cookies={COOKIE_NAME: cookie}
+    )
+    assert resp_low.status_code == 422, resp_low.text
+    resp_high = await client.get(
+        "/api/v1/portfolio/equity/series?days=400", cookies={COOKIE_NAME: cookie}
+    )
+    assert resp_high.status_code == 422, resp_high.text
+
+
+@pytest.mark.asyncio
+async def test_equity_series_isolated_across_tenants(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+) -> None:
+    a = await _seed_tenant_user(sf, email="alice2@x.test", tenant_name="t-A2")
+    b = await _seed_tenant_user(sf, email="bob2@x.test", tenant_name="t-B2")
+    now = datetime.now(UTC)
+    await _seed_equity_snapshot(
+        sf,
+        tenant_id=a["tenant_id"],
+        account_equity=Decimal("12345"),
+        created_at=now - timedelta(days=2),
+    )
+    cookie_b = _login_cookie(b["user_id"], b["tenant_id"])
+    resp = await client.get("/api/v1/portfolio/equity/series", cookies={COOKIE_NAME: cookie_b})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["items"] == []
+    assert body["total"] == 0

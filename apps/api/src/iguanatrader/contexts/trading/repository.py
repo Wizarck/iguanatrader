@@ -11,6 +11,7 @@ repositories ship empty bodies and gain query helpers in slice T4.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -356,6 +357,42 @@ class EquitySnapshotRepository(BaseRepository):
         stmt = select(EquitySnapshot).order_by(EquitySnapshot.created_at.desc()).limit(1)
         result = await self.session.execute(stmt)
         return cast("EquitySnapshot | None", result.scalars().first())
+
+    async def get_first_snapshot_today_for_tenant(self) -> EquitySnapshot | None:
+        """Return the first snapshot recorded today (UTC) for the current tenant.
+
+        Used as the baseline for day P&L computation. Ordered
+        ``created_at ASC LIMIT 1`` where ``created_at >= today_utc_midnight``.
+        Returns ``None`` when no snapshot exists for today yet. Tenant
+        filter is automatic via the slice-3 ``tenant_listener``.
+        """
+        # Explicit UTC-midnight computation — testable and avoids DB-side
+        # CURRENT_DATE which is timezone-ambiguous in SQLite.
+        today_utc_midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        stmt = (
+            select(EquitySnapshot)
+            .where(EquitySnapshot.created_at >= today_utc_midnight)
+            .order_by(EquitySnapshot.created_at.asc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return cast("EquitySnapshot | None", result.scalars().first())
+
+    async def list_for_tenant_window(self, days: int) -> list[EquitySnapshot]:
+        """List equity snapshots for the current tenant within the last ``days``.
+
+        ``created_at >= now - days*24h``, ordered ``created_at ASC``
+        (chronological — matches sparkline expectation). Tenant filter
+        is automatic via the slice-3 ``tenant_listener``.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=days)
+        stmt = (
+            select(EquitySnapshot)
+            .where(EquitySnapshot.created_at >= cutoff)
+            .order_by(EquitySnapshot.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
 
 __all__ = [
