@@ -17,6 +17,9 @@ Public exports:
   long-only counter-trend strategy (first v1.5 counter-trend addition).
 * :class:`SMACrossStrategy` — SMA(fast)/SMA(slow) cross sanity-check
   (validates the manager's multi-strategy dispatch).
+* :class:`VolumeDonchianStrategy` — Donchian-channel break + volume-
+  anomaly confirmation gate (fourth and final v1.5 addition;
+  conviction-filtered variant of :class:`DonchianATRStrategy`).
 * :class:`StrategyManager` — per-tenant orchestrator: instantiates
   enabled strategies from :class:`StrategyConfig` rows, dispatches
   ``evaluate`` calls, aggregates :class:`Proposal | None` results.
@@ -35,6 +38,9 @@ from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
     RSIMeanReversionStrategy,
 )
 from iguanatrader.contexts.trading.strategies.sma_cross import SMACrossStrategy
+from iguanatrader.contexts.trading.strategies.volume_donchian import (
+    VolumeDonchianStrategy,
+)
 
 __all__ = [
     "BollingerBreakoutStrategy",
@@ -44,4 +50,5 @@ __all__ = [
     "SMACrossStrategy",
     "Strategy",
     "StrategyManager",
+    "VolumeDonchianStrategy",
 ]

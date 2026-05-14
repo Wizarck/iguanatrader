@@ -29,6 +29,9 @@ from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
     RSIMeanReversionStrategy,
 )
 from iguanatrader.contexts.trading.strategies.sma_cross import SMACrossStrategy
+from iguanatrader.contexts.trading.strategies.volume_donchian import (
+    VolumeDonchianStrategy,
+)
 
 if TYPE_CHECKING:
     from iguanatrader.contexts.trading.strategies.base import Strategy
@@ -44,6 +47,7 @@ STRATEGY_REGISTRY: dict[str, type[Strategy]] = {
     "macd_cross": MACDCrossStrategy,
     "rsi_mean_reversion": RSIMeanReversionStrategy,
     "sma_cross": SMACrossStrategy,
+    "volume_donchian": VolumeDonchianStrategy,
 }
 
 
