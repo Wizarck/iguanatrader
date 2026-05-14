@@ -110,6 +110,16 @@
 - 🟢 Crash recovery (resume from last consistent state)
 - 🟢 GitHub Project mandatory + `issue_sync.py` automation
 
+### Operator provisioning (post-deploy carry-forwards, sesión 2026-05-13)
+
+Cada item es un blocker externo al código — sin esto el feature shipped queda inactivo / cae a log-only fallback. **Quitarlos de aquí cuando se resuelvan.**
+
+- ⚠️ **SMTP relay** para sender `iguanatrader@palafitofood.com` — cuenta en Mailgun/Resend/SES/Postmark + 4 vars (`IGUANATRADER_SMTP_HOST` + `_PORT` + `_USERNAME` + `_PASSWORD`). **Bloquea**: forgot-password real delivery (`auth-forgot-password-flow` PR #135 + guardrail PR #137) — hoy cae en log-only por per-channel fallback.
+- ⚠️ **DNS SPF + DKIM** en `palafitofood.com` (Cloudflare) — gated en SMTP. **Bloquea**: que A1 no caiga en spam.
+- ⚠️ **Telegram `chat_id`** para Arturo — `/start` al bot iguanatrader → grab `chat_id` → `UPDATE users SET telegram_chat_id='<id>' WHERE email='arturo6ramirez@gmail.com'`. **Bloquea**: Telegram recovery channel + futuras alertas Telegram. Migración 0014 (PR #135) añadió la columna; queda poblarla.
+- ⚠️ **Hermes (WhatsApp) HMAC alignment** con la instancia ELIGIA — verificar si soporta HMAC (iguanatrader's adapter firma POST bodies). Si usa bearer auth: decidir entre (a) cambiar ELIGIA Hermes a HMAC, (b) añadir variante bearer-auth al adapter de iguanatrader. **Bloquea**: WhatsApp recovery channel.
+- ⚠️ **SOPS bundle key rename** (gated en Hermes alignment) — `sops -d .secrets/dev.env.enc` → rename `HERMES_WEBHOOK_URL` → `HERMES_BASE_URL` + `HERMES_AUTH_TOKEN` → `HERMES_HMAC_SECRET` → re-encrypt. Mirror en `paper.env.enc` + `live.env.enc`.
+
 ### Ya en plan, **NO en MVP** (mover explícito)
 - ❌ Migración engine a Lumibot/Lean/Nautilus en v2 (BrokerInterface deja la puerta)
 
