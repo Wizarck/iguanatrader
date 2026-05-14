@@ -1,7 +1,10 @@
-"""Proposals routes — slice T4 fills the read body + adds manual-approve.
+"""Proposals routes — wired for list + get + manual-approve.
 
 Endpoints:
 
+* ``GET /proposals`` (slice ``proposals-list-endpoint``) — returns the
+  :class:`ProposalListOut` for the authenticated tenant, ordered
+  ``created_at DESC``.
 * ``GET /proposals/{proposal_id}`` (T4 body fill) — returns the
   :class:`ProposalOut` projection.
 * ``POST /proposals/{proposal_id}/approve`` (T4 NEW) — operator-override
@@ -9,8 +12,8 @@ Endpoints:
   :class:`ProposalApproved` directly. slowapi-limited to 5/min per
   the slice-T4 §4.5 rate-limit budget.
 
-Other stubs (``list_proposals``) remain 501 until a follow-up slice
-fills them — the keystone path is single-proposal lookup + approve.
+After slice ``proposals-list-endpoint`` shipped there are zero
+remaining 501 stubs in the trading route surface.
 """
 
 from __future__ import annotations
@@ -29,33 +32,32 @@ from iguanatrader.contexts.trading.events import ProposalApproved
 from iguanatrader.contexts.trading.repository import TradeProposalRepository
 from iguanatrader.persistence import User
 from iguanatrader.shared.contextvars import session_var
-from iguanatrader.shared.errors import (
-    NotFoundError,
-    NotImplementedFeatureError,
-)
+from iguanatrader.shared.errors import NotFoundError
 
 log = structlog.get_logger("iguanatrader.api.routes.proposals")
 
 router = APIRouter(prefix="/proposals", tags=["proposals"])
 
 
-def _stub(method: str, path: str) -> NotImplementedFeatureError:
-    """Build the canonical 501 raise for a trading-route stub."""
-    log.info("trading.routes.stub_invoked", method=method, path=path)
-    return NotImplementedFeatureError(
-        detail=(
-            f"{method} /api/v1{path} will be wired in a follow-up slice (T4 ships "
-            "single-proposal lookup + manual-approve only)."
-        ),
-    )
-
-
 @router.get("", response_model=ProposalListOut)
 async def list_proposals(
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> ProposalListOut:
-    """List proposals for the authenticated tenant — list-stub remains 501."""
-    raise _stub("GET", "/proposals")
+    """List proposals for the authenticated tenant (FR11)."""
+    session_var.set(db)
+    repo = TradeProposalRepository()
+    rows = await repo.list_for_tenant()
+    log.info(
+        "api.proposals.list",
+        tenant_id=str(user.tenant_id),
+        count=len(rows),
+    )
+    return ProposalListOut(
+        items=[ProposalOut.model_validate(r) for r in rows],
+        total=len(rows),
+        next_cursor=None,
+    )
 
 
 @router.get("/{proposal_id}", response_model=ProposalOut)

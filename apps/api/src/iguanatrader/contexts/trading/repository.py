@@ -197,6 +197,16 @@ class TradeProposalRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return cast("TradeProposal | None", result.scalars().first())
 
+    async def list_for_tenant(self) -> list[TradeProposal]:
+        """List all proposals for the current tenant (slice proposals-list-endpoint).
+
+        Tenant filter automatic via slice-3 ``tenant_listener``. Ordered
+        ``created_at DESC`` (most-recent first); pagination v2.
+        """
+        stmt = select(TradeProposal).order_by(TradeProposal.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 class TradeRepository(BaseRepository):
     """Persistence operations for :class:`Trade` (slice T4)."""
