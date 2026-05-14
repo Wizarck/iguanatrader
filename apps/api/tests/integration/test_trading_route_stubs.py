@@ -33,19 +33,14 @@ async def _login(client: AsyncClient) -> None:
     assert resp.status_code == 200, resp.text
 
 
-STUB_ENDPOINTS: list[tuple[str, str]] = [
-    ("GET", "/api/v1/trades"),
-    ("GET", "/api/v1/trades/00000000-0000-0000-0000-000000000001"),
-    ("GET", "/api/v1/trades/00000000-0000-0000-0000-000000000001/fills"),
-    ("GET", "/api/v1/portfolio"),
-    ("GET", "/api/v1/portfolio/positions"),
-    ("GET", "/api/v1/portfolio/equity"),
-    ("GET", "/api/v1/strategies"),
-    ("GET", "/api/v1/strategies/SPY"),
-    ("DELETE", "/api/v1/strategies/SPY"),
-    ("GET", "/api/v1/proposals"),
-    ("GET", "/api/v1/proposals/00000000-0000-0000-0000-000000000001"),
-]
+#: Endpoints that legitimately still raise 501 + Problem JSON until their
+#: owning slice lands. Intentionally empty after slice
+#: ``proposals-list-endpoint`` shipped — zero remaining 501 stubs in the
+#: trading route surface. The parametrized
+#: ``test_trading_stub_returns_501_problem`` test becomes a no-op; the
+#: ``test_openapi_surfaces_all_four_trading_route_prefixes`` smoke test
+#: stays as the canonical surface check.
+STUB_ENDPOINTS: list[tuple[str, str]] = []
 
 
 @pytest.mark.parametrize("method,path", STUB_ENDPOINTS)
@@ -70,27 +65,6 @@ async def test_trading_stub_returns_501_problem(
     assert body["title"] == "Feature Not Implemented"
     assert "T4" in body.get("detail", "")
     assert path in body.get("detail", "")
-
-
-async def test_strategies_put_with_body_returns_501_problem(
-    client: AsyncClient,
-    seeded_tenant_user: dict[str, str],
-) -> None:
-    """``PUT /strategies/{symbol}`` consumes a body but still 501s."""
-    _ = seeded_tenant_user
-    await _login(client)
-
-    body = {
-        "strategy_kind": "donchian_atr",
-        "params": {"lookback": 20, "atr_mult": 2.0},
-        "enabled": True,
-    }
-    resp = await client.put("/api/v1/strategies/SPY", json=body)
-
-    assert resp.status_code == 501
-    payload = resp.json()
-    assert payload["type"] == "urn:iguanatrader:error:not-implemented"
-    assert "T4" in payload["detail"]
 
 
 async def test_openapi_surfaces_all_four_trading_route_prefixes(
