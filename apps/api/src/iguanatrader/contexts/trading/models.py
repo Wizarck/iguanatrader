@@ -175,7 +175,14 @@ class Trade(Base):
 
     __tablename__ = "trades"
     __tablename_is_append_only__ = True
-    __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset({"state", "closed_at"})
+    # Slice ``trades-add-exit-and-realised-pnl-columns`` extension: the
+    # close-flow service will populate ``exit_reason`` + ``realised_pnl``
+    # in the same UPDATE that transitions ``state`` to a closed value;
+    # both columns join the whitelist so the append-only listener
+    # permits that UPDATE.
+    __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset(
+        {"state", "closed_at", "exit_reason", "realised_pnl"}
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -200,6 +207,16 @@ class Trade(Base):
     )
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+        nullable=True,
+    )
+    # Categorical close reason — one of {'stop','target','manual','expiry'}
+    # enforced by ``ck_trades_exit_reason_allowed``. NULL = "unknown"
+    # (legacy rows + any row still in ``state == 'open'``).
+    exit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Realised P&L at close, account currency, NUMERIC(18, 8). NULL on
+    # legacy rows + open trades; risk-cap aggregations skip NULL.
+    realised_pnl: Mapped[Any | None] = mapped_column(
+        Numeric(18, 8),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -390,6 +407,14 @@ Trade.__table_args__ = (
         name="ck_trades_state_allowed",
     ),
     CheckConstraint("quantity > 0", name="ck_trades_quantity_positive"),
+    # Mirrors migration ``0015_trade_exit_columns``: NULL or one of the
+    # four canonical close categories. Declared at the model level so
+    # ``Base.metadata.create_all`` (used by the in-memory SQLite test
+    # path) ships the same constraint as the migrated DB.
+    CheckConstraint(
+        "exit_reason IS NULL OR exit_reason IN ('stop','target','manual','expiry')",
+        name="ck_trades_exit_reason_allowed",
+    ),
 )
 Order.__table_args__ = (
     CheckConstraint(
