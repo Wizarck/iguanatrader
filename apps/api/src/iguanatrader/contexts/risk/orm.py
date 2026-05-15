@@ -28,7 +28,7 @@ each class are read by the slice-3 global listeners (per
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from sqlalchemy import (
@@ -37,6 +37,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     Text,
     Uuid,
@@ -224,9 +225,56 @@ class KillSwitchEventORM(Base):
     )
 
 
+class TrailingStopAuditORM(Base):
+    """Append-only audit row per trailing-stop ratchet (``trailing_stop_audit``).
+
+    Slice ``orchestration-trailing-stops-cron``. One INSERT per sweep
+    evaluation where :func:`compute_trailing_stop` returned
+    ``reason='trailed'`` (the candidate strictly exceeded the previous
+    stop). ``no_update`` / ``trigger_not_reached`` outcomes are logged
+    but not persisted — see migration 0016 module docstring for the
+    bloat-prevention rationale.
+
+    Also serves as the **stop-history lookup** for the sweep service:
+    ``latest(new_stop WHERE trade_id = ? ORDER BY swept_at DESC)`` is
+    the trade's current effective stop. Fall back to
+    ``TradeProposal.stop_price`` when this table has no row for the
+    trade yet.
+
+    Fully append-only: ``__append_only_mutable_columns__ = frozenset()``.
+    """
+
+    __tablename__ = "trailing_stop_audit"
+    __tablename_is_append_only__ = True
+    __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset()
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    trade_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("trades.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    swept_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    old_stop: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
+    new_stop: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
+    highest_close_since_entry: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
+    atr: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
+    bars_evaluated: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 __all__ = [
     "KillSwitchEventORM",
     "KillSwitchStateORM",
     "RiskEvaluationORM",
     "RiskOverrideORM",
+    "TrailingStopAuditORM",
 ]
