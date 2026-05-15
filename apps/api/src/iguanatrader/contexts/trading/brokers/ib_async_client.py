@@ -49,7 +49,14 @@ def _to_contract(c: Contract) -> Any:
 
 
 def _to_order(o: IBOrder) -> Any:
-    """Translate our :class:`IBOrder` into an ``ib_async.Order``."""
+    """Translate our :class:`IBOrder` into an ``ib_async.Order``.
+
+    When ``o.algo_kind`` is set (slice ``ibkr-execution-algos-entry``),
+    the ``ib_async.Order``'s ``algoStrategy`` + ``algoParams`` fields are
+    populated per IBKR's API spec. The base order type (MKT/LMT/STP) is
+    independent of the algo — IBKR layers the algo on top of any order
+    type, though in practice we ship algos with MKT only in this slice.
+    """
     from ib_async import LimitOrder, MarketOrder, StopLimitOrder, StopOrder
 
     qty = float(o.total_quantity)  # ib_async expects float-ish quantities.
@@ -76,7 +83,48 @@ def _to_order(o: IBOrder) -> Any:
         order.account = o.account
     if o.order_ref is not None:
         order.orderRef = o.order_ref
+
+    if o.algo_kind is not None and o.algo_kind != "market":
+        _attach_algo(order, o.algo_kind, o.algo_params)
+
     return order
+
+
+def _attach_algo(order: Any, algo_kind: str, algo_params: dict[str, str] | None) -> None:
+    """Populate ``algoStrategy`` + ``algoParams`` on an ``ib_async.Order``.
+
+    Per IBKR's algoStrategy spec
+    (https://interactivebrokers.github.io/tws-api/ibalgos.html):
+
+    * **Adaptive**: ``algoStrategy="Adaptive"``, single param
+      ``adaptivePriority``. Allowed values: ``Patient`` / ``Normal`` /
+      ``Urgent``. Defaults to ``Normal`` — a sensible retail-equity
+      tradeoff between fill speed and price improvement.
+    * **TWAP**: ``algoStrategy="Twap"``, params ``strategyType`` (one of
+      ``Marketable`` / ``Matching Midpoint`` / ``Matching Same Side`` /
+      ``Matching Last``) and ``startTime`` / ``endTime`` (UTC strings).
+      Defaults: ``strategyType="Marketable"`` (most aggressive — fills
+      against the existing book), times left blank so IBKR uses "now"
+      + a sensible end window for the order quantity.
+
+    Callers can override defaults via ``algo_params`` (merged on top).
+    """
+    from ib_async import TagValue
+
+    defaults: dict[str, dict[str, str]] = {
+        "adaptive": {"adaptivePriority": "Normal"},
+        "twap": {"strategyType": "Marketable"},
+    }
+    strategy_name = {"adaptive": "Adaptive", "twap": "Twap"}.get(algo_kind)
+    if strategy_name is None:
+        raise NotImplementedError(f"algo_kind={algo_kind!r} not wired in IbAsyncIBClient")
+
+    merged_params = dict(defaults[algo_kind])
+    if algo_params is not None:
+        merged_params.update(algo_params)
+
+    order.algoStrategy = strategy_name
+    order.algoParams = [TagValue(k, v) for k, v in merged_params.items()]
 
 
 def _from_position(p: Any) -> PositionRecord:

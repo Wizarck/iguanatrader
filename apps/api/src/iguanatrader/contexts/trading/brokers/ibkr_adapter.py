@@ -478,6 +478,7 @@ class IBKRAdapter(HeartbeatMixin):
             aux_price=order.stop_price,
             account=self._brokerage.account_code,
             order_ref=str(order.client_order_id) if order.client_order_id else None,
+            algo_kind=order.algo_kind,
         )
 
     def _order_id_from_ref(self, order_ref: str | None) -> UUID:
