@@ -123,9 +123,10 @@ async def test_returns_last_n_sorted_ascending(
     assert len(history.bars) == 200
     # Ascending: first bar's ts must be earlier than last.
     assert history.bars[0].timestamp < history.bars[-1].timestamp
-    # Last 200 of 250: closes 50..249.
+    # Seeded 250 bars with close=100+d for d in 0..249 → closes 100..349.
+    # Last 200 of 250: closes 150..349.
     assert history.bars[0].close == Decimal("150")
-    assert history.bars[-1].close == Decimal("249")
+    assert history.bars[-1].close == Decimal("349")
 
 
 @pytest.mark.asyncio

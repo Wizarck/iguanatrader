@@ -8,7 +8,7 @@ injected on every SELECT).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -60,7 +60,10 @@ class DBMarketDataAdapter:
         rows.reverse()  # caller expects ascending ts
         bars = tuple(
             Bar(
-                timestamp=row.ts,
+                # MarketDataBar.ts is DateTime(timezone=True); Postgres
+                # preserves tz, SQLite strips it on round-trip. Coerce to
+                # UTC-aware so downstream callers can mix-compare freely.
+                timestamp=row.ts if row.ts.tzinfo is not None else row.ts.replace(tzinfo=UTC),
                 open=row.open,
                 high=row.high,
                 low=row.low,
