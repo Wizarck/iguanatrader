@@ -264,6 +264,7 @@ class OrchestrationService:
         market_data_port: Any | None = None,
         strategy_config_repo: Any | None = None,
         ingestion_service: Any | None = None,
+        trailing_stop_sweep_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
     ) -> None:
@@ -394,15 +395,60 @@ class OrchestrationService:
             )
             scheduler.add_job(sync_spec)
 
+        # Slice orchestration-trailing-stops-cron: 6th job sweeps open
+        # trades every 15 min during US market hours (9-16 UTC matches
+        # the existing market-hours convention; the daemon's clock is
+        # UTC). The sweep service short-circuits internally when
+        # ``RiskCaps.trail_trigger_pct is None`` so registration is
+        # unconditional — gating happens via the cap, not via the
+        # bootstrap. Backwards-compat: when the service is not wired
+        # (older test setups), the cron is skipped.
+        if trailing_stop_sweep_service is not None:
+            sweep_service: Any = trailing_stop_sweep_service
+
+            async def _sweep_trailing_stops() -> None:
+                try:
+                    result = await sweep_service.sweep()
+                    logger.info(
+                        "orchestration.trailing_stops_sweep.complete",
+                        extra={
+                            "trades_evaluated": result.trades_evaluated,
+                            "trades_trailed": result.trades_trailed,
+                            "trades_no_update": result.trades_no_update,
+                            "trades_trigger_not_reached": result.trades_trigger_not_reached,
+                            "trades_skipped_no_bars": result.trades_skipped_no_bars,
+                            "duration_ms": result.duration_ms,
+                        },
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "orchestration.trailing_stops_sweep.failed",
+                        extra={"error": str(exc), "type": type(exc).__name__},
+                    )
+
+            sweep_spec = JobSpec(
+                name="trailing_stops_sweep",
+                fn=_sweep_trailing_stops,
+                cron_kwargs={
+                    "hour": "9-16",
+                    "minute": "*/15",
+                    "day_of_week": "mon-fri",
+                },
+            )
+            scheduler.add_job(sweep_spec)
+
         logger.info(
             "orchestration.routines.bootstrapped",
             extra={
                 "routine_count": (
-                    len(cron_kwargs_by_routine) + (1 if ingestion_service is not None else 0)
+                    len(cron_kwargs_by_routine)
+                    + (1 if ingestion_service is not None else 0)
+                    + (1 if trailing_stop_sweep_service is not None else 0)
                 ),
                 "watchlist_count": len(watchlist_symbols),
                 "propose_loops_wired": wire_propose_loops,
                 "market_data_sync_wired": ingestion_service is not None,
+                "trailing_stops_sweep_wired": trailing_stop_sweep_service is not None,
             },
         )
 
