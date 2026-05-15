@@ -2,11 +2,11 @@
 schema: agents-md/v1
 version: 0.1.0
 inherits_from:
-  - github.com/Wizarck/ai-playbook@v0.13.4
+  - github.com/Wizarck/ai-playbook@v0.14.0
 skills_sources:
-  - Wizarck/ai-playbook@v0.13.4
+  - Wizarck/ai-playbook@v0.14.0
   - Wizarck/eligia-skills@v0.3.0
-updated: 2026-05-14
+updated: 2026-05-15
 project: iguanatrader
 owner: arturo6ramirez@gmail.com
 capabilities_map: true
