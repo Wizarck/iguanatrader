@@ -53,6 +53,7 @@ from iguanatrader.api.auth import (
 )
 from iguanatrader.api.deps import (
     COOKIE_NAME,
+    PasswordAgingState,
     bootstrap_load_user_by_email,
     get_current_user,
     get_db,
@@ -258,13 +259,40 @@ async def logout(request: Request, response: Response) -> dict[str, bool]:
 
 
 @router.get("/me", response_model=MeResponse)
-async def me(user: User = Depends(get_current_user)) -> MeResponse:
+async def me(
+    request: Request,
+    user: User = Depends(get_current_user),
+) -> MeResponse:
     """Return the authenticated user's safe payload.
 
     NEVER includes ``password_hash`` (Pydantic :class:`MeResponse` only
     declares the safe fields; SQLAlchemy ``User`` instance is consumed
     field-by-field, not serialised wholesale).
+
+    Slice ``auth-password-aging-warning``: ``password_age_days`` and
+    ``password_aging_state`` are stashed on ``request.state`` by
+    :func:`get_current_user` (which already loaded the user and computed
+    the classifier). We read them back here instead of re-running the
+    classifier so the contract stays single-sourced. Falls back to
+    ``(None, "fresh")`` if the attributes were not set — should not
+    happen in practice (the dependency always sets them when it runs)
+    but defensive defaults keep the response shape stable.
     """
+    password_age_days: int | None = getattr(request.state, "password_age_days", None)
+    raw_state = getattr(request.state, "password_aging_state", "fresh")
+    # Narrow the runtime value to the Literal the DTO expects. The
+    # dependency only ever sets one of the three known states; anything
+    # else falls back to ``"fresh"`` (defensive: keeps the banner off if
+    # ``request.state`` is mutated by an unrelated middleware). The
+    # explicit ``if`` ladder lets mypy infer the Literal narrowing —
+    # ``in (tuple-of-literals)`` is NOT a guard the type system honours.
+    password_aging_state: PasswordAgingState
+    if raw_state == "ageing":
+        password_aging_state = "ageing"
+    elif raw_state == "stale":
+        password_aging_state = "stale"
+    else:
+        password_aging_state = "fresh"
     return MeResponse(
         user_id=user.id,
         tenant_id=user.tenant_id,
@@ -272,6 +300,8 @@ async def me(user: User = Depends(get_current_user)) -> MeResponse:
         role=user.role_enum,
         created_at=user.created_at,
         must_change_password=bool(user.must_change_password),
+        password_age_days=password_age_days,
+        password_aging_state=password_aging_state,
     )
 
 

@@ -155,6 +155,34 @@ Operator self-service recovery (`POST /api/v1/auth/forgot-password`)
 will then fan the temporary credential out to every channel the user
 has opted into.
 
+### Password ageing banner (soft rotate reminder)
+
+Slice `auth-password-aging-warning` surfaces a dashboard banner once
+`password_changed_at` crosses the configured age. Two env vars tune the
+boundaries (both default to the NIST SP 800-63B baseline):
+
+| Var | Default | Effect |
+|---|---|---|
+| `IGUANATRADER_AUTH_PASSWORD_AGEING_DAYS` | `60` | Days before the soft warning banner (`role="status"`) fires. |
+| `IGUANATRADER_AUTH_PASSWORD_STALE_DAYS` | `90` | Days before the assertive banner (`role="alert"`) fires. |
+
+Set both via `.env` (only when you want to tighten / relax the cadence
+— the defaults are sensible for most deployments):
+
+```bash
+cat >> .env <<'ENV'
+IGUANATRADER_AUTH_PASSWORD_AGEING_DAYS=45
+IGUANATRADER_AUTH_PASSWORD_STALE_DAYS=75
+ENV
+docker compose -f docker-compose.mvp.yml up -d --force-recreate api
+```
+
+Legacy users with `password_changed_at IS NULL` (planted before
+migration 0013) are grandfathered in — they see no banner until their
+next password rotation populates the column. Non-positive or
+non-numeric env overrides fall back to the defaults with a structlog
+warning (`auth.password_aging.invalid_threshold_env`).
+
 ## Step 3 — Build the images
 
 ```bash

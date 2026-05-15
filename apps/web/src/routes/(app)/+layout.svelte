@@ -12,6 +12,7 @@
    * the auth store on mount so any descendant component reading
    * `authStore.user` sees the canonical value.
    */
+  import PasswordAgeingBanner from '$lib/components/PasswordAgeingBanner.svelte';
   import Sidebar from '$lib/components/nav/Sidebar.svelte';
   import TopBar from '$lib/components/nav/TopBar.svelte';
   import { authStore } from '$lib/stores/auth.svelte';
@@ -28,6 +29,12 @@
   <div class="shell__body">
     <TopBar user={data.user} />
     <main class="shell__main" id="main-content" tabindex="-1">
+      {#if data.user && data.user.password_aging_state && data.user.password_aging_state !== 'fresh'}
+        <PasswordAgeingBanner
+          ageingState={data.user.password_aging_state}
+          ageDays={data.user.password_age_days ?? null}
+        />
+      {/if}
       {@render children()}
     </main>
   </div>

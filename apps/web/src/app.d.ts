@@ -18,6 +18,20 @@ declare global {
          * `/account/change-password?required=1` via `hooks.server.ts`.
          */
         must_change_password: boolean;
+        /**
+         * Slice `auth-password-aging-warning`: days since the user last
+         * rotated their password. `null` when `password_changed_at IS NULL`
+         * (legacy users grandfathered in by the backend classifier).
+         */
+        password_age_days?: number | null;
+        /**
+         * Slice `auth-password-aging-warning`: classifier output the
+         * `(app)/+layout.svelte` shell consults to decide whether to
+         * mount `PasswordAgeingBanner`. Defaults to `'fresh'` on the
+         * backend so older API consumers (and unmigrated rows) never
+         * trip the banner.
+         */
+        password_aging_state?: 'fresh' | 'ageing' | 'stale';
       } | null;
     }
     // interface PageData {}
