@@ -69,7 +69,18 @@ class SecretEnv:
 
     @property
     def tws_port(self) -> int:
-        """``TWS_PORT`` — IBKR TWS gateway port (paper 7497, live 7496)."""
+        """``TWS_PORT`` — IBKR API listen port.
+
+        Choose based on the IBKR client the operator runs:
+
+        * **TWS desktop** (full client, with UI): paper ``7497`` / live ``7496``.
+        * **IB Gateway** (headless, used by the docker sidecar shipped
+          in slice ``ibkr-gateway-sidecar``): paper ``4002`` / live ``4001``.
+
+        ``docker-compose.ibgateway.yml`` defaults to ``4002`` (paper
+        Gateway); operators flip both ``TRADING_MODE`` + ``TWS_PORT``
+        when cutting over to live.
+        """
         raw = _required("TWS_PORT")
         try:
             return int(raw)
