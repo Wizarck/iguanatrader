@@ -384,6 +384,23 @@ class FillRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
+    async def latest_filled_at(self) -> datetime | None:
+        """Return ``MAX(filled_at)`` across all fills, or ``None`` if empty.
+
+        Used by :meth:`TradingService.startup_reconcile` (slice
+        ``order-timeout-restart-reconcile``) to compute the ``since``
+        boundary for the broker reconcile call after a daemon restart.
+        Tenant filter is automatic via the slice-3 ``tenant_listener``;
+        callers running outside a tenant context (e.g. system-level
+        bootstrap that wants ALL tenants' last fill) should iterate
+        tenants explicitly.
+        """
+        from sqlalchemy import func
+
+        stmt = select(func.max(Fill.filled_at))
+        result = await self.session.execute(stmt)
+        return cast("datetime | None", result.scalar_one_or_none())
+
 
 class EquitySnapshotRepository(BaseRepository):
     """Persistence operations for :class:`EquitySnapshot` (slice T4)."""
