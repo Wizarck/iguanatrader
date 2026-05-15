@@ -402,8 +402,14 @@ TradeProposal.__table_args__ = (
 Trade.__table_args__ = (
     CheckConstraint("side IN ('buy','sell')", name="ck_trades_side_allowed"),
     CheckConstraint("mode IN ('paper','live')", name="ck_trades_mode_allowed"),
+    # Slice ``trade-state-machine-redesign`` (migration 0017): three-state
+    # enum. ``open`` = active (pre-fill or live), ``closing`` = exit order
+    # submitted, ``closed`` = terminated (``exit_reason`` records the
+    # category, ``realised_pnl`` the P&L). The pre-slice four-variant
+    # encoding (``closed_filled`` / ``closed_force_exit`` /
+    # ``closed_canceled``) was redundant with the ``exit_reason`` column.
     CheckConstraint(
-        "state IN ('open','closed_filled','closed_force_exit','closed_canceled')",
+        "state IN ('open', 'closing', 'closed')",
         name="ck_trades_state_allowed",
     ),
     CheckConstraint("quantity > 0", name="ck_trades_quantity_positive"),

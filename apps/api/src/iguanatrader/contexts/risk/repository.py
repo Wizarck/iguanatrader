@@ -139,12 +139,18 @@ class RiskRepository(RiskRepositoryPort):
         )
 
     async def _count_open_trades(self) -> int:
-        """Count rows in ``trades`` whose ``state == 'open'``.
+        """Count rows in ``trades`` whose ``state`` indicates a live position.
+
+        Per slice ``trade-state-machine-redesign`` the canonical "live"
+        states are ``'open'`` (entry submitted / filled, no exit yet)
+        and ``'closing'`` (exit order submitted, position still open
+        at the broker). Both consume a position slot for the ``max_open``
+        cap; ``'closed'`` does not.
 
         Tenant-scoped by the global ``tenant_listener``. Returns 0 when
         the table is empty.
         """
-        stmt = select(func.count()).select_from(Trade).where(Trade.state == "open")
+        stmt = select(func.count()).select_from(Trade).where(Trade.state.in_(("open", "closing")))
         result = await self._session.execute(stmt)
         value = result.scalar_one_or_none()
         return int(value) if value is not None else 0
@@ -180,19 +186,20 @@ class RiskRepository(RiskRepositoryPort):
 
         Filters:
 
-        * ``state == 'closed_filled'`` OR similar closed values — the
-          column-level check constraint enumerates them. We accept any
-          state that is NOT ``'open'`` (a closed-equivalent row), per
-          the proposal's "trades closed in the window" wording.
+        * ``state == 'closed'`` — terminal state per slice
+          ``trade-state-machine-redesign``. ``open`` and ``closing``
+          trades have not yet realised their P&L. (Pre-slice the
+          condition was ``state != 'open'`` which incorrectly included
+          partial / closing states.)
         * ``closed_at >= since``.
         * ``realised_pnl IS NOT NULL`` — legacy rows from before the
-          column shipped are excluded.
+          column shipped (slice 0015) are excluded.
 
         Returns ``Decimal("0")`` when no rows match (``COALESCE`` at
         the SQL level keeps the type as Decimal).
         """
         stmt = select(func.coalesce(func.sum(Trade.realised_pnl), 0)).where(
-            Trade.state != "open",
+            Trade.state == "closed",
             Trade.closed_at.is_not(None),
             Trade.closed_at >= since,
             Trade.realised_pnl.is_not(None),
@@ -213,7 +220,7 @@ class RiskRepository(RiskRepositoryPort):
         stmt = (
             select(Trade.exit_reason)
             .where(
-                Trade.state != "open",
+                Trade.state == "closed",
                 Trade.closed_at.is_not(None),
             )
             .order_by(Trade.closed_at.desc())
@@ -236,7 +243,7 @@ class RiskRepository(RiskRepositoryPort):
         stmt = (
             select(Trade.symbol, func.max(Trade.closed_at))
             .where(
-                Trade.state != "open",
+                Trade.state == "closed",
                 Trade.closed_at.is_not(None),
             )
             .group_by(Trade.symbol)
