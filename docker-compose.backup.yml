@@ -1,0 +1,61 @@
+# iguanatrader — Postgres backup overlay (slice postgres-backup-cron).
+#
+# Layers on top of docker-compose.postgres.yml. Runs a long-lived
+# `pg-backup` container that takes a daily pg_dump at 02:00 UTC and
+# rotates files older than 30 days.
+#
+# Bring-up (assuming the postgres overlay is already up):
+#
+#   scripts/iguana-compose.sh paper up -d pg-backup
+#
+# The backup container's command is a sleep+exec loop running
+# scripts/postgres-backup.sh; it waits until the next 02:00 UTC tick,
+# then dumps. The first run on container start is also offset to
+# 02:00 UTC so an operator bringing up the stack at 14:00 UTC doesn't
+# trigger an immediate backup.
+#
+# Backups land at /backups inside the container, bind-mounted to
+# /root/iguanatrader-backups on the VPS host. Operator copies them
+# off-VPS via rclone / b2 sync / aws s3 sync as part of slice
+# `postgres-backup-offsite` (carry-forward).
+#
+# Restore: see docs/runbooks/postgres-backup-restore.md §3 — a
+# one-shot `docker compose run --rm pg-backup
+# /scripts/postgres-restore.sh /backups/<file>.sql.gz` invocation.
+
+services:
+  pg-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=${POSTGRES_USER:-iguanatrader}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-CHANGE-ME-POSTGRES-PASSWORD}
+      - PGDATABASE=${POSTGRES_DB:-iguanatrader}
+      - BACKUP_DIR=/backups
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      # Host bind for the operator to copy off-VPS. /root/iguanatrader-
+      # backups already exists on the VPS per the cutover runbook.
+      - /root/iguanatrader-backups:/backups
+      # Scripts read-only.
+      - ./scripts:/scripts:ro
+    # Sleep until the next 02:00 UTC tick, then run the backup script,
+    # then sleep 24h, repeat. Plain `sh` — no supercronic dependency.
+    # See docs/runbooks/postgres-backup-restore.md §2 for the rationale.
+    command: >
+      sh -c '
+      while true; do
+        now_s=$$(date -u +%s);
+        target_s=$$(date -u -d "tomorrow 02:00" +%s 2>/dev/null || date -ujf "%H:%M %Z" "02:00 UTC" "+%s");
+        if [ "$$target_s" -le "$$now_s" ]; then target_s=$$((target_s + 86400)); fi;
+        sleep_s=$$((target_s - now_s));
+        echo "pg-backup: sleeping $${sleep_s}s until next 02:00 UTC";
+        sleep "$$sleep_s";
+        /scripts/postgres-backup.sh || echo "pg-backup: dump failed (will retry next cycle)";
+      done
+      '
