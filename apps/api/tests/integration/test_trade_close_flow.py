@@ -69,7 +69,7 @@ class _FakeBroker(BrokerPort):
 
     async def place_order(self, order: NewOrder) -> BrokerOrderId:
         self.placed_orders.append(order)
-        broker_id = f"FAKE-{self._next_id:04d}"
+        broker_id = BrokerOrderId(f"FAKE-{self._next_id:04d}")
         self._next_id += 1
         return broker_id
 
