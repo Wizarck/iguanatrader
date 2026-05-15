@@ -17,7 +17,7 @@ to the global append-only invariant — see slice K1 design D4).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -40,6 +40,26 @@ from iguanatrader.contexts.risk.orm import (
     RiskOverrideORM,
 )
 from iguanatrader.contexts.risk.ports import RiskRepositoryPort
+from iguanatrader.contexts.trading.models import EquitySnapshot, Trade
+from iguanatrader.shared.time import now as utc_now
+
+#: Fallback capital when ``equity_snapshots`` is empty (early tenant,
+#: equity-snapshot daemon not yet writing rows). Matches the
+#: ``DEFAULT_EQUITY`` constant used by strategy modules so percentage
+#: caps render the same units across the system. The risk engine
+#: degrades cleanly under this fallback: drawdown stays 0 (peak ==
+#: latest both None), daily/weekly loss percentages divide by the
+#: fallback so they remain meaningful even without snapshots.
+_FALLBACK_CAPITAL: Decimal = Decimal("10000")
+
+#: Trailing-window denominator the stoploss-guard reports through
+#: :attr:`RiskState.recent_trades_lookback`. Mirrors
+#: :attr:`RiskCaps.stoploss_guard_lookback` field default (5). Read
+#: here rather than imported from RiskCaps to keep the repository
+#: independent from the cap-loading path (env var overrides happen at
+#: the service layer; this query needs a stable lookback for the SQL
+#: ``LIMIT`` clause).
+_STOPLOSS_GUARD_LOOKBACK: int = 5
 
 
 class RiskRepository(RiskRepositoryPort):
@@ -49,23 +69,198 @@ class RiskRepository(RiskRepositoryPort):
         self._session = session
 
     async def load_risk_state(self, tenant_id: UUID) -> RiskState:
-        """Return a placeholder :class:`RiskState` until T1 + O1 land.
+        """Compose a :class:`RiskState` from real trades + equity snapshots.
 
-        K1's bridge contract (per design + ``docs/openspec-slice.md``)
-        says risk state is derived from equity snapshots (O1) + open
-        positions (T1). Both are out of scope for K1; this method
-        returns a neutral default so the engine can be exercised in
-        unit + integration tests against an empty state.
+        Per slice ``wire-risk-state-real-data`` proposal: fans out 6
+        scoped reads (open count, latest+peak equity, day P&L, week
+        P&L, stoploss-guard tally + lookback, per-symbol seconds-since-
+        last-close), assembles into a frozen :class:`RiskState`, and
+        returns. Each helper is a single SELECT; all are tenant-scoped
+        by the slice-3 ``tenant_listener`` via
+        :data:`tenant_id_var` (the explicit ``tenant_id`` arg is
+        accepted for Protocol conformance and reserved for future
+        defence-in-depth filtering).
 
-        Real implementation lands when:
+        Degradation modes:
 
-        * O1 ships ``equity_snapshots`` + the daily P&L roll-up.
-        * T1 ships the open-positions count query.
-
-        Until then the service layer can override this method (or
-        the test fixture can swap an in-memory port impl).
+        * No ``equity_snapshots`` rows → ``capital`` falls back to
+          :data:`_FALLBACK_CAPITAL`; drawdown stays ``Decimal("0")``.
+          The equity-snapshot daemon ships separately; until then the
+          state still populates correctly from trades alone.
+        * No closed trades → all P&L sums coalesce to ``0``; the
+          stoploss-guard count and the per-symbol seconds dict are
+          both empty. Engine sees a neutral baseline.
+        * ``realised_pnl IS NULL`` on a closed row → the row is
+          excluded from the P&L sum (legacy trades closed before
+          slice ``trades-add-exit-and-realised-pnl-columns`` shipped
+          have NULL here). Same NULL-tolerance for ``exit_reason``
+          in the stoploss-guard tally.
         """
-        return RiskState(capital=Decimal(0))
+        now = utc_now()
+        today_utc = now.date()
+        week_start_date = today_utc - timedelta(days=today_utc.weekday())
+        day_start = datetime.combine(today_utc, time.min, tzinfo=UTC)
+        week_start = datetime.combine(week_start_date, time.min, tzinfo=UTC)
+
+        open_count = await self._count_open_trades()
+        latest_equity = await self._load_latest_equity()
+        peak_equity = await self._load_peak_equity()
+
+        capital = latest_equity if latest_equity is not None else _FALLBACK_CAPITAL
+        if (
+            peak_equity is not None
+            and peak_equity > 0
+            and latest_equity is not None
+            and peak_equity > latest_equity
+        ):
+            drawdown_pct = (peak_equity - latest_equity) / peak_equity
+        else:
+            drawdown_pct = Decimal("0")
+
+        day_pnl = await self._sum_realised_pnl_since(day_start)
+        week_pnl = await self._sum_realised_pnl_since(week_start)
+        day_loss_pct = max(Decimal("0"), -day_pnl / capital) if capital > 0 else Decimal("0")
+        week_loss_pct = max(Decimal("0"), -week_pnl / capital) if capital > 0 else Decimal("0")
+
+        recent_stop_count, recent_count = await self._count_recent_stoplosses(
+            _STOPLOSS_GUARD_LOOKBACK,
+        )
+        seconds_since = await self._seconds_since_last_close_by_symbol(now)
+
+        return RiskState(
+            capital=capital,
+            day_to_date_loss_pct=day_loss_pct,
+            week_to_date_loss_pct=week_loss_pct,
+            open_positions_count=open_count,
+            peak_to_trough_drawdown_pct=drawdown_pct,
+            recent_stoploss_count_trailing=recent_stop_count,
+            recent_trades_lookback=recent_count,
+            seconds_since_last_close_by_symbol=seconds_since,
+        )
+
+    async def _count_open_trades(self) -> int:
+        """Count rows in ``trades`` whose ``state == 'open'``.
+
+        Tenant-scoped by the global ``tenant_listener``. Returns 0 when
+        the table is empty.
+        """
+        stmt = select(func.count()).select_from(Trade).where(Trade.state == "open")
+        result = await self._session.execute(stmt)
+        value = result.scalar_one_or_none()
+        return int(value) if value is not None else 0
+
+    async def _load_latest_equity(self) -> Decimal | None:
+        """Latest ``account_equity`` ordered by ``created_at DESC``.
+
+        Returns ``None`` when ``equity_snapshots`` is empty for the
+        current tenant — caller falls back to :data:`_FALLBACK_CAPITAL`.
+        """
+        stmt = (
+            select(EquitySnapshot.account_equity)
+            .order_by(EquitySnapshot.created_at.desc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        value = result.scalar_one_or_none()
+        return Decimal(str(value)) if value is not None else None
+
+    async def _load_peak_equity(self) -> Decimal | None:
+        """``MAX(account_equity)`` across the tenant's history.
+
+        Returns ``None`` when the table is empty. Drawdown computation
+        caller treats ``None`` as "no peak yet" → ``drawdown_pct = 0``.
+        """
+        stmt = select(func.max(EquitySnapshot.account_equity))
+        result = await self._session.execute(stmt)
+        value = result.scalar_one_or_none()
+        return Decimal(str(value)) if value is not None else None
+
+    async def _sum_realised_pnl_since(self, since: datetime) -> Decimal:
+        """``SUM(realised_pnl)`` over trades closed at-or-after ``since``.
+
+        Filters:
+
+        * ``state == 'closed_filled'`` OR similar closed values — the
+          column-level check constraint enumerates them. We accept any
+          state that is NOT ``'open'`` (a closed-equivalent row), per
+          the proposal's "trades closed in the window" wording.
+        * ``closed_at >= since``.
+        * ``realised_pnl IS NOT NULL`` — legacy rows from before the
+          column shipped are excluded.
+
+        Returns ``Decimal("0")`` when no rows match (``COALESCE`` at
+        the SQL level keeps the type as Decimal).
+        """
+        stmt = (
+            select(func.coalesce(func.sum(Trade.realised_pnl), 0))
+            .where(
+                Trade.state != "open",
+                Trade.closed_at.is_not(None),
+                Trade.closed_at >= since,
+                Trade.realised_pnl.is_not(None),
+            )
+        )
+        result = await self._session.execute(stmt)
+        value = result.scalar_one()
+        return Decimal(str(value)) if value is not None else Decimal("0")
+
+    async def _count_recent_stoplosses(self, lookback: int) -> tuple[int, int]:
+        """Tally ``exit_reason == 'stop'`` over the trailing ``lookback`` closed trades.
+
+        Returns ``(stop_count, rows_returned)`` so the caller can
+        populate both :attr:`RiskState.recent_stoploss_count_trailing`
+        and :attr:`RiskState.recent_trades_lookback` (the actual
+        denominator used — may be less than ``lookback`` when fewer
+        closed trades exist).
+        """
+        stmt = (
+            select(Trade.exit_reason)
+            .where(
+                Trade.state != "open",
+                Trade.closed_at.is_not(None),
+            )
+            .order_by(Trade.closed_at.desc())
+            .limit(lookback)
+        )
+        result = await self._session.execute(stmt)
+        rows = result.scalars().all()
+        stop_count = sum(1 for reason in rows if reason == "stop")
+        return stop_count, len(rows)
+
+    async def _seconds_since_last_close_by_symbol(
+        self,
+        now: datetime,
+    ) -> dict[str, int]:
+        """Per-symbol integer seconds since the most-recent close.
+
+        Symbols with no closed trade are absent from the dict (the
+        cooldown protection treats absence as "no cooldown applies").
+        """
+        stmt = (
+            select(Trade.symbol, func.max(Trade.closed_at))
+            .where(
+                Trade.state != "open",
+                Trade.closed_at.is_not(None),
+            )
+            .group_by(Trade.symbol)
+        )
+        result = await self._session.execute(stmt)
+        out: dict[str, int] = {}
+        for symbol, last_close in result.all():
+            if last_close is None:
+                continue
+            # Defensive: SQLite returns naive datetimes; coerce to UTC
+            # so the subtraction is sane. Trades insert via the ORM
+            # with timezone-aware values, but raw-SQL test seeds may
+            # not, so guard explicitly.
+            if last_close.tzinfo is None:
+                last_close = last_close.replace(tzinfo=UTC)
+            delta = now - last_close
+            seconds = int(delta.total_seconds())
+            if seconds < 0:
+                seconds = 0
+            out[str(symbol)] = seconds
+        return out
 
     async def save_evaluation(
         self,
