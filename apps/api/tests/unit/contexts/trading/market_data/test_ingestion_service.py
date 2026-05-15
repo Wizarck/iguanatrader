@@ -7,7 +7,7 @@ env-var override, audit-row timing.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -263,4 +263,9 @@ async def test_audit_row_records_positive_duration_ms(
     async with with_tenant_context(tenant_id), sf() as s:
         row = (await s.execute(select(MarketDataSyncAudit))).scalar_one()
     assert row.duration_ms >= 0
-    assert row.invoked_at >= utc_now() - timedelta(seconds=10)
+    # SQLite strips tz on DateTime(timezone=True) round-trip; coerce before
+    # comparing against utc_now() (which is tz-aware).
+    invoked_at_aware = (
+        row.invoked_at if row.invoked_at.tzinfo is not None else row.invoked_at.replace(tzinfo=UTC)
+    )
+    assert invoked_at_aware >= utc_now() - timedelta(seconds=10)
