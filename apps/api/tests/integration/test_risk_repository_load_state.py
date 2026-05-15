@@ -34,6 +34,7 @@ from iguanatrader.contexts.risk.orm import (  # noqa: F401
 from iguanatrader.contexts.risk.repository import RiskRepository
 from iguanatrader.contexts.trading.models import (
     EquitySnapshot,
+    StrategyConfig,
     Trade,
     TradeProposal,
 )
@@ -64,6 +65,35 @@ async def _seed_tenant(
     return tid
 
 
+async def _seed_strategy_config(
+    sf: async_sessionmaker[AsyncSession],
+    *,
+    tenant_id: UUID,
+    symbol: str,
+) -> UUID:
+    """INSERT a ``strategy_configs`` row so ``TradeProposal``'s FK resolves.
+
+    SQLite enforces FKs when ``PRAGMA foreign_keys = ON`` (set by the
+    persistence engine factory's connect listener). A bare ``uuid4()``
+    passed for ``strategy_config_id`` on ``TradeProposal`` fails this
+    FK check at INSERT time; seed a real row first.
+    """
+    sc_id = uuid4()
+    async with with_tenant_context(tenant_id), sf() as s:
+        s.add(
+            StrategyConfig(
+                id=sc_id,
+                tenant_id=tenant_id,
+                strategy_kind="donchian_atr",
+                symbol=symbol,
+                params={"lookback": 20},
+                enabled=True,
+            )
+        )
+        await s.commit()
+    return sc_id
+
+
 async def _seed_proposal(
     sf: async_sessionmaker[AsyncSession],
     *,
@@ -71,13 +101,14 @@ async def _seed_proposal(
     symbol: str = "SPY",
 ) -> UUID:
     """INSERT a ``trade_proposals`` row scoped to ``tenant_id``."""
+    sc_id = await _seed_strategy_config(sf, tenant_id=tenant_id, symbol=symbol)
     pid = uuid4()
     async with with_tenant_context(tenant_id), sf() as s:
         s.add(
             TradeProposal(
                 id=pid,
                 tenant_id=tenant_id,
-                strategy_config_id=uuid4(),
+                strategy_config_id=sc_id,
                 research_brief_id=None,
                 correlation_id=uuid4(),
                 symbol=symbol,
