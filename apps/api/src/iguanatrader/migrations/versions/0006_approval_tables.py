@@ -168,11 +168,12 @@ def upgrade() -> None:
     )
 
     # L2 append-only triggers — catch raw-SQL bypasses that skip the
-    # ORM ``before_flush`` listener (gotcha #23). SQLite syntax;
-    # PostgreSQL equivalent ships with the slice-O1 dialect-aware
-    # migration helper (per slice 3 design D3 + slice 3 docstring).
+    # ORM ``before_flush`` listener (gotcha #23). Dialect-aware: SQLite
+    # uses RAISE(FAIL,...), Postgres uses plpgsql functions per the
+    # pattern in 0003 / 0007 / 0009.
     bind = op.get_bind()
-    if bind.dialect.name == "sqlite":
+    dialect = bind.dialect.name
+    if dialect == "sqlite":
         op.execute(
             "CREATE TRIGGER trg_approval_requests_no_update "
             "BEFORE UPDATE ON approval_requests "
@@ -193,15 +194,41 @@ def upgrade() -> None:
             "BEFORE DELETE ON approval_decisions "
             "BEGIN SELECT RAISE(FAIL, 'append-only: approval_decisions'); END"
         )
+    elif dialect == "postgresql":
+        for table in ("approval_requests", "approval_decisions"):
+            op.execute(f"""
+                CREATE OR REPLACE FUNCTION raise_{table}_append_only()
+                RETURNS trigger AS $$
+                BEGIN
+                    RAISE EXCEPTION 'append-only: {table}';
+                END;
+                $$ LANGUAGE plpgsql;
+                """)
+            op.execute(f"""
+                CREATE TRIGGER trg_{table}_no_update
+                BEFORE UPDATE ON {table}
+                FOR EACH ROW EXECUTE FUNCTION raise_{table}_append_only();
+                """)
+            op.execute(f"""
+                CREATE TRIGGER trg_{table}_no_delete
+                BEFORE DELETE ON {table}
+                FOR EACH ROW EXECUTE FUNCTION raise_{table}_append_only();
+                """)
 
 
 def downgrade() -> None:
     bind = op.get_bind()
-    if bind.dialect.name == "sqlite":
+    dialect = bind.dialect.name
+    if dialect == "sqlite":
         op.execute("DROP TRIGGER IF EXISTS trg_approval_decisions_no_delete")
         op.execute("DROP TRIGGER IF EXISTS trg_approval_decisions_no_update")
         op.execute("DROP TRIGGER IF EXISTS trg_approval_requests_no_delete")
         op.execute("DROP TRIGGER IF EXISTS trg_approval_requests_no_update")
+    elif dialect == "postgresql":
+        for table in ("approval_decisions", "approval_requests"):
+            op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_no_delete ON {table}")
+            op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_no_update ON {table}")
+            op.execute(f"DROP FUNCTION IF EXISTS raise_{table}_append_only()")
 
     op.drop_index(
         op.f("ix_approval_decisions_tenant_id_outcome_created_at"),
