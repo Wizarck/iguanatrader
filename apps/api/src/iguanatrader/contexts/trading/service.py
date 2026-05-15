@@ -39,6 +39,7 @@ from iguanatrader.contexts.observability.errors import BudgetExceededError
 from iguanatrader.contexts.trading.brokers.ibkr_adapter import BrokerAuthError
 from iguanatrader.contexts.trading.events import (
     ApprovalRequested,
+    CloseTradeRequested,
     EquityUpdated,
     OrderFilled,
     OrderPlaced,
@@ -95,6 +96,32 @@ class KillSwitchActiveError(IguanaError):
     type_uri = "urn:iguanatrader:error:kill-switch-active"
     default_title = "Kill Switch Active"
     default_status = 503
+
+
+class TradeNotClosableError(IguanaError):
+    """Raised by :meth:`TradingService.close_trade` when the trade is not
+    in a closable state.
+
+    Slice ``trade-close-flow-exit-pathway``. A trade is closable only
+    from ``state="open"``; ``"closing"`` means an exit order is
+    already pending (idempotency — duplicate close requests are
+    rejected to avoid double exits) and ``"closed"`` means the trade
+    has already terminated. The 409 mirrors the standard HTTP
+    convention for "valid request, current state forbids it".
+    """
+
+    type_uri = "urn:iguanatrader:error:trade-not-closable"
+    default_title = "Trade Not Closable"
+    default_status = 409
+
+
+#: Valid ``reason`` values accepted by :meth:`TradingService.close_trade`.
+#: Mirrors the ``ck_trades_exit_reason_allowed`` CHECK constraint enum
+#: (migration 0015): ``stop`` (stop-loss hit), ``target`` (take-profit
+#: hit), ``manual`` (operator-initiated close), ``expiry`` (option
+#: expiry — not relevant to v1.5 equities but kept for forward-
+#: compatibility with options contracts).
+_VALID_EXIT_REASONS: frozenset[str] = frozenset({"stop", "target", "manual", "expiry"})
 
 
 # Type alias for the strategy resolver callable injected at construction.
@@ -169,6 +196,11 @@ class TradingService:
             idempotent=True,
         )
         target_bus.subscribe(ProposalRejected, self.proposal_rejected_handler)
+        target_bus.subscribe(
+            CloseTradeRequested,
+            self.close_trade_handler,
+            idempotent=True,
+        )
 
     # ------------------------------------------------------------------
     # Step 1 — propose (concrete body; T1 owns)
@@ -542,6 +574,8 @@ class TradingService:
             quantity_filled=fill_event.quantity_filled,
             fill_price=fill_event.fill_price,
             commission=fill_event.commission,
+            commission_currency=fill_event.commission_currency,
+            filled_at=fill_event.filled_at,
             broker_fill_id=fill_event.broker_fill_id,
         )
         await fill_repo.add(fill)
@@ -549,15 +583,33 @@ class TradingService:
         total_filled = await fill_repo.sum_quantity_for_order(fill_event.order_id)
         # `total_filled` already includes the just-added fill via the SUM.
         is_terminal = bool(Decimal(str(total_filled)) >= Decimal(str(order.quantity)))
-        # Slice ``trade-state-machine-redesign``: an entry-order fill
-        # leaves the trade in ``state="open"``. The pre-slice service
-        # wrote ``state="closed"`` (and ``state="partial"`` on partial
-        # fills) which (a) violated the schema CHECK constraint and
-        # (b) conflated entry-fill with trade-termination. The trade's
-        # terminal transition to ``state="closed"`` lands in the
-        # exit-order pathway (slice PR C). For now the only side
-        # effects of a fill are the Fill row insert above and the
-        # ``OrderFilled`` event publish below — both already in place.
+
+        # Slice ``trade-close-flow-exit-pathway``: differentiate entry
+        # vs exit fills by comparing the order's side to the trade's
+        # side. An entry order has the same side as the trade (BUY for
+        # a long); an exit order has the opposite (SELL for a long).
+        # * Entry fill (terminal or partial): trade stays in
+        #   ``state="open"`` (position is/becomes live; no state change).
+        # * Exit fill terminal: transition trade to ``state="closed"``,
+        #   stamp ``closed_at``, compute ``realised_pnl`` over all
+        #   entry/exit fills.
+        # * Exit fill partial: trade stays in ``state="closing"`` —
+        #   ``close_trade`` already set that when the exit order was
+        #   submitted; no state change here.
+        trade = await trade_repo.get_by_id(order.trade_id)
+        is_exit_fill = trade is not None and order.side != trade.side
+        if is_exit_fill and is_terminal and trade is not None:
+            realised_pnl = await self._compute_realised_pnl(
+                trade=trade,
+                fill_repo=fill_repo,
+                order_repo=order_repo,
+            )
+            await trade_repo.update_state(
+                trade.id,
+                state="closed",
+                closed_at=utc_now(),
+                realised_pnl=realised_pnl,
+            )
 
         await self._bus.publish(
             OrderFilled(
@@ -572,6 +624,7 @@ class TradingService:
             order_id=str(fill_event.order_id),
             quantity_filled=str(fill_event.quantity_filled),
             fully_filled=is_terminal,
+            is_exit_fill=is_exit_fill,
         )
 
         if is_terminal:
@@ -629,9 +682,174 @@ class TradingService:
             reason=reason,
         )
 
+    # ------------------------------------------------------------------
+    # Step 7 — close_trade (slice trade-close-flow-exit-pathway)
+    # ------------------------------------------------------------------
+    async def close_trade_handler(self, event: CloseTradeRequested) -> None:
+        """Subscriber for :class:`CloseTradeRequested` (slice
+        ``trade-close-flow-exit-pathway``).
+
+        Wraps :meth:`close_trade` with structured logging + swallowed
+        :class:`TradeNotClosableError` so a duplicate request against
+        an already-closing trade does not blow up the bus consumer
+        (the bus uses ``idempotent=True`` to dedupe on
+        ``CloseTradeRequested.idempotency_key`` = trade_id, but the
+        guard inside :meth:`close_trade` is the authoritative check).
+        """
+        try:
+            await self.close_trade(event.trade_id, reason=event.reason)
+        except TradeNotClosableError as exc:
+            log.info(
+                "trading.trade.close_not_closable",
+                trade_id=str(event.trade_id),
+                reason=event.reason,
+                detail=exc.detail,
+            )
+
+    async def close_trade(self, trade_id: UUID, *, reason: str) -> BrokerOrderId:
+        """Submit an exit order for ``trade_id``; transition state to "closing".
+
+        Idempotency: only trades in ``state="open"`` are closable. A
+        trade already in ``state="closing"`` (an exit order is
+        pending) or ``state="closed"`` (terminal) raises
+        :class:`TradeNotClosableError` (HTTP 409).
+
+        ``reason`` must be one of the four canonical exit categories
+        (``stop`` / ``target`` / ``manual`` / ``expiry``) — mirrors
+        the ``ck_trades_exit_reason_allowed`` DB constraint added in
+        slice 0015. Stored on the Trade row at close-submit time so
+        the terminal fill reconciliation does not need to know the
+        original trigger.
+
+        The exit order has the opposite side (``buy`` → ``sell`` for a
+        long), the trade's full quantity (partial exits are v2), and
+        the tenant's configured execution algo (slice
+        ``ibkr-execution-algos-entry``). Returns the broker's order id
+        so callers (manual API endpoint, trailing-stops sweep) can
+        correlate.
+        """
+        if reason not in _VALID_EXIT_REASONS:
+            raise ValueError(f"reason must be one of {sorted(_VALID_EXIT_REASONS)}, got {reason!r}")
+
+        trade_repo = TradeRepository()
+        order_repo = OrderRepository()
+        trade = await trade_repo.get_by_id(trade_id)
+        if trade is None:
+            raise TradeNotClosableError(detail=f"trade {trade_id} not found")
+        if trade.state != "open":
+            raise TradeNotClosableError(
+                detail=(
+                    f"trade {trade_id} is in state={trade.state!r}; "
+                    "only 'open' trades can be closed"
+                )
+            )
+
+        opposite_side = "sell" if trade.side == "buy" else "buy"
+        new_order = NewOrder(
+            tenant_id=trade.tenant_id,
+            trade_id=trade_id,
+            symbol=trade.symbol,
+            side=opposite_side,
+            quantity=trade.quantity,
+            order_type="market",
+            client_order_id=uuid4(),
+            algo_kind=self._execution_algo,
+        )
+        broker_order_id = await self._broker.place_order(new_order)
+
+        exit_order_id = uuid4()
+        exit_order = Order(
+            id=exit_order_id,
+            tenant_id=trade.tenant_id,
+            trade_id=trade_id,
+            broker="ibkr",
+            broker_order_id=broker_order_id,
+            order_type=new_order.order_type,
+            side=opposite_side,
+            quantity=trade.quantity,
+            limit_price=None,
+            stop_price=None,
+            state="submitted",
+            submitted_at=utc_now(),
+        )
+        await order_repo.add(exit_order)
+        await trade_repo.update_state(trade_id, state="closing", exit_reason=reason)
+
+        await self._bus.publish(
+            OrderPlaced(
+                tenant_id=trade.tenant_id,
+                order_id=exit_order_id,
+                broker_order_id=broker_order_id,
+            )
+        )
+        log.info(
+            "trading.trade.close_submitted",
+            trade_id=str(trade_id),
+            exit_order_id=str(exit_order_id),
+            broker_order_id=broker_order_id,
+            reason=reason,
+            tenant_id=str(trade.tenant_id),
+        )
+        return broker_order_id
+
+    async def _compute_realised_pnl(
+        self,
+        *,
+        trade: Trade,
+        fill_repo: FillRepository,
+        order_repo: OrderRepository,
+    ) -> Decimal:
+        """Compute realised P&L over the trade's full entry + exit fills.
+
+        For a long (``trade.side == "buy"``):
+        ``realised_pnl = exit_proceeds - entry_cost - commissions``
+        where:
+        * ``entry_cost = sum(fill.quantity * fill.price)`` over fills
+          whose order shares the trade's side.
+        * ``exit_proceeds = sum(fill.quantity * fill.price)`` over
+          fills whose order has the opposite side.
+        * ``commissions`` = total commission across all fills (both
+          legs) — broker debits commission on each fill regardless of
+          leg.
+
+        For a short, the formula inverts: ``entry_proceeds -
+        exit_cost - commissions`` (sold high to enter, bought low to
+        exit).
+
+        Returns ``Decimal("0")`` if the trade has no exit fills yet
+        (shouldn't fire in production — the caller gates on
+        ``is_exit_fill and is_terminal``).
+        """
+        all_orders = await order_repo.list_for_trade(trade.id)
+        side_by_order: dict[UUID, str] = {o.id: o.side for o in all_orders}
+        fills = await fill_repo.list_for_trade(trade.id)
+
+        entry_value = Decimal("0")
+        exit_value = Decimal("0")
+        total_commission = Decimal("0")
+        for fill in fills:
+            order_side = side_by_order.get(fill.order_id)
+            if order_side is None:
+                # Defensive: orphan fill (shouldn't happen given FK).
+                continue
+            qty = Decimal(str(fill.quantity_filled))
+            price = Decimal(str(fill.fill_price))
+            commission = Decimal(str(fill.commission or 0))
+            value = qty * price
+            total_commission += commission
+            if order_side == trade.side:
+                entry_value += value
+            else:
+                exit_value += value
+
+        if trade.side == "buy":
+            return exit_value - entry_value - total_commission
+        return entry_value - exit_value - total_commission
+
 
 __all__ = [
     "KillSwitchActiveError",
     "StrategyResolver",
+    "TradeNotClosableError",
     "TradingService",
 ]

@@ -224,8 +224,41 @@ class EquityUpdated(Event):
             self.idempotency_key = str(self.equity_snapshot_id)
 
 
+@dataclass(kw_only=True)
+class CloseTradeRequested(Event):
+    """Emitted by the manual-close API route + the trailing-stops sweep
+    + the take-profit handler to request an exit-order for ``trade_id``.
+
+    Slice ``trade-close-flow-exit-pathway``. Subscriber:
+    :meth:`TradingService.close_trade_handler` calls
+    :meth:`TradingService.close_trade` which submits the exit order
+    + transitions the trade to ``state="closing"``.
+
+    ``reason`` must be one of the four canonical exit categories
+    (``stop`` / ``target`` / ``manual`` / ``expiry``) — mirrors the
+    ``ck_trades_exit_reason_allowed`` DB constraint. The trade-close
+    service writes this onto the Trade row at close-submit time so the
+    terminal fill reconciliation does not need to know the original
+    trigger.
+    """
+
+    event_name: ClassVar[str] = "trading.trade.close_requested"
+
+    tenant_id: UUID
+    trade_id: UUID
+    reason: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            # One close request per trade — re-requests against an
+            # already-closing trade are rejected at the handler.
+            self.idempotency_key = str(self.trade_id)
+
+
 __all__ = [
     "ApprovalRequested",
+    "CloseTradeRequested",
     "EquityUpdated",
     "OrderFilled",
     "OrderPlaced",
