@@ -129,7 +129,7 @@ def test_check_constraint_rejects_bogus_exit_reason(alembic_config: Config) -> N
                 "INSERT INTO trades (id, tenant_id, proposal_id, symbol, side, "
                 "quantity, mode, state, opened_at, exit_reason) "
                 "VALUES (:id, :tenant_id, :proposal_id, 'SPY', 'buy', 10, "
-                "'paper', 'closed_filled', CURRENT_TIMESTAMP, 'stop')"
+                "'paper', 'closed', CURRENT_TIMESTAMP, 'stop')"
             ),
             {
                 "id": trade_id,
@@ -148,7 +148,7 @@ def test_check_constraint_rejects_bogus_exit_reason(alembic_config: Config) -> N
                 "INSERT INTO trades (id, tenant_id, proposal_id, symbol, side, "
                 "quantity, mode, state, opened_at, exit_reason) "
                 "VALUES (:id, :tenant_id, :proposal_id, 'SPY', 'buy', 10, "
-                "'paper', 'closed_filled', CURRENT_TIMESTAMP, 'bogus')"
+                "'paper', 'closed', CURRENT_TIMESTAMP, 'bogus')"
             ),
             {
                 "id": str(uuid4()),
@@ -160,10 +160,16 @@ def test_check_constraint_rejects_bogus_exit_reason(alembic_config: Config) -> N
     sync_engine.dispose()
 
 
-def test_downgrade_one_removes_exit_columns(alembic_config: Config) -> None:
-    """``alembic downgrade -1`` drops both columns + the CHECK constraint."""
+def test_downgrade_to_0014_removes_exit_columns(alembic_config: Config) -> None:
+    """Downgrade past 0015 drops both columns + the CHECK constraint.
+
+    Per slice ``trade-state-machine-redesign`` (migration 0017) the
+    head is no longer 0015, so ``downgrade -1`` from head reverts 0017
+    rather than 0015. Reverting 0015 specifically requires
+    ``downgrade 0014_user_recovery_channels``.
+    """
     command.upgrade(alembic_config, "head")
-    command.downgrade(alembic_config, "-1")
+    command.downgrade(alembic_config, "0014_user_recovery_channels")
 
     sync_engine = create_engine(f"sqlite:///{alembic_config.attributes['db_path']}")
     insp = inspect(sync_engine)

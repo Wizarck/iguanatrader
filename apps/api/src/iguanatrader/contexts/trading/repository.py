@@ -231,12 +231,20 @@ class TradeRepository(BaseRepository):
         return list(result.scalars().all())
 
     async def list_open_for_tenant(self) -> list[Trade]:
-        """List open trades for the current tenant.
+        """List live-position trades for the current tenant.
 
-        ``state == 'open'``, ordered ``opened_at DESC``. Tenant filter
+        Per slice ``trade-state-machine-redesign``: "live" means
+        ``state IN ('open', 'closing')`` — ``open`` covers entry-pending
+        and entry-filled-no-exit-yet; ``closing`` covers exit-order-
+        submitted-but-not-yet-filled. Both represent positions the
+        broker still holds. Ordered ``opened_at DESC``; tenant filter
         is automatic via the slice-3 ``tenant_listener``.
         """
-        stmt = select(Trade).where(Trade.state == "open").order_by(Trade.opened_at.desc())
+        stmt = (
+            select(Trade)
+            .where(Trade.state.in_(("open", "closing")))
+            .order_by(Trade.opened_at.desc())
+        )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

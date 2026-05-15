@@ -191,13 +191,13 @@ async def test_update_on_trade_state_succeeds(
 
     async with with_tenant_context(tenant_id), session_fx() as s:
         trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
-        trade.state = "closed_filled"
+        trade.state = "closed"
         trade.closed_at = datetime.now(UTC)
         await s.commit()  # Should NOT raise — both columns whitelisted.
 
     async with with_tenant_context(tenant_id), session_fx() as s:
         trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
-        assert trade.state == "closed_filled"
+        assert trade.state == "closed"
         assert trade.closed_at is not None
 
 
@@ -374,7 +374,7 @@ async def test_update_on_trade_exit_reason_and_realised_pnl_succeeds(
     # exit_reason + realised_pnl in one commit.
     async with with_tenant_context(tenant_id), session_fx() as s:
         trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
-        trade.state = "closed_filled"
+        trade.state = "closed"
         trade.closed_at = datetime.now(UTC)
         trade.exit_reason = "stop"
         trade.realised_pnl = Decimal("-42.50000000")

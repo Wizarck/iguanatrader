@@ -549,11 +549,15 @@ class TradingService:
         total_filled = await fill_repo.sum_quantity_for_order(fill_event.order_id)
         # `total_filled` already includes the just-added fill via the SUM.
         is_terminal = bool(Decimal(str(total_filled)) >= Decimal(str(order.quantity)))
-        if is_terminal:
-            closed_at = utc_now()
-            await trade_repo.update_state(order.trade_id, state="closed", closed_at=closed_at)
-        else:
-            await trade_repo.update_state(order.trade_id, state="partial")
+        # Slice ``trade-state-machine-redesign``: an entry-order fill
+        # leaves the trade in ``state="open"``. The pre-slice service
+        # wrote ``state="closed"`` (and ``state="partial"`` on partial
+        # fills) which (a) violated the schema CHECK constraint and
+        # (b) conflated entry-fill with trade-termination. The trade's
+        # terminal transition to ``state="closed"`` lands in the
+        # exit-order pathway (slice PR C). For now the only side
+        # effects of a fill are the Fill row insert above and the
+        # ``OrderFilled`` event publish below — both already in place.
 
         await self._bus.publish(
             OrderFilled(
