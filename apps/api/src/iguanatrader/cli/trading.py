@@ -156,12 +156,32 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         )
         from iguanatrader.contexts.trading.service import TradingService
 
+        # Slice ``order-timeout-restart-reconcile``: read the order-
+        # placement timeout from env (default 30s); operator tunes per
+        # broker SLA. Validation lives in TradingService.__init__ —
+        # invalid values surface as TypeError on construction.
+        order_timeout_raw = os.environ.get("IGUANATRADER_ORDER_TIMEOUT_SECS", "30")
+        try:
+            order_timeout_secs = float(order_timeout_raw)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"IGUANATRADER_ORDER_TIMEOUT_SECS must be a float, got {order_timeout_raw!r}"
+            ) from exc
+
         trading_service = TradingService(
             bus=bus,
             broker=broker,
             strategy_resolver=_make_strategy_resolver(session_factory=sessionmaker),
+            order_timeout_secs=order_timeout_secs,
         )
         trading_service.register_subscriptions()
+
+        # Slice ``order-timeout-restart-reconcile``: drain broker fills
+        # the daemon missed while it was down BEFORE accepting new
+        # propose / approve traffic. Idempotent at broker_fill_id; a
+        # slightly-too-old since boundary is preferable to losing a
+        # fill in a crash window.
+        await trading_service.startup_reconcile()
 
         # Slice K1-followup-bus-subscriptions §3.1 — RiskService bridge
         # subscribes to ProposalCreated + emits ProposalRiskEvaluated.

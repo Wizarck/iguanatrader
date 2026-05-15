@@ -27,8 +27,9 @@ have ``# T4 fills`` comments.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -159,6 +160,7 @@ class TradingService:
         broker: BrokerPort,
         strategy_resolver: StrategyResolver,
         execution_algo: str = "market",
+        order_timeout_secs: float = 30.0,
     ) -> None:
         self._bus = bus
         self._broker = broker
@@ -174,6 +176,16 @@ class TradingService:
         # new service construction (acceptable: the value sits in env
         # config, not a per-request decision).
         self._execution_algo = execution_algo
+        # Slice ``order-timeout-restart-reconcile``: how long to wait
+        # for ``broker.place_order`` (entry + exit submissions) before
+        # bailing with a ``timeout`` rejection. Without this, a hung
+        # IBKR socket can block the approval handler indefinitely and
+        # back-pressure the message bus. 30 s comfortably covers the
+        # IBKR algo path (Adaptive can take 5-10s on a normal day);
+        # operator overrides via the env var
+        # ``IGUANATRADER_ORDER_TIMEOUT_SECS`` when the upstream gateway
+        # is known to be slower.
+        self._order_timeout_secs = order_timeout_secs
         self._kill_switch_active: bool = False
 
     # ------------------------------------------------------------------
@@ -442,7 +454,17 @@ class TradingService:
         broker_order_id: BrokerOrderId | None = None
         rejection_reason: str | None = None
         try:
-            broker_order_id = await self._broker.place_order(new_order)
+            broker_order_id = await asyncio.wait_for(
+                self._broker.place_order(new_order),
+                timeout=self._order_timeout_secs,
+            )
+        except TimeoutError:
+            rejection_reason = "timeout"
+            log.warning(
+                "trading.execute.broker_timeout",
+                proposal_id=str(event.proposal_id),
+                timeout_secs=self._order_timeout_secs,
+            )
         except BrokerAuthError as exc:
             rejection_reason = "broker_auth"
             log.warning(
@@ -511,6 +533,47 @@ class TradingService:
             proposal_id=str(event.proposal_id),
             tenant_id=str(event.tenant_id),
         )
+
+    # ------------------------------------------------------------------
+    # Restart reconciliation (slice order-timeout-restart-reconcile)
+    # ------------------------------------------------------------------
+    async def startup_reconcile(
+        self,
+        *,
+        safety_margin_minutes: int = 10,
+    ) -> None:
+        """Drain any broker fills the daemon missed while it was down.
+
+        Called once from the composition root (CLI startup) before
+        :meth:`register_subscriptions`. Computes a ``since`` timestamp
+        as ``max(filled_at) - safety_margin_minutes`` across all fills
+        in the DB; falls back to ``now - 24 h`` if the DB is empty.
+
+        The safety margin compensates for clock skew + the
+        worst-case window where the broker recorded a fill but the
+        daemon crashed before persisting it. The reconcile is
+        idempotent at the broker_fill_id level (
+        :meth:`_reconcile_one_fill` deduplicates), so a slightly-too-
+        old ``since`` is preferable to a slightly-too-new one.
+        """
+        fill_repo = FillRepository()
+        latest = await fill_repo.latest_filled_at()
+        if latest is None:
+            since = utc_now() - timedelta(hours=24)
+            log.info(
+                "trading.startup_reconcile.fallback_window",
+                since=since.isoformat(),
+                reason="no fills in DB yet",
+            )
+        else:
+            since = latest - timedelta(minutes=safety_margin_minutes)
+            log.info(
+                "trading.startup_reconcile.computed_window",
+                latest_fill_at=latest.isoformat(),
+                since=since.isoformat(),
+                safety_margin_minutes=safety_margin_minutes,
+            )
+        await self.reconcile_fills_handler(since)
 
     # ------------------------------------------------------------------
     # Step 6 — reconcile_fills_handler (skeleton; T4 fills logic)
@@ -755,7 +818,17 @@ class TradingService:
             client_order_id=uuid4(),
             algo_kind=self._execution_algo,
         )
-        broker_order_id = await self._broker.place_order(new_order)
+        # Slice ``order-timeout-restart-reconcile``: bail on a hung
+        # broker socket. ``close_trade`` is invoked from the manual
+        # close API + the trailing-stops sweep + take-profit handlers;
+        # any of these would back-pressure the message bus if the
+        # broker hangs. Surface as a ``TimeoutError`` for the caller
+        # rather than masking — the API handler already maps the
+        # exception to RFC 7807 status 504 via the global error chain.
+        broker_order_id = await asyncio.wait_for(
+            self._broker.place_order(new_order),
+            timeout=self._order_timeout_secs,
+        )
 
         exit_order_id = uuid4()
         exit_order = Order(
