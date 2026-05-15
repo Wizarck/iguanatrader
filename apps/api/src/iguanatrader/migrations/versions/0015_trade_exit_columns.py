@@ -73,8 +73,7 @@ def upgrade() -> None:
         )
         batch_op.create_check_constraint(
             "ck_trades_exit_reason_allowed",
-            "exit_reason IS NULL OR exit_reason IN "
-            "('stop', 'target', 'manual', 'expiry')",
+            "exit_reason IS NULL OR exit_reason IN " "('stop', 'target', 'manual', 'expiry')",
         )
 
 
