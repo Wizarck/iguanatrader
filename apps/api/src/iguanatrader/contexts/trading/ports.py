@@ -58,6 +58,16 @@ class NewOrder:
     # ``ValueError`` if ``None`` because idempotency is non-negotiable
     # for live broker integration. Documented in T2 retro carry-forward.
     client_order_id: UUID | None = None
+    # Slice ``ibkr-execution-algos-entry``: which IBKR execution algo
+    # to attach to the order. Allowed values:
+    # ``None`` / ``"market"`` (default, no algo — plain market order),
+    # ``"adaptive"`` (IBKR's smart-routing, priority=Normal),
+    # ``"twap"`` (time-weighted average price slicing).
+    # The :class:`RiskCaps.execution_algo` cap (default ``"adaptive"``)
+    # is the canonical source; the service reads the cap and populates
+    # this field per-order. Bare instantiation defaults to ``None`` for
+    # backwards-compat with existing tests.
+    algo_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

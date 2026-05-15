@@ -59,6 +59,16 @@ class IBOrder:
     account: str | None = None
     order_ref: str | None = None  # Mirror of NewOrder.client_order_id for
     # IBKR-side tracing.
+    # Slice ``ibkr-execution-algos-entry``: when set, the translator in
+    # ``ib_async_client._to_order`` attaches ``algoStrategy`` +
+    # ``algoParams`` to the ``ib_async.Order``. Allowed values:
+    # ``"market"`` (no algo — default behaviour, equivalent to
+    # ``algo_kind=None``), ``"adaptive"`` (IBKR's smart-routing,
+    # priority=Normal), ``"twap"`` (time-weighted slicing with strategy
+    # type Marketable). The default ``None`` preserves pre-slice
+    # behaviour so existing callers do not need to change.
+    algo_kind: str | None = None
+    algo_params: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)

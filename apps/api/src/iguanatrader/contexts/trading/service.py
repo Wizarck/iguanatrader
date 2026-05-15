@@ -131,10 +131,22 @@ class TradingService:
         bus: MessageBus,
         broker: BrokerPort,
         strategy_resolver: StrategyResolver,
+        execution_algo: str = "market",
     ) -> None:
         self._bus = bus
         self._broker = broker
         self._strategy_resolver = strategy_resolver
+        # Slice ``ibkr-execution-algos-entry``: which IBKR execution
+        # algorithm to attach to every entry order this service
+        # submits. Canonical values match :class:`RiskCaps.execution_algo`
+        # (``"market"`` / ``"adaptive"`` / ``"twap"``). Defaults to
+        # ``"market"`` to preserve pre-slice behaviour for tests that
+        # construct the service without specifying — production wiring
+        # passes the operator-configured cap. The service treats this
+        # as immutable per-instance; hot-reload of the cap requires a
+        # new service construction (acceptable: the value sits in env
+        # config, not a per-request decision).
+        self._execution_algo = execution_algo
         self._kill_switch_active: bool = False
 
     # ------------------------------------------------------------------
@@ -391,6 +403,7 @@ class TradingService:
             quantity=proposal_row.quantity,
             order_type="market",
             client_order_id=uuid4(),
+            algo_kind=self._execution_algo,
         )
 
         order_id = uuid4()

@@ -136,6 +136,18 @@ class RiskCaps(BaseModel):
     #: ``macd_cross``, ``bollinger_breakout``) so the trail distance
     #: and the initial stop distance move on the same indicator.
     trail_atr_period: int = Field(default=14, ge=2)
+    #: Slice ``ibkr-execution-algos-entry`` — which IBKR execution
+    #: algorithm to attach to every entry order this tenant submits.
+    #: ``"market"`` = plain market order (no algo, fast but slippage on
+    #: large/illiquid orders). ``"adaptive"`` = IBKR's smart-routing
+    #: with priority=Normal (a sensible default for retail equity
+    #: orders < 1% ADV). ``"twap"`` = time-weighted slicing (predictable
+    #: execution time, hides large orders). Defaults to ``"adaptive"``
+    #: so new tenants get the slippage-aware path out of the box;
+    #: operators flip to ``"market"`` for paper testing or to ``"twap"``
+    #: for institutional sizing. Not a protection — read at order-
+    #: placement time, not by ``engine.evaluate``.
+    execution_algo: Literal["market", "adaptive", "twap"] = Field(default="adaptive")
 
 
 class RiskState(BaseModel):
