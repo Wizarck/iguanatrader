@@ -90,3 +90,26 @@ def test_malformed_ib_client_id_raises_missing_secret(
     monkeypatch.setenv("IB_CLIENT_ID", "abc")
     with pytest.raises(MissingSecretError):
         _ = SecretEnv().ib_client_id
+
+
+@pytest.mark.parametrize(
+    "port_value",
+    [
+        "7497",  # TWS desktop paper
+        "7496",  # TWS desktop live
+        "4002",  # IB Gateway paper (slice ibkr-gateway-sidecar default)
+        "4001",  # IB Gateway live
+    ],
+)
+def test_tws_port_resolves_all_canonical_ports(
+    env: SecretEnv, monkeypatch: pytest.MonkeyPatch, port_value: str
+) -> None:
+    """Both TWS-desktop and IB-Gateway port pairs resolve cleanly.
+
+    Slice ``ibkr-gateway-sidecar`` ships a docker-compose overlay that
+    defaults to Gateway paper (4002). This test pins the contract that
+    SecretEnv accepts both port families so the compose overlay can
+    flip TRADING_MODE + TWS_PORT without code changes.
+    """
+    monkeypatch.setenv("TWS_PORT", port_value)
+    assert env.tws_port == int(port_value)
