@@ -165,6 +165,23 @@ class StrategyConfigListOut(BaseModel):
     total: int | None = None
 
 
+class CloseTradeIn(BaseModel):
+    """Body for ``POST /trades/{id}/close`` (slice
+    ``trade-close-flow-exit-pathway``).
+
+    ``reason`` mirrors the ``ck_trades_exit_reason_allowed`` DB
+    constraint enum. ``manual`` is the typical value for an
+    operator-initiated close; ``stop`` / ``target`` are reserved for
+    the trailing-stops + take-profit handlers (they publish
+    :class:`CloseTradeRequested` directly on the bus, not via this
+    endpoint).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(pattern=r"^(stop|target|manual|expiry)$", default="manual")
+
+
 class EquitySnapshotListOut(BaseModel):
     """Paginated list wrapper for :class:`EquitySnapshotOut`."""
 

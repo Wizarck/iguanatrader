@@ -12,6 +12,7 @@ repositories ship empty bodies and gain query helpers in slice T4.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -254,14 +255,27 @@ class TradeRepository(BaseRepository):
         *,
         state: str,
         closed_at: Any | None = None,
+        exit_reason: str | None = None,
+        realised_pnl: Decimal | None = None,
     ) -> None:
-        """Update ``trades.state`` (and optional closed_at)."""
+        """Update ``trades.state`` and (optionally) the close-flow columns.
+
+        All four mutable columns are on the slice-0015 append-only
+        whitelist (``state, closed_at, exit_reason, realised_pnl``) so
+        a single call can transition a trade to its terminal close in
+        one UPDATE. None-valued kwargs leave the column untouched —
+        the caller composes only what changes.
+        """
         trade = await self.get_by_id(trade_id)
         if trade is None:
             return
         trade.state = state
         if closed_at is not None:
             trade.closed_at = closed_at
+        if exit_reason is not None:
+            trade.exit_reason = exit_reason
+        if realised_pnl is not None:
+            trade.realised_pnl = realised_pnl
 
 
 class OrderRepository(BaseRepository):
@@ -306,6 +320,18 @@ class OrderRepository(BaseRepository):
         """
         open_states = ("new", "submitted", "partially_filled")
         stmt = select(Order).where(Order.state.in_(open_states)).order_by(Order.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_for_trade(self, trade_id: UUID) -> list[Order]:
+        """List all orders (entry + exit) for a given trade.
+
+        Ordered ``created_at ASC`` (chronological) so the entry order
+        is first and any exit order follows. Used by the close-flow
+        service (slice ``trade-close-flow-exit-pathway``) to compute
+        realised P&L across the trade's full fill history.
+        """
+        stmt = select(Order).where(Order.trade_id == trade_id).order_by(Order.created_at.asc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
