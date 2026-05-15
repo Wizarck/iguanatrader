@@ -32,8 +32,9 @@ import os
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import structlog
@@ -65,6 +66,25 @@ COOKIE_NAME: str = "iguana_session"
 
 _DEFAULT_DB_URL: str = "sqlite+aiosqlite:///./data/iguanatrader.db"
 _DB_URL_ENV: str = "IGUANA_DATABASE_URL"
+
+#: Slice ``auth-password-aging-warning``. Default thresholds (in days)
+#: for the soft "rotate your password" banner emitted by
+#: :func:`_classify_password_aging`. ``ageing`` (heads-up / 60d default)
+#: maps to the dashboard warning banner; ``stale`` (action-requested /
+#: 90d default) maps to the danger banner. Operators can shift the
+#: boundaries via :envvar:`IGUANATRADER_AUTH_PASSWORD_AGEING_DAYS` and
+#: :envvar:`IGUANATRADER_AUTH_PASSWORD_STALE_DAYS`. The 90d ceiling is
+#: the NIST SP 800-63B baseline; 60d gives the user a 30-day window to
+#: act before the danger banner fires.
+_DEFAULT_PASSWORD_AGEING_DAYS: int = 60
+_DEFAULT_PASSWORD_STALE_DAYS: int = 90
+_PASSWORD_AGEING_DAYS_ENV: str = "IGUANATRADER_AUTH_PASSWORD_AGEING_DAYS"
+_PASSWORD_STALE_DAYS_ENV: str = "IGUANATRADER_AUTH_PASSWORD_STALE_DAYS"
+
+#: Type alias for the password-aging classifier output. ``fresh`` means
+#: no banner; ``ageing`` and ``stale`` map to the two banner variants
+#: rendered by :mod:`apps/web/src/lib/components/PasswordAgeingBanner.svelte`.
+PasswordAgingState = Literal["fresh", "ageing", "stale"]
 
 
 @lru_cache(maxsize=1)
@@ -207,6 +227,106 @@ def is_secure_cookie() -> bool:
     return os.getenv("IGUANATRADER_DEV_INSECURE_COOKIE") != "1"
 
 
+def _read_env_threshold(name: str, default: int) -> int:
+    """Read a positive integer threshold from the environment.
+
+    Used by :func:`_classify_password_aging` for the two configurable
+    boundaries (``IGUANATRADER_AUTH_PASSWORD_AGEING_DAYS`` /
+    ``IGUANATRADER_AUTH_PASSWORD_STALE_DAYS``). Non-numeric / non-positive
+    overrides fall back to ``default`` rather than raising — the banner
+    is a soft UX hint, not a security gate, so a misconfigured env
+    should not 500 the ``/me`` endpoint on every request.
+    """
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError:
+        log.warning(
+            "auth.password_aging.invalid_threshold_env",
+            env_var=name,
+            raw_value=raw,
+            fallback=default,
+        )
+        return default
+    if parsed <= 0:
+        log.warning(
+            "auth.password_aging.non_positive_threshold_env",
+            env_var=name,
+            parsed=parsed,
+            fallback=default,
+        )
+        return default
+    return parsed
+
+
+def _classify_password_aging(
+    password_changed_at: datetime | None,
+    *,
+    now: datetime | None = None,
+) -> tuple[int | None, PasswordAgingState]:
+    """Classify a user's password age into a banner state.
+
+    Slice ``auth-password-aging-warning``. The banner is rendered by the
+    ``(app)/+layout.svelte`` shell when this returns anything other than
+    ``"fresh"`` — see :class:`PasswordAgeingBanner` for the markup.
+
+    Contract:
+
+    * ``password_changed_at is None`` (legacy users planted before
+      ``migrations/0013_user_password_metadata``) → ``(None, "fresh")``.
+      Grandfather rule: we have no signal so we do not nag.
+    * ``age_days < ageing_threshold`` → ``"fresh"``.
+    * ``ageing_threshold <= age_days < stale_threshold`` → ``"ageing"``.
+    * ``age_days >= stale_threshold`` → ``"stale"``.
+
+    Thresholds are read from the env on every call (cheap; one
+    ``os.getenv`` + ``int()``); :func:`_read_env_threshold` falls back to
+    :data:`_DEFAULT_PASSWORD_AGEING_DAYS` / :data:`_DEFAULT_PASSWORD_STALE_DAYS`
+    on missing or invalid values.
+
+    Datetime handling: ``password_changed_at`` is stored as
+    ``TIMESTAMP WITH TIME ZONE`` on PostgreSQL but SQLite (the MVP
+    backend) returns a naive ``datetime`` even when the column was
+    declared with ``DateTime(timezone=True)``. We treat naive timestamps
+    as UTC (the column writers — :func:`change_password`,
+    :func:`forgot_password` — use ``CURRENT_TIMESTAMP`` which is UTC on
+    SQLite) so the arithmetic stays consistent across backends.
+    """
+    if password_changed_at is None:
+        return (None, "fresh")
+
+    reference_now = now if now is not None else datetime.now(tz=UTC)
+    # Normalise naive datetimes (SQLite + Pydantic round-trip) to UTC.
+    if reference_now.tzinfo is None:
+        reference_now = reference_now.replace(tzinfo=UTC)
+    # SQLite TEXT column may return password_changed_at as ISO string when
+    # the row was inserted via raw `text()` SQL (tests). SQLAlchemy ORM
+    # path returns a real datetime. Coerce defensively.
+    pwd_changed: datetime
+    if isinstance(password_changed_at, str):
+        pwd_changed = datetime.fromisoformat(password_changed_at)
+    else:
+        pwd_changed = password_changed_at
+    if pwd_changed.tzinfo is None:
+        pwd_changed = pwd_changed.replace(tzinfo=UTC)
+
+    delta = reference_now - pwd_changed
+    # ``delta.days`` floors negative or sub-day diffs to 0; future
+    # timestamps (clock skew) classify as ``fresh`` with age=0.
+    age_days = max(int(delta.total_seconds() // 86400), 0)
+
+    ageing_threshold = _read_env_threshold(_PASSWORD_AGEING_DAYS_ENV, _DEFAULT_PASSWORD_AGEING_DAYS)
+    stale_threshold = _read_env_threshold(_PASSWORD_STALE_DAYS_ENV, _DEFAULT_PASSWORD_STALE_DAYS)
+
+    if age_days >= stale_threshold:
+        return (age_days, "stale")
+    if age_days >= ageing_threshold:
+        return (age_days, "ageing")
+    return (age_days, "fresh")
+
+
 async def get_current_user(
     request: Request,
     response: Response,
@@ -267,6 +387,17 @@ async def get_current_user(
     # Now set the tenant ContextVar so any subsequent query in the request
     # is tenant-isolated. user.tenant_id is already a UUID (Mapped[UUID]).
     tenant_id_var.set(user.tenant_id)
+
+    # Slice ``auth-password-aging-warning``: compute the soft-rotate
+    # banner state and stash it on ``request.state`` so :func:`me_endpoint`
+    # can surface it via :class:`MeResponse` without re-querying the DB.
+    # Using ``request.state`` (Starlette typed as ``State`` / runtime-dict)
+    # instead of mutating the transient :class:`User` keeps the
+    # SQLAlchemy mapped model untouched (no schema drift, no mypy noise
+    # from ad-hoc attribute injection).
+    password_age_days, password_aging_state = _classify_password_aging(user.password_changed_at)
+    request.state.password_age_days = password_age_days
+    request.state.password_aging_state = password_aging_state
 
     # Bind structlog contextvars so log records automatically carry
     # tenant_id / user_id / correlation_id (rendered as strings for JSON).
@@ -338,6 +469,8 @@ def requires_role(*roles: Role) -> Callable[..., Awaitable[User]]:
 
 __all__ = [
     "COOKIE_NAME",
+    "PasswordAgingState",
+    "_classify_password_aging",
     "get_current_user",
     "get_db",
     "is_secure_cookie",

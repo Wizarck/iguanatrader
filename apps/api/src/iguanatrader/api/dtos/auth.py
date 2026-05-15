@@ -24,6 +24,7 @@ Hard rules per AGENTS.md §4:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
@@ -84,6 +85,19 @@ class MeResponse(BaseModel):
     role: Role
     created_at: datetime
     must_change_password: bool
+    #: Slice ``auth-password-aging-warning``. Days since the user last
+    #: rotated their password. ``None`` when ``password_changed_at`` is
+    #: NULL (legacy users planted before migration 0013 — grandfather
+    #: rule: no signal, no banner). Defaults to ``None`` so older API
+    #: clients deserialising this payload don't break.
+    password_age_days: int | None = None
+    #: Slice ``auth-password-aging-warning``. Banner state the SvelteKit
+    #: ``(app)/+layout`` consults to decide whether to mount the
+    #: ``PasswordAgeingBanner``. ``fresh`` → no banner; ``ageing`` →
+    #: warning variant; ``stale`` → danger variant. Defaults to
+    #: ``"fresh"`` so legacy users / older clients always opt out of the
+    #: banner.
+    password_aging_state: Literal["fresh", "ageing", "stale"] = "fresh"
 
 
 #: Minimum acceptable plaintext length for a new password. The 12-char
