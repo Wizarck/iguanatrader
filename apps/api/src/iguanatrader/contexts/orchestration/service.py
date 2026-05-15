@@ -265,6 +265,7 @@ class OrchestrationService:
         strategy_config_repo: Any | None = None,
         ingestion_service: Any | None = None,
         trailing_stop_sweep_service: Any | None = None,
+        equity_snapshot_sweep_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
     ) -> None:
@@ -437,6 +438,43 @@ class OrchestrationService:
             )
             scheduler.add_job(sweep_spec)
 
+        # Slice equity-snapshot-daemon: 7th job captures account equity
+        # for every tenant every 15 min during US market hours. Drives
+        # the rolling drawdown window K1's max-drawdown protection reads
+        # from. Backwards-compat: skipped when the service is not wired
+        # (older test setups).
+        if equity_snapshot_sweep_service is not None:
+            equity_service: Any = equity_snapshot_sweep_service
+
+            async def _sweep_equity_snapshots() -> None:
+                try:
+                    result = await equity_service.sweep()
+                    logger.info(
+                        "orchestration.equity_snapshot_sweep.complete",
+                        extra={
+                            "tenants_evaluated": result.tenants_evaluated,
+                            "snapshots_persisted": result.snapshots_persisted,
+                            "broker_errors": result.broker_errors,
+                            "duration_ms": result.duration_ms,
+                        },
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "orchestration.equity_snapshot_sweep.failed",
+                        extra={"error": str(exc), "type": type(exc).__name__},
+                    )
+
+            equity_spec = JobSpec(
+                name="equity_snapshot_sweep",
+                fn=_sweep_equity_snapshots,
+                cron_kwargs={
+                    "hour": "9-16",
+                    "minute": "*/15",
+                    "day_of_week": "mon-fri",
+                },
+            )
+            scheduler.add_job(equity_spec)
+
         logger.info(
             "orchestration.routines.bootstrapped",
             extra={
@@ -444,11 +482,13 @@ class OrchestrationService:
                     len(cron_kwargs_by_routine)
                     + (1 if ingestion_service is not None else 0)
                     + (1 if trailing_stop_sweep_service is not None else 0)
+                    + (1 if equity_snapshot_sweep_service is not None else 0)
                 ),
                 "watchlist_count": len(watchlist_symbols),
                 "propose_loops_wired": wire_propose_loops,
                 "market_data_sync_wired": ingestion_service is not None,
                 "trailing_stops_sweep_wired": trailing_stop_sweep_service is not None,
+                "equity_snapshot_sweep_wired": equity_snapshot_sweep_service is not None,
             },
         )
 
