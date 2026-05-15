@@ -314,6 +314,78 @@ async def test_update_on_order_broker_order_id_succeeds(
         await s.commit()
 
 
+async def test_update_on_trade_exit_reason_and_realised_pnl_succeeds(
+    session_fx: async_sessionmaker[AsyncSession],
+) -> None:
+    """``trades.exit_reason`` + ``trades.realised_pnl`` are whitelisted.
+
+    Slice ``trades-add-exit-and-realised-pnl-columns``: the (future)
+    close-flow service populates both columns alongside ``state`` +
+    ``closed_at`` in a single UPDATE. The whitelist must permit that
+    UPDATE; without the whitelist edit the append-only listener would
+    raise. This test also exercises the ORM read-back so the columns
+    are accessible as ``Mapped`` attributes.
+    """
+    tenant_id = uuid4()
+    strategy_id = await _seed_tenant_and_strategy(session_fx, tenant_id)
+    proposal_id = uuid4()
+    trade_id = uuid4()
+
+    async with with_tenant_context(tenant_id), session_fx() as s:
+        s.add(
+            TradeProposal(
+                id=proposal_id,
+                tenant_id=tenant_id,
+                strategy_config_id=strategy_id,
+                symbol="SPY",
+                side="buy",
+                quantity=Decimal("10"),
+                entry_price_indicative=Decimal("450"),
+                stop_price=Decimal("440"),
+                confidence_score=None,
+                reasoning={},
+                research_brief_id=None,
+                mode="paper",
+                correlation_id=uuid4(),
+            )
+        )
+        s.add(
+            Trade(
+                id=trade_id,
+                tenant_id=tenant_id,
+                proposal_id=proposal_id,
+                symbol="SPY",
+                side="buy",
+                quantity=Decimal("10"),
+                mode="paper",
+                state="open",
+                opened_at=datetime.now(UTC),
+            )
+        )
+        await s.commit()
+
+    # Fresh INSERT — both columns default to NULL ("unknown").
+    async with with_tenant_context(tenant_id), session_fx() as s:
+        trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
+        assert trade.exit_reason is None
+        assert trade.realised_pnl is None
+
+    # Whitelisted UPDATE — close-flow shape: state + closed_at +
+    # exit_reason + realised_pnl in one commit.
+    async with with_tenant_context(tenant_id), session_fx() as s:
+        trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
+        trade.state = "closed_filled"
+        trade.closed_at = datetime.now(UTC)
+        trade.exit_reason = "stop"
+        trade.realised_pnl = Decimal("-42.50000000")
+        await s.commit()
+
+    async with with_tenant_context(tenant_id), session_fx() as s:
+        trade = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
+        assert trade.exit_reason == "stop"
+        assert trade.realised_pnl == Decimal("-42.50000000")
+
+
 async def test_strategy_config_update_bumps_version(
     session_fx: async_sessionmaker[AsyncSession],
 ) -> None:
