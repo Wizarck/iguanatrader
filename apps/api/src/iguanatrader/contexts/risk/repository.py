@@ -191,14 +191,11 @@ class RiskRepository(RiskRepositoryPort):
         Returns ``Decimal("0")`` when no rows match (``COALESCE`` at
         the SQL level keeps the type as Decimal).
         """
-        stmt = (
-            select(func.coalesce(func.sum(Trade.realised_pnl), 0))
-            .where(
-                Trade.state != "open",
-                Trade.closed_at.is_not(None),
-                Trade.closed_at >= since,
-                Trade.realised_pnl.is_not(None),
-            )
+        stmt = select(func.coalesce(func.sum(Trade.realised_pnl), 0)).where(
+            Trade.state != "open",
+            Trade.closed_at.is_not(None),
+            Trade.closed_at >= since,
+            Trade.realised_pnl.is_not(None),
         )
         result = await self._session.execute(stmt)
         value = result.scalar_one()

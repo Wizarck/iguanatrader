@@ -22,12 +22,6 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from iguanatrader.contexts.risk.repository import RiskRepository
-from iguanatrader.contexts.trading.models import (
-    EquitySnapshot,
-    Trade,
-    TradeProposal,
-)
 
 # Importing the ORM module registers the risk tables on the shared
 # Base.metadata so the conftest's Base.metadata.create_all builds them.
@@ -36,6 +30,12 @@ from iguanatrader.contexts.risk.orm import (  # noqa: F401
     KillSwitchStateORM,
     RiskEvaluationORM,
     RiskOverrideORM,
+)
+from iguanatrader.contexts.risk.repository import RiskRepository
+from iguanatrader.contexts.trading.models import (
+    EquitySnapshot,
+    Trade,
+    TradeProposal,
 )
 from iguanatrader.persistence import Tenant
 from iguanatrader.shared.contextvars import with_tenant_context
