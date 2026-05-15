@@ -82,7 +82,7 @@ async def test_bridge_publishes_proposal_risk_evaluated_on_allow(
 
     bus.subscribe(ProposalRiskEvaluated, _capture)
 
-    async def _fake_get_by_id(_proposal_id: object) -> object:
+    async def _fake_get_by_id(_self: object, _proposal_id: object) -> object:
         return fake_proposal_row
 
     monkeypatch.setattr(
@@ -126,7 +126,7 @@ async def test_bridge_publishes_proposal_risk_evaluated_on_reject(
 
     bus.subscribe(ProposalRiskEvaluated, _capture)
 
-    async def _fake_get_by_id(_proposal_id: object) -> object:
+    async def _fake_get_by_id(_self: object, _proposal_id: object) -> object:
         return fake_proposal_row
 
     monkeypatch.setattr(
@@ -173,7 +173,7 @@ async def test_bridge_swallows_kill_switch_error_and_publishes_reject(
 
     bus.subscribe(ProposalRiskEvaluated, _capture)
 
-    async def _fake_get_by_id(_proposal_id: object) -> object:
+    async def _fake_get_by_id(_self: object, _proposal_id: object) -> object:
         return fake_proposal_row
 
     monkeypatch.setattr(
@@ -212,7 +212,7 @@ async def test_bridge_logs_warning_and_publishes_nothing_when_proposal_missing(
 
     bus.subscribe(ProposalRiskEvaluated, _capture)
 
-    async def _fake_get_by_id(_proposal_id: object) -> object | None:
+    async def _fake_get_by_id(_self: object, _proposal_id: object) -> object | None:
         return None
 
     monkeypatch.setattr(
@@ -245,7 +245,7 @@ async def test_register_subscriptions_wires_handler_for_proposal_created(
 
     bus.subscribe(ProposalRiskEvaluated, _capture)
 
-    async def _fake_get_by_id(_proposal_id: object) -> object:
+    async def _fake_get_by_id(_self: object, _proposal_id: object) -> object:
         return fake_proposal_row
 
     monkeypatch.setattr(
