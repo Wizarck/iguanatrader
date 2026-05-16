@@ -412,20 +412,55 @@ async def test_raw_sql_delete_on_research_briefs_blocked_by_l2(
 ) -> None:
     """Raw SQL DELETE on ``research_briefs`` is rejected by the L2 trigger.
 
-    No row needs to exist for the trigger to fire — SQLite's BEFORE DELETE
-    fires on every DELETE statement that targets the table, regardless of
-    whether the WHERE clause matches anything. We exercise this without
-    populating a row to avoid the foreign-key dance for ``watchlist_configs``.
+    The trigger uses ``FOR EACH ROW``, so it only fires when a row matches
+    the WHERE clause. Seed a brief first so the DELETE has a target.
     """
     tenant_id = seeded_world["tenant_id"]
+    universe_id = seeded_world["universe_id"]
+    watchlist_id = uuid4()
+    brief_id = uuid4()
 
     async with with_tenant_context(tenant_id):
+        # Seed the brief's FK dependencies: WatchlistConfig + ResearchBrief.
+        from iguanatrader.contexts.research.models import ResearchBrief, WatchlistConfig
+
+        with_session.add(
+            WatchlistConfig(
+                id=watchlist_id,
+                tenant_id=tenant_id,
+                symbol_universe_id=universe_id,
+                tier="primary",
+                methodology="three_pillar",
+                brief_refresh_schedule="weekly",
+                enabled=True,
+            )
+        )
+        await with_session.flush()
+        with_session.add(
+            ResearchBrief(
+                id=brief_id,
+                tenant_id=tenant_id,
+                watchlist_config_id=watchlist_id,
+                symbol_universe_id=universe_id,
+                version=1,
+                methodology="three_pillar",
+                thesis_text="x",
+                citations=[],
+                audit_trail=[],
+                llm_provider="anthropic",
+                llm_model="claude-x",
+                llm_input_tokens=0,
+                llm_output_tokens=0,
+            )
+        )
+        await with_session.commit()
+
         with pytest.raises(DBAPIError):
             # The trigger's RAISE(FAIL, ...) surfaces as DBAPIError; the
             # exact subtype is sqlalchemy.exc.OperationalError on aiosqlite.
             await with_session.execute(
                 text("DELETE FROM research_briefs WHERE id = :id"),
-                {"id": str(uuid4())},
+                {"id": brief_id.hex},
             )
 
 
@@ -452,10 +487,11 @@ async def test_supersede_recorded_to_permitted_by_narrow_trigger_exception(
         await with_session.commit()
 
         # Re-read directly via raw SQL to confirm the update landed.
+        # CHAR(32) storage (per gotcha #21) requires `.hex`, not str(uuid).
         row = (
             await with_session.execute(
                 text("SELECT recorded_to FROM research_facts WHERE id = :id"),
-                {"id": str(inserted.id)},
+                {"id": inserted.id.hex},
             )
         ).first()
         assert row is not None
