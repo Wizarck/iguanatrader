@@ -455,26 +455,28 @@ The contract is documented in `apps/api/src/iguanatrader/cli/__init__.py` docstr
 
 **Status**: convention documented 2026-05-05; no automated lint yet (slice O1 candidate — a custom pre-commit check that flags slow module-scope imports under `cli/`).
 
-## 30. `Exception` fallback handler MUST re-raise `HTTPException` + `RequestValidationError`
+## 30. RFC 7807 500 fallback must be a wrapping middleware, not `add_exception_handler(Exception, ...)`
 
-**Surfaced**: 2026-05-05 (slice 5, group 2).
+**Surfaced**: 2026-05-05 (slice 5, group 2) — fallback registered as `app.add_exception_handler(Exception, ...)`. **Reopened + re-fixed** 2026-05-16 when `test_unhandled_exception_wrapped_as_internal_500` started failing on Python 3.13.
 
-**Symptom**: After registering `app.add_exception_handler(Exception, _render_internal)`, FastAPI's native 404 (route not found) and 422 (Pydantic body validation failure) responses get clobbered into the project's generic 500 + Problem body. Users see "Unexpected server error." for what should be a "field 'email' is required" 422, and frontend code that pattern-matches on the 422 native shape breaks.
+**Symptom**: An unhandled exception inside a route (e.g. a third-party `ValueError`) propagates back to the ASGI test client (`httpx.ASGITransport`) as the raw exception instead of being rendered as the project's 500 + RFC 7807 Problem body. The handler's `api.unhandled_exception` structlog event IS emitted (proving the handler ran), but the rendered response never reaches the client. In a production server (uvicorn) the symptom is subtler: the response is sent, but the exception is also re-raised, polluting access logs and triggering ASGI-level error pages on some servers.
 
-**Root cause**: FastAPI's exception-handler dispatch matches by MRO. The `Exception` fallback is the broadest possible handler — it catches **everything**, including FastAPI's own `HTTPException` (used internally for 404/405/etc.) and `RequestValidationError` (Pydantic 422 body failure). Without a re-raise inside the fallback, the framework's default handlers never run.
+**Root cause**: FastAPI's `build_middleware_stack` extracts any handler keyed on `Exception` (or status code 500) out of the regular `ExceptionMiddleware` and instead binds it as `ServerErrorMiddleware.handler`. `ServerErrorMiddleware` calls the bound handler to render the response — and then **always re-raises the original exception** (deliberate, so that ASGI servers can log the underlying cause). `httpx.ASGITransport` (and any well-behaved transport) propagates that re-raise, clobbering the rendered response. Registering against `BaseException` looks like a one-line fix but Starlette's `ExceptionMiddleware.add_exception_handler` asserts `issubclass(cls, Exception)` and rejects it.
 
-**Workaround**: The fallback handler in `iguanatrader.api.errors._render_internal` does:
+**Workaround**: The 500 fallback lives in a pure-ASGI wrapping middleware (`iguanatrader.api.errors.InternalErrorMiddleware`) installed via `app.add_middleware` as the OUTERMOST user middleware. It catches every `Exception` that escaped `ExceptionMiddleware` and renders the 500 RFC 7807 Problem itself — without re-raising. Because it sits **inside** `ServerErrorMiddleware` but **outside** `ExceptionMiddleware`, the exception is intercepted before `ServerErrorMiddleware`'s re-raise can fire. FastAPI's own `HTTPException` and `RequestValidationError` are unaffected — they have specific handlers registered by FastAPI itself inside `ExceptionMiddleware` and never escape to the wrapping middleware.
 
 ```python
-if isinstance(exc, (HTTPException, RequestValidationError)):
-    raise exc  # let FastAPI's native handler chain render this
+# Layer 1 — IguanaError subclasses → Problem body via ExceptionMiddleware.
+app.add_exception_handler(IguanaError, _render_problem)
+
+# Layer 2 — Everything else (escapes ExceptionMiddleware) → 500 Problem.
+# Must be a middleware, NOT add_exception_handler(Exception, ...).
+app.add_middleware(InternalErrorMiddleware)
 ```
 
-The re-raise is critical. Starlette's exception middleware re-dispatches the re-raised exception through the registered handler chain, which finds FastAPI's framework-default handlers next and renders the canonical native response (404 / 422 / etc.). Only "true" unhandled exceptions (third-party `ValueError`, `AssertionError` leaking from a route, etc.) get the 500 + Problem treatment.
+**Tests**: `apps/api/tests/integration/test_error_rendering.py` covers all six cases — `test_unhandled_exception_wrapped_as_internal_500` (the regression test), `test_fastapi_http_exception_passes_through` (native 418), `test_request_validation_error_uses_fastapi_native_shape` (Pydantic 422), `test_iguana_error_subclass_renders_as_rfc7807`, `test_validation_error_renders_with_400`, `test_bootstrap_not_ready_renders_canonical_urn_type`.
 
-**Tests**: `apps/api/tests/integration/test_error_rendering.py` covers both passes — `test_fastapi_http_exception_passes_through` and `test_request_validation_error_uses_fastapi_native_shape` — so a regression that drops the re-raise breaks CI immediately.
-
-**Status**: workaround in place 2026-05-05; the re-raise pattern is the documented contract for any future broad-catch handler.
+**Status**: resolved 2026-05-16. Any future "broad-catch" pattern in the API must use a wrapping ASGI middleware, not `add_exception_handler(Exception, ...)`.
 
 ## 31. Trading routes return 501 + RFC 7807 until slice T4 lands
 
