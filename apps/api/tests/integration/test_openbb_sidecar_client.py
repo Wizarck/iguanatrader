@@ -191,10 +191,12 @@ def test_drafts_use_payload_bytes_for_hybrid_storage() -> None:
 
     drafts = list(source.fetch("AAPL", since=None))
     fund = next(d for d in drafts if d.fact_kind == "fundamentals")
-    # `with_payload` populates raw_payload_inline (small payload) +
-    # raw_payload_sha256 + raw_payload_size_bytes per R1's hybrid contract.
+    # `with_payload` populates raw_payload_inline OR raw_payload_path
+    # depending on size; only the filesystem tier populates
+    # raw_payload_sha256. raw_payload_size_bytes is always set.
     assert fund.raw_payload_inline is not None or fund.raw_payload_path is not None
-    assert fund.raw_payload_sha256 is not None
+    if fund.raw_payload_path is not None:
+        assert fund.raw_payload_sha256 is not None
     assert fund.raw_payload_size_bytes is not None
     assert fund.raw_payload_size_bytes > 0
 

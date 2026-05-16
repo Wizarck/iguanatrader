@@ -154,6 +154,11 @@ def render_weekly_review_pdf(
         pagesize=LETTER,
         title=_TITLE,
         author="iguanatrader",
+        # PDF /Subject lives in the uncompressed Info dict; embedding the
+        # review_date here gives consumers a searchable date marker even
+        # when stream compression is on (default), and lets test runners
+        # assert on the date without parsing PDF text streams.
+        subject=f"Review week ending {review_date.isoformat()}",
         leftMargin=54,
         rightMargin=54,
         topMargin=54,
