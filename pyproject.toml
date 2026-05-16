@@ -252,4 +252,11 @@ filterwarnings = [
     # we accept the noise rather than block CI on a Windows quirk that
     # doesn't reproduce on the Linux CI runners. See gotcha #17.
     "ignore::pytest.PytestUnraisableExceptionWarning",
+    # Python 3.12+ deprecated the default sqlite3 datetime adapter; the
+    # warning fires whenever aiosqlite passes a Python datetime through
+    # stdlib sqlite3. We rely on SQLAlchemy's typed binding, not the stdlib
+    # adapter, so the noise is irrelevant to correctness — but treating it
+    # as an error blocks every test that binds a datetime. Postgres prod
+    # is unaffected.
+    "ignore:The default datetime adapter is deprecated:DeprecationWarning",
 ]
