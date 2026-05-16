@@ -1,25 +1,25 @@
-"""Integration smoke for research route stubs (slice R1).
+"""Integration smoke for research route OpenAPI schema (slice R1 legacy).
 
-Covers spec scenarios under "Research route stubs render 501 RFC 7807
-until R5 ships":
+History: slice R1 introduced these endpoints as 501 stubs (test class
+named `_route_stubs.py`). Slice R5 (research-brief-synthesis) shipped
+real handlers — the 501 path now only fires when no brief exists in
+the DB, which requires a full auth + tenant + DB setup that's
+orthogonal to the schema check this file was meant to provide.
 
-* ``GET /api/v1/research/briefs/{symbol}`` → 501 + Problem body with
-  ``type=urn:iguanatrader:error:research-stub``.
-* ``GET /api/v1/research/briefs/{brief_id}/audit-trail`` → same.
-* ``GET /api/v1/research/facts/{symbol}`` → same.
-* ``POST /api/v1/research/briefs/{symbol}/refresh`` → same.
-* ``/openapi.json`` exposes ``BriefResponse`` + ``FactResponse`` +
-  ``CitationDetail`` + ``AuditTrailEntry`` component schemas so the W1
-  typegen pipeline can regenerate the typed client.
+What survives here: the two OpenAPI schema assertions that verify the
+research components + paths are exposed for the W1 typegen pipeline.
+The four "returns 501" tests were removed when R5 made them obsolete;
+real research route integration coverage lives in the BriefService
+unit tests under `tests/unit/contexts/research/`.
 
-Uses the same app fixtures slice 4/5 ship; we don't need a seeded user
-or DB session because the stubs raise before any persistence touch.
+Filename kept for git-history continuity; spec scenarios under
+"Research route stubs render 501 RFC 7807 until R5 ships" are now
+documented as resolved in the R5 retro.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -37,42 +37,6 @@ async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="https://test") as c:
         yield c
-
-
-async def test_get_brief_returns_501_problem(client: AsyncClient) -> None:
-    resp = await client.get("/api/v1/research/briefs/AAPL")
-
-    assert resp.status_code == 501
-    assert resp.headers["content-type"].startswith("application/problem+json")
-    body = resp.json()
-    assert body["type"] == "urn:iguanatrader:error:research-stub"
-    assert body["status"] == 501
-    assert "research-brief-synthesis" in body["detail"]
-
-
-async def test_get_audit_trail_returns_501_problem(client: AsyncClient) -> None:
-    brief_id = uuid4()
-    resp = await client.get(f"/api/v1/research/briefs/{brief_id}/audit-trail")
-
-    assert resp.status_code == 501
-    body = resp.json()
-    assert body["type"] == "urn:iguanatrader:error:research-stub"
-
-
-async def test_get_facts_returns_501_problem(client: AsyncClient) -> None:
-    resp = await client.get("/api/v1/research/facts/AAPL")
-
-    assert resp.status_code == 501
-    body = resp.json()
-    assert body["type"] == "urn:iguanatrader:error:research-stub"
-
-
-async def test_post_refresh_returns_501_problem(client: AsyncClient) -> None:
-    resp = await client.post("/api/v1/research/briefs/AAPL/refresh", json={})
-
-    assert resp.status_code == 501
-    body = resp.json()
-    assert body["type"] == "urn:iguanatrader:error:research-stub"
 
 
 async def test_openapi_exposes_research_dto_components(client: AsyncClient) -> None:
