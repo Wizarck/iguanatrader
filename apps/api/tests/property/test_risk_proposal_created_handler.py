@@ -44,6 +44,9 @@ class _FakeProposalRow:
     side: str
     quantity: Decimal
     entry_price_indicative: Decimal
+    # Added when slice ``risk-cooldown-period-protection`` started reading
+    # the symbol off the row in cooldown_period.py.
+    symbol: str = "SPY"
 
 
 class _FakeProposalRepository:

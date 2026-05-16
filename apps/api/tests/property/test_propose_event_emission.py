@@ -43,8 +43,22 @@ from iguanatrader.contexts.trading.service import (
     KillSwitchActiveError,
     TradingService,
 )
-from iguanatrader.shared.contextvars import tenant_id_var
+from iguanatrader.shared.contextvars import session_var, tenant_id_var
 from iguanatrader.shared.messagebus import MessageBus
+
+
+class _FakeSession:
+    """No-op session: accepts add() but never flushes/commits.
+
+    Slice ``trades-add-proposal-row-persistence`` added a
+    ``session.add(TradeProposal)`` inside :meth:`TradingService.propose`.
+    The property test doesn't care about the persistence path (it only
+    asserts emission counts on the bus); this fake satisfies the
+    BaseRepository contract without spinning up an aiosqlite engine.
+    """
+
+    def add(self, _instance: object) -> None:
+        return None
 
 
 class _FakeBroker:
@@ -189,6 +203,7 @@ def test_propose_emits_one_event_iff_strategy_returns_proposal(
         )
 
         token = tenant_id_var.set(tenant_id)
+        session_token = session_var.set(_FakeSession())
         try:
             config = StrategyConfigSnapshot(
                 id=strategy_config_id,
@@ -208,6 +223,7 @@ def test_propose_emits_one_event_iff_strategy_returns_proposal(
             await _drain()
         finally:
             tenant_id_var.reset(token)
+            session_var.reset(session_token)
             await bus.aclose()
 
         expected = 1 if return_proposal else 0
@@ -267,6 +283,7 @@ def test_kill_switch_active_emits_zero_events_regardless_of_strategy_output(
         service._kill_switch_active = True  # flip after construction
 
         token = tenant_id_var.set(tenant_id)
+        session_token = session_var.set(_FakeSession())
         try:
             config = StrategyConfigSnapshot(
                 id=strategy_config_id,
@@ -287,6 +304,7 @@ def test_kill_switch_active_emits_zero_events_regardless_of_strategy_output(
             await _drain()
         finally:
             tenant_id_var.reset(token)
+            session_var.reset(session_token)
             await bus.aclose()
 
         assert captured == [], f"Kill-switch path must NOT publish events; got {len(captured)}"
