@@ -227,6 +227,11 @@ class IBKRAdapter(HeartbeatMixin):
 
     async def _resilient_reconnect_loop(self) -> None:
         """Walk the canonical backoff sequence, capped at 5 attempts."""
+        # Mirror HeartbeatMixin.reconnect_loop: declare RECONNECTING before
+        # the first attempt so observers + assertions see the in-flight
+        # state. If all attempts fail, state stays RECONNECTING (killswitch
+        # is the outward signal). On success, mark_connected flips it.
+        self.mark_reconnecting()
         for attempt in range(MAX_RECONNECT_ATTEMPTS):
             delay = backoff_seconds(attempt, with_jitter=True)
             try:
