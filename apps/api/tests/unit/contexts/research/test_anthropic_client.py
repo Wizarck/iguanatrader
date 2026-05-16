@@ -158,3 +158,132 @@ def test_composition_root_helper_uses_secret_env(
 
     assert isinstance(client, AnthropicLLMClient)
     assert client._api_key == "sk-ant-from-env"
+
+
+# ---------------------------------------------------------------------------
+# Slice ``llm-observability-and-signals`` — Langfuse instrumentation
+# ---------------------------------------------------------------------------
+
+
+class _RecordingObservation:
+    """Mirrors the v3 LangfuseGeneration/LangfuseSpan surface used by the wrapper."""
+
+    def __init__(self, kind: str, kwargs: dict[str, Any]) -> None:
+        self.kind = kind
+        self.init_kwargs = kwargs
+        self.updates: list[dict[str, Any]] = []
+        self.ends: list[dict[str, Any]] = []
+
+    def start_observation(self, **kwargs: Any) -> _RecordingObservation:
+        return _RecordingObservation(kwargs.get("as_type", "span"), kwargs)
+
+    def update(self, **kwargs: Any) -> _RecordingObservation:
+        self.updates.append(kwargs)
+        return self
+
+    def end(self, **kwargs: Any) -> _RecordingObservation:
+        self.ends.append(kwargs)
+        return self
+
+
+class _RecordingLangfuse:
+    def __init__(self) -> None:
+        self.observations: list[_RecordingObservation] = []
+
+    def start_observation(self, **kwargs: Any) -> _RecordingObservation:
+        obs = _RecordingObservation(kwargs.get("as_type", "span"), kwargs)
+        self.observations.append(obs)
+        return obs
+
+    def flush(self) -> None: ...
+
+
+@pytest.mark.asyncio
+async def test_complete_emits_langfuse_generation_with_canonical_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AnthropicLLMClient must publish a Langfuse generation with
+    ``consumer=iguanatrader`` + ``application=iguanatrader-synthesis``
+    (the default) and the usage tokens so the ELIGIA cost widgets
+    bucket the call correctly.
+    """
+    from iguanatrader.contexts.observability import langfuse_client as lc
+
+    fake_lf = _RecordingLangfuse()
+    monkeypatch.setattr(lc, "_client", fake_lf)
+    monkeypatch.setattr(lc, "_enabled", True)
+    monkeypatch.setattr(lc, "_env_tag", "test")
+
+    fake_anthropic = _FakeAsyncAnthropic(
+        _FakeMessage(text_blocks=["ok"], input_tokens=10, output_tokens=4)
+    )
+    adapter = AnthropicLLMClient(api_key="sk-ant-test", client=fake_anthropic)  # type: ignore[arg-type]
+
+    await adapter.complete(prompt="x", model="claude-3-5-haiku", replay_key=None, max_tokens=16)
+
+    assert len(fake_lf.observations) == 1
+    obs = fake_lf.observations[0]
+    assert obs.kind == "generation"
+    md = obs.init_kwargs["metadata"]
+    assert md["consumer"] == "iguanatrader"
+    assert md["application"] == "iguanatrader-synthesis"
+    # Span was closed with usage tokens + DEFAULT level (success path).
+    update_call = obs.updates[-1]
+    assert update_call["usage_details"]["input"] == 10
+    assert update_call["usage_details"]["output"] == 4
+    end_call = obs.ends[-1]
+    assert end_call["level"] == "DEFAULT"
+
+
+@pytest.mark.asyncio
+async def test_complete_overrides_application_tag_when_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from iguanatrader.contexts.observability import langfuse_client as lc
+
+    fake_lf = _RecordingLangfuse()
+    monkeypatch.setattr(lc, "_client", fake_lf)
+    monkeypatch.setattr(lc, "_enabled", True)
+
+    fake_anthropic = _FakeAsyncAnthropic(
+        _FakeMessage(text_blocks=["ok"], input_tokens=1, output_tokens=1)
+    )
+    adapter = AnthropicLLMClient(api_key="sk-ant-test", client=fake_anthropic)  # type: ignore[arg-type]
+
+    await adapter.complete(
+        prompt="x",
+        model="claude-3-5-haiku",
+        replay_key=None,
+        max_tokens=16,
+        langfuse_application="iguanatrader-explainer",
+    )
+
+    assert (
+        fake_lf.observations[0].init_kwargs["metadata"]["application"] == "iguanatrader-explainer"
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_marks_error_level_on_anthropic_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from iguanatrader.contexts.observability import langfuse_client as lc
+
+    fake_lf = _RecordingLangfuse()
+    monkeypatch.setattr(lc, "_client", fake_lf)
+    monkeypatch.setattr(lc, "_enabled", True)
+
+    class _Boom:
+        class messages:
+            @staticmethod
+            async def create(**kwargs: Any) -> Any:
+                raise RuntimeError("anthropic refused")
+
+    adapter = AnthropicLLMClient(api_key="sk-ant-test", client=_Boom())  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="anthropic refused"):
+        await adapter.complete(prompt="x", model="claude-3-5-haiku", replay_key=None, max_tokens=8)
+
+    end_call = fake_lf.observations[-1].ends[-1]
+    assert end_call["level"] == "ERROR"
+    assert "RuntimeError" in end_call["status_message"]

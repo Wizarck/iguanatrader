@@ -108,13 +108,34 @@ async def _production_adapter_lifespan(app: FastAPI) -> AsyncIterator[None]:
     rebind the ladder's Tier-2 entry to Playwright. The fake stub
     remains for dev/test envs.
 
+    Slice ``llm-observability-and-signals``: also bootstraps the
+    Langfuse SaaS client when ``LANGFUSE_PUBLIC_KEY`` +
+    ``LANGFUSE_SECRET_KEY`` are set. Runs unconditionally on ALL envs
+    (not gated on paper/live/production) because dev environments
+    benefit from LLM trace visibility too; missing creds short-circuit
+    to a no-op (the Langfuse wrapper logs the disabled-state event).
+
     Idempotent + degradation-tolerant: a missing playwright dep logs a
     warning and lets the API boot anyway (Tier-1 webfetch still works).
     Teardown closes the playwright browser on shutdown (no-op if never
-    bootstrapped).
+    bootstrapped) AND flushes the Langfuse queue.
     """
     log = structlog.get_logger("iguanatrader.api.app")
     env = (os.environ.get("IGUANATRADER_ENV") or "").strip().lower()
+
+    # Langfuse bootstrap — runs on every env (no-op when creds absent).
+    try:
+        from iguanatrader.contexts.observability.langfuse_client import init_langfuse
+
+        init_langfuse(env or "dev")
+    except Exception as exc:  # pragma: no cover — defensive
+        log.warning(
+            "api.lifespan.langfuse_bootstrap_failed",
+            env=env,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+
     if env in {"paper", "live", "production"}:
         try:
             from iguanatrader.contexts.research.scraping.tier2_playwright import (
@@ -132,6 +153,21 @@ async def _production_adapter_lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
     yield
+
+    # Flush Langfuse queue before the worker exits so in-flight spans
+    # actually reach the SaaS endpoint.
+    try:
+        from iguanatrader.contexts.observability.langfuse_client import (
+            shutdown_langfuse,
+        )
+
+        shutdown_langfuse()
+    except Exception as exc:  # pragma: no cover — defensive
+        log.warning(
+            "api.lifespan.langfuse_shutdown_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
 
     if env in {"paper", "live", "production"}:
         try:

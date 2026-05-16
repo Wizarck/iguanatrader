@@ -165,6 +165,29 @@ class StrategyConfigListOut(BaseModel):
     total: int | None = None
 
 
+class TradeJournalOut(BaseModel):
+    """LLM-generated post-mortem narrative for a closed trade.
+
+    Slice ``llm-observability-and-signals``. Persisted on
+    ``trades.journal_narrative`` (migration 0018). Idempotent: the
+    route returns the persisted narrative on subsequent calls unless
+    ``?regenerate=true`` is passed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    trade_id: UUID
+    narrative: str
+    model: str
+    generated_at: datetime
+    tokens_input: int
+    tokens_output: int
+    cached: bool = Field(
+        default=False,
+        description="True when the narrative was read from DB; False when freshly generated.",
+    )
+
+
 class CloseTradeIn(BaseModel):
     """Body for ``POST /trades/{id}/close`` (slice
     ``trade-close-flow-exit-pathway``).
@@ -248,6 +271,7 @@ class PositionListOut(BaseModel):
 
 
 __all__ = [
+    "CloseTradeIn",
     "EquitySnapshotListOut",
     "EquitySnapshotOut",
     "FillListOut",
@@ -260,6 +284,7 @@ __all__ = [
     "StrategyConfigIn",
     "StrategyConfigListOut",
     "StrategyConfigOut",
+    "TradeJournalOut",
     "TradeListOut",
     "TradeOut",
 ]

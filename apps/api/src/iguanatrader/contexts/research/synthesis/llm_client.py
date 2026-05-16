@@ -54,8 +54,17 @@ class LLMClient(Protocol):
         model: str,
         replay_key: str | None,
         max_tokens: int,
+        langfuse_application: str = "iguanatrader-synthesis",
     ) -> LLMCompletion:
-        """Issue a completion against ``prompt`` and return the response."""
+        """Issue a completion against ``prompt`` and return the response.
+
+        ``langfuse_application`` is an optional tag stamped on the
+        Langfuse generation span so the ELIGIA cost-by-tag widgets
+        bucket the call correctly. The default targets the synthesizer
+        flow; proposal-advisor / journaling services override with
+        their own application tag. Fake clients (tests) accept and
+        ignore the kwarg.
+        """
         ...
 
 
@@ -95,7 +104,11 @@ class FakeLLMClient:
         model: str,
         replay_key: str | None,
         max_tokens: int,
+        langfuse_application: str = "iguanatrader-synthesis",
     ) -> LLMCompletion:
+        # ``langfuse_application`` accepted for Protocol parity; the
+        # fake does not emit Langfuse observations.
+        del langfuse_application
         if replay_key is not None and replay_key in self._registry:
             text = self._registry[replay_key]
             cached = True

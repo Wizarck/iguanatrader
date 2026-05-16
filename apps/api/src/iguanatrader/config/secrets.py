@@ -110,5 +110,31 @@ class SecretEnv:
         """``DATABASE_PATH`` — sqlite file path for ``APSchedulerAdapter`` jobstore."""
         return _required("DATABASE_PATH")
 
+    # ------------------------------------------------------------------
+    # Langfuse observability — slice ``llm-observability-and-signals``
+    # ------------------------------------------------------------------
+    # All three properties are *optional*: returning ``None`` is the
+    # documented signal that Langfuse export is disabled, and the
+    # client wrapper falls back to a no-op. Observability is opt-in
+    # so dev / test / first-boot environments are not blocked on a
+    # missing SOPS-decrypt of these vars.
+
+    @property
+    def langfuse_public_key(self) -> str | None:
+        """``LANGFUSE_PUBLIC_KEY`` — None disables Langfuse export."""
+        value = os.environ.get("LANGFUSE_PUBLIC_KEY")
+        return value if value and value.strip() else None
+
+    @property
+    def langfuse_secret_key(self) -> str | None:
+        """``LANGFUSE_SECRET_KEY`` — None disables Langfuse export."""
+        value = os.environ.get("LANGFUSE_SECRET_KEY")
+        return value if value and value.strip() else None
+
+    @property
+    def langfuse_host(self) -> str:
+        """``LANGFUSE_HOST`` — defaults to Langfuse Cloud EU."""
+        return os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
+
 
 __all__ = ["MissingSecretError", "SecretEnv"]

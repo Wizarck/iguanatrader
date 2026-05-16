@@ -38,6 +38,14 @@ typer = ">=0.12,<1.0"
 # Slice O1 (observability-cost-meter) — OTEL port stub only (api package).
 # No SDK / no exporter MVP per design D7. v2 SaaS will swap in OTLP exporters.
 opentelemetry-api = ">=1.25,<2.0"
+# Slice ``llm-observability-and-signals`` — Langfuse SaaS SDK for
+# cross-stack LLM observability shared with the ELIGIA dashboard.
+# All iguanatrader LLM call-sites publish observations tagged
+# ``consumer=iguanatrader`` + ``application=iguanatrader-<module>`` to
+# the org-shared Langfuse Cloud project. Coexists with the local
+# ``@cost_meter`` (tenant-billing in DB) — different audiences, no
+# functional overlap.
+langfuse = ">=2.40,<4.0"
 # Wave 4 deployment-foundation — production SDKs replacing six Wave-3 fakes.
 # Each is wrapped in a thin adapter satisfying the corresponding Protocol;
 # fakes remain in tests for deterministic unit suites. License-boundary
@@ -220,6 +228,11 @@ module = [
     "playwright.*",
     "camoufox.*",
     "reportlab.*",
+    # Slice ``llm-observability-and-signals``: Langfuse Python SDK ships
+    # without py.typed; the wrapper at
+    # ``contexts/observability/langfuse_client.py`` exposes a fully typed
+    # surface to the rest of the codebase.
+    "langfuse.*",
 ]
 ignore_missing_imports = true
 disallow_any_unimported = false
