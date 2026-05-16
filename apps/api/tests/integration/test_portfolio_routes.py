@@ -35,6 +35,7 @@ from iguanatrader.contexts.trading.models import (
     EquitySnapshot,
     Fill,
     Order,
+    StrategyConfig,
     Trade,
     TradeProposal,
 )
@@ -170,12 +171,27 @@ async def _seed_open_trade_with_fills(
     proposal_id = uuid4()
     trade_id = uuid4()
     order_id = uuid4()
+    strategy_config_id = uuid4()
+    # Flush after each add(): SQLAlchemy 2.x's INSERTMANYVALUES + RETURNING
+    # path on aiosqlite can batch sibling inserts before their parent FK
+    # is visible. One-row-at-a-time flushing sidesteps the race.
     async with with_tenant_context(tenant_id), sf() as s:
+        s.add(
+            StrategyConfig(
+                id=strategy_config_id,
+                tenant_id=tenant_id,
+                strategy_kind="donchian_atr",
+                symbol=symbol,
+                params={"lookback": 20},
+                enabled=True,
+            )
+        )
+        await s.flush()
         s.add(
             TradeProposal(
                 id=proposal_id,
                 tenant_id=tenant_id,
-                strategy_config_id=uuid4(),
+                strategy_config_id=strategy_config_id,
                 research_brief_id=None,
                 correlation_id=uuid4(),
                 symbol=symbol,
@@ -187,6 +203,7 @@ async def _seed_open_trade_with_fills(
                 mode="paper",
             )
         )
+        await s.flush()
         s.add(
             Trade(
                 id=trade_id,
@@ -200,6 +217,7 @@ async def _seed_open_trade_with_fills(
                 opened_at=base,
             )
         )
+        await s.flush()
         s.add(
             Order(
                 id=order_id,
@@ -214,6 +232,7 @@ async def _seed_open_trade_with_fills(
                 submitted_at=base,
             )
         )
+        await s.flush()
         for fill_qty, fill_price in fills:
             s.add(
                 Fill(
@@ -227,6 +246,7 @@ async def _seed_open_trade_with_fills(
                     filled_at=base,
                 )
             )
+            await s.flush()
         await s.commit()
     return {"trade_id": trade_id, "order_id": order_id, "proposal_id": proposal_id}
 
@@ -341,7 +361,7 @@ async def test_get_portfolio_with_seeded_data_echoes_back(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["equity"]["snapshot_kind"] == "event"
-    assert body["equity"]["account_equity"] == "100000"
+    assert Decimal(body["equity"]["account_equity"]) == Decimal("100000")
     assert len(body["open_trades"]) == 1
     assert body["open_trades"][0]["symbol"] == "SPY"
     # Order is "partially_filled" — counts as open.
@@ -575,7 +595,7 @@ async def test_get_equity_returns_latest_snapshot(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["id"] == str(newest)
-    assert body["account_equity"] == "75000"
+    assert Decimal(body["account_equity"]) == Decimal("75000")
 
 
 # ---------------------------------------------------------------------------
