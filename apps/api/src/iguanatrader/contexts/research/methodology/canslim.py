@@ -79,8 +79,12 @@ def _score_l(value: Decimal | None) -> Decimal:
 
 
 def _score_i(value: Decimal | None) -> Decimal:
+    # Missing data scores 0 to match the cross-methodology contract
+    # exercised by test_methodology_handles_all_missing — "no signal"
+    # cannot count as half-credit because the composite would never go
+    # to 0 even with nothing observed.
     if value is None:
-        return Decimal("0.5")
+        return ZERO
     if value > ZERO:
         return ONE
     if value < ZERO:

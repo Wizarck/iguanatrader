@@ -31,7 +31,7 @@ async def _seed_watchlist(
                 id=watchlist_id,
                 tenant_id=tenant_id,
                 symbol_universe_id=universe_id,
-                tier="A",
+                tier="primary",
                 methodology="three_pillar",
                 methodology_params=None,
                 brief_refresh_schedule="weekly",

@@ -34,8 +34,15 @@ class InMemoryHindsightAdapter:
         entries = self._banks.get(bank, [])
         if not query:
             return entries[:limit]
-        needle = query.lower()
-        matches = [e for e in entries if needle in e.lower()]
+        # Real Hindsight uses vector search; the fake approximates this by
+        # treating the query as a bag of words and matching any entry that
+        # contains at least one token (case-insensitive). Substring-of-
+        # whole-query would miss everything when the caller passes a multi-
+        # word semantic query.
+        tokens = [t for t in query.lower().split() if t]
+        if not tokens:
+            return entries[:limit]
+        matches = [e for e in entries if any(t in e.lower() for t in tokens)]
         return matches[:limit]
 
     async def retain(
