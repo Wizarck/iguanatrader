@@ -214,6 +214,20 @@ def _stamp_tenant_on_inserts(
             continue
 
         current = getattr(instance, "tenant_id", None)
+        # Design D8: ``audit_log`` is tenant-scoped but its tenant_id
+        # column is nullable so the listener's SELECT path can serve
+        # cross-tenant ops-global rows (tenant_id IS NULL). The INSERT
+        # path mirrors that — when the caller explicitly leaves
+        # tenant_id unset AND tenant_id_var is None, allow the system-
+        # actor write through instead of raising.
+        if current is None and getattr(cls, "__tablename__", None) == "audit_log":
+            try:
+                var_value = tenant_id_var.get()
+            except LookupError:
+                var_value = None
+            if var_value is None:
+                # tenant_seen stays None — explicit cross-tenant row.
+                continue
         if current is None:
             if tenant_seen is None:
                 tenant_seen = _read_tenant_or_raise()

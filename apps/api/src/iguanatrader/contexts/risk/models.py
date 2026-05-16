@@ -86,7 +86,10 @@ class RiskCaps(BaseModel):
     of scope for K1.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    # strict=False so HTTP JSON bodies (which carry datetimes/UUIDs as
+    # strings) coerce cleanly through the wire DTO; immutability +
+    # extra-field rejection are preserved.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     per_trade_pct: Decimal = Field(default=Decimal("0.02"))
     daily_loss_pct: Decimal = Field(default=Decimal("0.05"))
@@ -164,7 +167,10 @@ class RiskState(BaseModel):
     reaches back to the repository.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    # strict=False so HTTP JSON bodies (which carry datetimes/UUIDs as
+    # strings) coerce cleanly through the wire DTO; immutability +
+    # extra-field rejection are preserved.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     capital: Decimal
     day_to_date_loss_pct: Decimal = Field(default=Decimal("0"))
@@ -224,7 +230,10 @@ class TradeProposalInput(BaseModel):
       key off this field too.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    # strict=False so HTTP JSON bodies (which carry datetimes/UUIDs as
+    # strings) coerce cleanly through the wire DTO; immutability +
+    # extra-field rejection are preserved.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: UUID
     tenant_id: UUID
@@ -247,7 +256,10 @@ class Decision(BaseModel):
     enforced by the validator below.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    # strict=False so HTTP JSON bodies (which carry datetimes/UUIDs as
+    # strings) coerce cleanly through the wire DTO; immutability +
+    # extra-field rejection are preserved.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     outcome: Outcome
     cap_type_breached: CapType | None = None
@@ -273,7 +285,10 @@ class Confirmation(BaseModel):
     audit captures the channel diversity, not the actor identity).
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    # strict=False so HTTP JSON bodies (which carry datetimes/UUIDs as
+    # strings) coerce cleanly through the wire DTO; immutability +
+    # extra-field rejection are preserved.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     channel: Literal["telegram", "whatsapp", "cli", "dashboard"]
     at: datetime
@@ -291,7 +306,10 @@ class ConfirmationChain(BaseModel):
     Python level.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    # strict=False so HTTP JSON bodies (which carry datetimes/UUIDs as
+    # strings) coerce cleanly through the wire DTO; immutability +
+    # extra-field rejection are preserved.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     first_confirmation: Confirmation
     second_confirmation: Confirmation
