@@ -200,9 +200,34 @@ async def test_traced_generation_records_error_level_on_exception() -> None:
     with pytest.raises(RuntimeError, match="upstream blew up"):
         await _boom()
 
-    end_call = fake.observations[-1].ends[-1]
-    assert end_call["level"] == "ERROR"
-    assert "RuntimeError" in end_call["status_message"]
+    # The wrapper's ``_GenerationWrapper.end(level=..., status_message=...)``
+    # translates v2-style end kwargs into a v3-correct
+    # ``update(level=..., status_message=...)`` + ``end()`` sequence.
+    update_call = fake.observations[-1].updates[-1]
+    assert update_call["level"] == "ERROR"
+    assert "RuntimeError" in update_call["status_message"]
+
+
+def test_generation_end_translates_v2_kwargs_into_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The v3 SDK's ``LangfuseGeneration.end()`` only accepts ``end_time``;
+    iguanatrader call-sites pass ``level`` / ``status_message`` per the
+    v2-style ergonomic shape. The wrapper drains the non-``end_time``
+    kwargs into ``update()`` before calling ``end()``.
+    """
+    fake = _RecordingLangfuse()
+    lc._client = fake  # type: ignore[assignment]
+    lc._enabled = True
+
+    gen = lc.start_generation(name="x", model="m", application="iguanatrader-explainer")
+    gen.end(level="ERROR", status_message="boom", end_time=42)
+
+    obs = fake.observations[0]
+    # Update was called with the v2-style kwargs.
+    assert obs.updates == [{"level": "ERROR", "status_message": "boom"}]
+    # End was called with only the v3-accepted kwarg.
+    assert obs.ends == [{"end_time": 42}]
 
 
 def test_shutdown_is_idempotent_on_disabled_client() -> None:

@@ -281,13 +281,53 @@ def start_generation(
         )
     if trace is not None and isinstance(trace, _NoOpObservation):
         return trace
-    return _client.start_observation(
+    raw = _client.start_observation(
         name=name,
         as_type="generation",
         model=model,
         input=input_data,
         metadata=md,
     )
+    return _GenerationWrapper(raw)
+
+
+class _GenerationWrapper:
+    """Wraps a real :class:`LangfuseGeneration` with stable ``.end()`` semantics.
+
+    The Langfuse v3 SDK splits responsibilities differently from v2: the
+    real ``.end()`` only accepts ``end_time``; ``level`` /
+    ``status_message`` / ``output`` / ``usage_details`` belong on
+    ``.update()`` (which can be called any number of times before
+    ``.end()``). Iguanatrader call-sites still want the ergonomic
+    ``gen.end(level="ERROR", status_message=...)`` shape from v2; this
+    wrapper translates the v2-style call into the v3 idiom transparently.
+
+    ``.update(**kwargs)`` forwards to the real ``.update`` directly —
+    that signature is already v3-correct.
+    """
+
+    def __init__(self, raw: Any) -> None:
+        self._raw = raw
+
+    def update(self, **kwargs: Any) -> _GenerationWrapper:
+        self._raw.update(**kwargs)
+        return self
+
+    def end(self, **kwargs: Any) -> _GenerationWrapper:
+        # Drain v2-style update kwargs (level / status_message / output /
+        # usage_details / metadata / etc.) into an update() call so the
+        # real .end() receives only what v3 accepts (``end_time``).
+        end_kwargs: dict[str, Any] = {}
+        update_kwargs: dict[str, Any] = {}
+        for k, v in kwargs.items():
+            if k == "end_time":
+                end_kwargs[k] = v
+            else:
+                update_kwargs[k] = v
+        if update_kwargs:
+            self._raw.update(**update_kwargs)
+        self._raw.end(**end_kwargs)
+        return self
 
 
 class _TraceWrapper:
@@ -310,20 +350,31 @@ class _TraceWrapper:
         input: Any = None,
         metadata: dict[str, Any] | None = None,
     ) -> Any:
-        return self._raw.start_observation(
+        raw_gen = self._raw.start_observation(
             name=name,
             as_type="generation",
             model=model,
             input=input,
             metadata=metadata,
         )
+        return _GenerationWrapper(raw_gen)
 
     def update(self, **kwargs: Any) -> _TraceWrapper:
         self._raw.update(**kwargs)
         return self
 
     def end(self, **kwargs: Any) -> _TraceWrapper:
-        self._raw.end(**kwargs)
+        # Same v2→v3 ``end()`` adaptation as :class:`_GenerationWrapper`.
+        end_kwargs: dict[str, Any] = {}
+        update_kwargs: dict[str, Any] = {}
+        for k, v in kwargs.items():
+            if k == "end_time":
+                end_kwargs[k] = v
+            else:
+                update_kwargs[k] = v
+        if update_kwargs:
+            self._raw.update(**update_kwargs)
+        self._raw.end(**end_kwargs)
         return self
 
 

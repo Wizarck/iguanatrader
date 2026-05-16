@@ -227,12 +227,15 @@ async def test_complete_emits_langfuse_generation_with_canonical_tags(
     md = obs.init_kwargs["metadata"]
     assert md["consumer"] == "iguanatrader"
     assert md["application"] == "iguanatrader-synthesis"
-    # Span was closed with usage tokens + DEFAULT level (success path).
-    update_call = obs.updates[-1]
-    assert update_call["usage_details"]["input"] == 10
-    assert update_call["usage_details"]["output"] == 4
-    end_call = obs.ends[-1]
-    assert end_call["level"] == "DEFAULT"
+    # ``_GenerationWrapper.end(level="DEFAULT")`` translates to
+    # ``update(level="DEFAULT")`` + ``end()`` per the v3 SDK shape.
+    # First update carries usage_details (called pre-end); second carries
+    # the level drained from end().
+    usage_update = next(u for u in obs.updates if "usage_details" in u)
+    assert usage_update["usage_details"]["input"] == 10
+    assert usage_update["usage_details"]["output"] == 4
+    level_update = next(u for u in obs.updates if u.get("level"))
+    assert level_update["level"] == "DEFAULT"
 
 
 @pytest.mark.asyncio
@@ -284,6 +287,8 @@ async def test_complete_marks_error_level_on_anthropic_failure(
     with pytest.raises(RuntimeError, match="anthropic refused"):
         await adapter.complete(prompt="x", model="claude-3-5-haiku", replay_key=None, max_tokens=8)
 
-    end_call = fake_lf.observations[-1].ends[-1]
-    assert end_call["level"] == "ERROR"
-    assert "RuntimeError" in end_call["status_message"]
+    # Wrapper translates v2-style ``end(level="ERROR", status_message=...)``
+    # into ``update(...)`` + ``end()`` per v3 SDK constraints.
+    level_update = next(u for u in fake_lf.observations[-1].updates if u.get("level"))
+    assert level_update["level"] == "ERROR"
+    assert "RuntimeError" in level_update["status_message"]
