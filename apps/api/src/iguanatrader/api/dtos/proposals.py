@@ -81,8 +81,46 @@ class ProposalListOut(BaseModel):
     total: int | None = None
 
 
+class ProposalExplainOut(BaseModel):
+    """LLM-generated narrative for a proposal (slice ``llm-observability-and-signals``).
+
+    Read-only projection: the route does NOT persist this — every call
+    regenerates. Operators receive ``narrative`` for direct rendering;
+    ``model`` + ``generated_at`` + token counts are metadata for cost
+    transparency in the UI / API logs.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: UUID
+    narrative: str
+    model: str
+    generated_at: datetime
+    tokens_input: int
+    tokens_output: int
+
+
+class ProposalRiskOut(BaseModel):
+    """LLM risk review (informational, does NOT block approval)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: UUID
+    risk_score: int = Field(ge=0, le=100, examples=[42])
+    flags: list[str] = Field(
+        examples=[["entry above 50d high", "stop tighter than 1x ATR"]],
+    )
+    rationale: str
+    model: str
+    generated_at: datetime
+    tokens_input: int
+    tokens_output: int
+
+
 __all__ = [
+    "ProposalExplainOut",
     "ProposalIn",
     "ProposalListOut",
     "ProposalOut",
+    "ProposalRiskOut",
 ]

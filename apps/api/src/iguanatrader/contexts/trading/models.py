@@ -180,8 +180,21 @@ class Trade(Base):
     # in the same UPDATE that transitions ``state`` to a closed value;
     # both columns join the whitelist so the append-only listener
     # permits that UPDATE.
+    #
+    # Slice ``llm-observability-and-signals`` extension: the journal
+    # endpoint adds ``journal_narrative`` + ``journal_generated_at`` +
+    # ``journal_model`` so an LLM-generated post-mortem can be
+    # persisted on the trade row (migration 0018).
     __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset(
-        {"state", "closed_at", "exit_reason", "realised_pnl"}
+        {
+            "state",
+            "closed_at",
+            "exit_reason",
+            "realised_pnl",
+            "journal_narrative",
+            "journal_generated_at",
+            "journal_model",
+        }
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -219,6 +232,16 @@ class Trade(Base):
         Numeric(18, 8),
         nullable=True,
     )
+    # Slice ``llm-observability-and-signals``: LLM-generated trade
+    # journal narrative (post-mortem). NULL until the journal endpoint
+    # is POSTed; the endpoint short-circuits with 409 on a populated
+    # row unless ``?regenerate=true`` is set.
+    journal_narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
+    journal_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    journal_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

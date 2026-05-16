@@ -56,6 +56,38 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit(code=0)
 
 
+_langfuse_initialised: bool = False
+
+
+def _bootstrap_langfuse_once() -> None:
+    """Initialise the Langfuse client + register an atexit flush.
+
+    Slice ``llm-observability-and-signals``. Runs lazily so the
+    ``--version`` eager callback path (which short-circuits before
+    this root body executes) stays import-light per gotcha #29.
+
+    Module-level guard prevents double-init when subcommands invoke
+    each other; the wrapper's ``init_langfuse`` is itself idempotent
+    so the guard is belt-and-braces but avoids a redundant SDK
+    construction round-trip.
+    """
+    global _langfuse_initialised
+    if _langfuse_initialised:
+        return
+    import atexit
+    import os
+
+    from iguanatrader.contexts.observability.langfuse_client import (
+        init_langfuse,
+        shutdown_langfuse,
+    )
+
+    env = (os.environ.get("IGUANATRADER_ENV") or "dev").strip().lower() or "dev"
+    init_langfuse(env)
+    atexit.register(shutdown_langfuse)
+    _langfuse_initialised = True
+
+
 @cli_app.callback()
 def _root_callback(
     version: bool = typer.Option(
@@ -67,7 +99,14 @@ def _root_callback(
         callback=_version_callback,
     ),
 ) -> None:
-    """Root CLI callback — wires the eager ``--version`` short-circuit."""
+    """Root CLI callback — wires the eager ``--version`` short-circuit.
+
+    Also bootstraps Langfuse for any subcommand that issues LLM calls
+    (research replay, synthesis runners). Eager ``--version`` exits
+    before this body runs, so ``iguanatrader --version`` does NOT pay
+    the Langfuse-SDK import cost.
+    """
+    _bootstrap_langfuse_once()
 
 
 def _register_subcommands(app: typer.Typer) -> None:

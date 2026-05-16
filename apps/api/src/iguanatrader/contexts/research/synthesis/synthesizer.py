@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from iguanatrader.contexts.observability.langfuse_client import start_trace
 from iguanatrader.contexts.research.errors import (
     BriefSynthesisShortError,
     InvalidCitationError,
@@ -109,72 +110,102 @@ class Synthesizer:
                 f"expected one of {sorted(METHODOLOGY_REGISTRY)}"
             )
 
-        prompt = self._render_prompt(
-            symbol=symbol,
-            methodology=methodology,
-            feature_bundle=feature_bundle,
-            methodology_result=methodology_result,
+        # Langfuse parent trace — nests the underlying anthropic
+        # generation span when the SDK's contextvar tracking applies.
+        # The trace is closed via ``end`` after the pipeline either
+        # returns a brief or raises a parsing / validation error so
+        # the ELIGIA dashboard TracesTodayCard counts the trace's
+        # outcome correctly.
+        trace = start_trace(
+            name="synthesizer.synthesize",
+            application="iguanatrader-synthesis",
+            metadata={
+                "symbol": symbol,
+                "methodology": methodology,
+                "model": model,
+            },
         )
-        if narrative_context:
-            hindsight_block = "\n\n## Hindsight narrative\n\n" + "\n\n".join(narrative_context)
-            prompt = hindsight_block + "\n\n---\n\n" + prompt
-        replay_key = self._compute_replay_key(
-            symbol=symbol,
-            methodology=methodology,
-            feature_bundle=feature_bundle,
-        )
-        completion = await self._llm.complete(
-            prompt=prompt,
-            model=model,
-            replay_key=replay_key,
-            max_tokens=MAX_OUTPUT_TOKENS,
-        )
-
-        body_markdown, audit_entries = self._parse_output(completion.text)
-
-        if len(body_markdown.split()) < MIN_BODY_WORDS:
-            raise BriefSynthesisShortError(
-                detail=(
-                    f"synthesised brief for {symbol} is shorter than {MIN_BODY_WORDS} "
-                    f"words ({len(body_markdown.split())} found)"
-                )
+        try:
+            prompt = self._render_prompt(
+                symbol=symbol,
+                methodology=methodology,
+                feature_bundle=feature_bundle,
+                methodology_result=methodology_result,
+            )
+            if narrative_context:
+                hindsight_block = "\n\n## Hindsight narrative\n\n" + "\n\n".join(narrative_context)
+                prompt = hindsight_block + "\n\n---\n\n" + prompt
+            replay_key = self._compute_replay_key(
+                symbol=symbol,
+                methodology=methodology,
+                feature_bundle=feature_bundle,
+            )
+            completion = await self._llm.complete(
+                prompt=prompt,
+                model=model,
+                replay_key=replay_key,
+                max_tokens=MAX_OUTPUT_TOKENS,
             )
 
-        # Citation validation against the input bundle.
-        allowed = set(feature_bundle.fact_citations.values())
-        invalid = CitationResolver.validate_against_bundle(body_markdown, allowed)
-        if invalid:
-            raise InvalidCitationError(
-                detail=(
-                    f"synthesised brief for {symbol} cites unknown fact ids "
-                    f"{[str(u) for u in invalid]}; allowed: {[str(u) for u in allowed]}"
+            body_markdown, audit_entries = self._parse_output(completion.text)
+
+            if len(body_markdown.split()) < MIN_BODY_WORDS:
+                raise BriefSynthesisShortError(
+                    detail=(
+                        f"synthesised brief for {symbol} is shorter than {MIN_BODY_WORDS} "
+                        f"words ({len(body_markdown.split())} found)"
+                    )
                 )
+
+            # Citation validation against the input bundle.
+            allowed = set(feature_bundle.fact_citations.values())
+            invalid = CitationResolver.validate_against_bundle(body_markdown, allowed)
+            if invalid:
+                raise InvalidCitationError(
+                    detail=(
+                        f"synthesised brief for {symbol} cites unknown fact ids "
+                        f"{[str(u) for u in invalid]}; "
+                        f"allowed: {[str(u) for u in allowed]}"
+                    )
+                )
+
+            partial_required_a_missing = any(
+                tier == "A" and value is None for value, tier in feature_bundle.values.values()
             )
+            # `partial` triggers when an LLM-emitted JSON block flagged it,
+            # OR when a required tier-A feature is missing.
+            partial = partial_required_a_missing or self._is_partial_in_text(completion.text)
 
-        partial_required_a_missing = any(
-            tier == "A" and value is None for value, tier in feature_bundle.values.values()
-        )
-        # `partial` triggers when an LLM-emitted JSON block flagged it,
-        # OR when a required tier-A feature is missing.
-        partial = partial_required_a_missing or self._is_partial_in_text(completion.text)
+            pillars_decimals = {
+                name: pillar.score for name, pillar in methodology_result.pillars.items()
+            }
 
-        pillars_decimals = {
-            name: pillar.score for name, pillar in methodology_result.pillars.items()
-        }
+            cited_ids = CitationResolver.parse_markers(body_markdown)
 
-        cited_ids = CitationResolver.parse_markers(body_markdown)
-
-        return SynthesizedBrief(
-            body_markdown=body_markdown,
-            audit_entries=audit_entries,
-            pillars=pillars_decimals,
-            overall_score=methodology_result.overall_score,
-            rationale=methodology_result.rationale,
-            missing_features=methodology_result.missing_features,
-            partial=partial,
-            llm_completion=completion,
-            citations_used=cited_ids,
-        )
+            result = SynthesizedBrief(
+                body_markdown=body_markdown,
+                audit_entries=audit_entries,
+                pillars=pillars_decimals,
+                overall_score=methodology_result.overall_score,
+                rationale=methodology_result.rationale,
+                missing_features=methodology_result.missing_features,
+                partial=partial,
+                llm_completion=completion,
+                citations_used=cited_ids,
+            )
+            trace.update(
+                output={
+                    "overall_score": str(methodology_result.overall_score),
+                    "partial": partial,
+                    "citations_used": [str(u) for u in cited_ids],
+                },
+            )
+            return result
+        except Exception as exc:
+            trace.update(metadata={"error": f"{type(exc).__name__}: {exc!s}"})
+            raise
+        finally:
+            trace.end()
 
     # ------------------------------------------------------------------
     # Prompt rendering

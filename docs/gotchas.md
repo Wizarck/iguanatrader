@@ -908,6 +908,23 @@ The frontend's retry only fires when the browser's `EventSource` emits `error` (
 
 **Workaround**: Future cross-slice schema work should either (a) pre-reserve a migration slot in `docs/openspec-slice.md` per row, or (b) treat the slot as a free-run claim with explicit deviation documentation. R2 documented the choice in commit body + this gotcha.
 
+## 83. Langfuse SaaS coexists with `@cost_meter`; they have disjoint audiences
+
+**Surfaced**: 2026-05-16 (slice `llm-observability-and-signals`).
+
+**Symptom**: a future contributor sees both `@cost_meter` on `AnthropicLLMClient.complete()` AND a `start_generation()` call wrapping the same body and concludes one is redundant. They remove `@cost_meter` ("Langfuse already tracks cost") and break tenant billing — or they remove Langfuse ("`cost_meter` already does this") and break the ELIGIA dashboard's `Top by Consumer` widget.
+
+**Root cause**: the two systems serve different audiences:
+
+* `@cost_meter` persists `ApiCostEvent` in the **iguanatrader DB**, tenant-scoped, drives **per-tenant billing** + invoice reconciliation. Tenant-billing data must NEVER leave the iguanatrader runtime — it stays in the SQLite/Postgres we control.
+* Langfuse SaaS exports **prompt + response + usage + cost** to the **shared ELIGIA Cloud project**. Drives the cross-stack `cost-by-consumer` / `cost-by-application` / `error-rate` / `traces-today` dashboard widgets. Tagged with `tenant_id` for drill-down only — NOT for billing.
+
+Both fire on every LLM call. There is no double-counting because the data flows to different sinks with different schemas. See [ADR-018](adr/ADR-018-2026-05-16-llm-observability-langfuse.md) for the full rationale.
+
+**Tag-shape contract** (enforced by `contexts/observability/langfuse_client.py`): every observation MUST carry `metadata.consumer="iguanatrader"` + `metadata.application=iguanatrader-{module}` so the ELIGIA dashboard's resolution chain (`_obs_metadata_tag` at `eligia-core/dashboard/backend/routes/langfuse.py:703`) buckets correctly. **iguanatrader does NOT route via the LiteLLM proxy** — the `model_group` suffix fallback (`*-hermes`, `*-rag`) doesn't apply here. If you skip the metadata, the call buckets as `"untagged"` and inflates the `UntaggedShareBanner` on the dashboard.
+
+**Workaround**: if you must rip one out, the safer direction is `cost_meter` → Langfuse-only (lose billing, keep visibility). The reverse breaks visibility for ALL of Arturo's AI stack at once. Talk to Arturo before doing either.
+
 **Status**: process gotcha; resolved for R2.
 
 ## Format for new entries

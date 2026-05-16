@@ -20,10 +20,12 @@ slice-5 typegen pipeline emits the matching TypeScript interfaces in
 
 from __future__ import annotations
 
+import os
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,10 +34,16 @@ from iguanatrader.api.dtos.trades import (
     CloseTradeIn,
     FillListOut,
     FillOut,
+    TradeJournalOut,
     TradeListOut,
     TradeOut,
 )
+from iguanatrader.contexts.research.synthesis.llm_client import (
+    FakeLLMClient,
+    LLMClient,
+)
 from iguanatrader.contexts.trading.events import CloseTradeRequested
+from iguanatrader.contexts.trading.journaling import TradeJournalWriter
 from iguanatrader.contexts.trading.repository import (
     FillRepository,
     TradeRepository,
@@ -168,6 +176,112 @@ async def close_trade(
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content={"trade_id": str(trade_id), "reason": body.reason, "status": "submitted"},
+    )
+
+
+def _build_llm_client() -> LLMClient:
+    """Pick the production or fake LLM client based on env.
+
+    Mirrors the env gate used in proposals + research routes. Production
+    env + populated ``ANTHROPIC_API_KEY`` swaps in the real adapter;
+    dev / test envs stay on :class:`FakeLLMClient`.
+    """
+    env = (os.environ.get("IGUANATRADER_ENV") or "").strip().lower()
+    if env in {"paper", "live", "production"} and os.environ.get("ANTHROPIC_API_KEY"):
+        from iguanatrader.contexts.research.synthesis.anthropic_client import (
+            build_anthropic_llm_client_from_env,
+        )
+
+        return build_anthropic_llm_client_from_env()
+    return FakeLLMClient()
+
+
+@router.post("/{trade_id}/journal", response_model=TradeJournalOut)
+async def journal_trade(
+    trade_id: UUID,
+    regenerate: bool = Query(
+        default=False,
+        description="When true, regenerate the narrative even if one already exists.",
+    ),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TradeJournalOut:
+    """LLM-generated post-mortem narrative for a closed trade.
+
+    Persists ``narrative`` + ``model`` + ``generated_at`` on the trade
+    row (migration 0018). Subsequent calls return the cached narrative
+    via ``cached=true`` unless ``?regenerate=true`` is passed (which
+    overwrites the existing narrative + bumps ``generated_at``).
+
+    Returns 409 when the trade is not yet closed (``state != "closed"``)
+    — there's no useful narrative for an open or closing position.
+    Tagged ``application=iguanatrader-journal`` in Langfuse.
+    """
+    log.info(
+        "api.trades.journal",
+        trade_id=str(trade_id),
+        regenerate=regenerate,
+        tenant_id=str(user.tenant_id),
+    )
+    session_var.set(db)
+    repo = TradeRepository()
+    trade = await repo.get_by_id(trade_id)
+    if trade is None:
+        raise NotFoundError(detail=f"Trade {trade_id} not found.")
+    if trade.state != "closed":
+        raise ConflictError(
+            detail=(
+                f"Trade {trade_id} is in state={trade.state!r}; "
+                "journal narrative requires a closed trade."
+            )
+        )
+
+    # Return persisted narrative when present and the caller did not
+    # opt in to a regenerate. This is the cheap path — zero LLM calls.
+    if (
+        not regenerate
+        and trade.journal_narrative is not None
+        and trade.journal_generated_at is not None
+    ):
+        return TradeJournalOut(
+            trade_id=trade_id,
+            narrative=trade.journal_narrative,
+            model=trade.journal_model or "unknown",
+            generated_at=trade.journal_generated_at,
+            tokens_input=0,
+            tokens_output=0,
+            cached=True,
+        )
+
+    writer = TradeJournalWriter(_build_llm_client())
+    result = await writer.write(
+        trade_id=str(trade_id),
+        symbol=trade.symbol,
+        side=trade.side,
+        quantity=trade.quantity,
+        mode=trade.mode,
+        opened_at=trade.opened_at,
+        closed_at=trade.closed_at,
+        exit_reason=trade.exit_reason,
+        realised_pnl=trade.realised_pnl,
+    )
+
+    # Persist on the trade row. The mutable-columns whitelist for the
+    # append-only listener includes these three columns (slice
+    # ``llm-observability-and-signals`` extension).
+    trade.journal_narrative = result.narrative
+    trade.journal_generated_at = datetime.now(UTC)
+    trade.journal_model = result.model
+    await db.flush()
+
+    return TradeJournalOut(
+        trade_id=trade_id,
+        narrative=result.narrative,
+        model=result.model,
+        generated_at=result.generated_at,
+        tokens_input=result.tokens_input,
+        tokens_output=result.tokens_output,
+        cached=False,
     )
 
 

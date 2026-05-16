@@ -10,6 +10,16 @@ Per design D1 of deployment-foundation: the model name varies per call
 (synthesizer chooses claude-3-5-sonnet vs claude-3-5-haiku per node
 profile) so :func:`@cost_meter` is composed dynamically inside
 :meth:`complete` rather than as a static decorator on the method.
+
+Slice ``llm-observability-and-signals``: each call ALSO opens a
+Langfuse generation span via :func:`start_generation` so the ELIGIA
+cross-stack dashboard receives the same observation. ``@cost_meter`` +
+Langfuse coexist intentionally — the former persists
+:class:`ApiCostEvent` in DB for **tenant billing**, the latter exports
+to **shared org-wide observability**; the audiences are disjoint.
+The application tag is ``iguanatrader-synthesis`` so synthesis calls
+bucket into a stable row of the dashboard's ``Top by Application``
+widget (the explainer / risk / journal endpoints add their own tags).
 """
 
 from __future__ import annotations
@@ -17,6 +27,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from iguanatrader.contexts.observability.cost_meter import cost_meter
+from iguanatrader.contexts.observability.langfuse_client import start_generation
 from iguanatrader.contexts.research.synthesis.llm_client import LLMCompletion
 
 if TYPE_CHECKING:
@@ -59,31 +70,72 @@ class AnthropicLLMClient:
         model: str,
         replay_key: str | None,
         max_tokens: int,
+        langfuse_application: str = "iguanatrader-synthesis",
     ) -> LLMCompletion:
         """Issue an Anthropic ``messages.create`` and return an :class:`LLMCompletion`.
 
         Wraps the per-call body in :func:`@cost_meter` so each invocation
         records an :class:`ApiCostEvent` with the provider+model price.
+
+        ALSO opens a Langfuse generation span tagged
+        ``application=langfuse_application``. Default is
+        ``iguanatrader-synthesis``; the proposal-advisor / journaling
+        services override with ``iguanatrader-explainer`` /
+        ``iguanatrader-risk`` / ``iguanatrader-journal`` so each
+        application is a distinct bucket in the ELIGIA cost-by-tag
+        widgets. The span is closed via ``end(level=DEFAULT|ERROR)``
+        after the SDK call returns or raises — exception path uses
+        ``level=ERROR`` so the ELIGIA TracesTodayCard ``error`` count
+        increments correctly.
         """
 
         async def _call() -> LLMCompletion:
-            client = self._ensure_client()
-            message = await client.messages.create(
+            gen = start_generation(
+                name="anthropic.messages.create",
                 model=model,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
+                application=langfuse_application,
+                input_data=prompt,
+                metadata={
+                    "max_tokens": max_tokens,
+                    "replay_key": replay_key,
+                },
             )
-            text = self._extract_text(message)
-            usage = message.usage
-            cached = bool(getattr(usage, "cache_read_input_tokens", 0))
-            return LLMCompletion(
-                text=text,
-                tokens_input=int(usage.input_tokens),
-                tokens_output=int(usage.output_tokens),
-                cached=cached,
-                model=model,
-                replay_key=replay_key,
-            )
+            try:
+                client = self._ensure_client()
+                message = await client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = self._extract_text(message)
+                usage = message.usage
+                cached = bool(getattr(usage, "cache_read_input_tokens", 0))
+                completion = LLMCompletion(
+                    text=text,
+                    tokens_input=int(usage.input_tokens),
+                    tokens_output=int(usage.output_tokens),
+                    cached=cached,
+                    model=model,
+                    replay_key=replay_key,
+                )
+                gen.update(
+                    output=text,
+                    usage_details={
+                        "input": completion.tokens_input,
+                        "output": completion.tokens_output,
+                        "cache_read_input_tokens": int(
+                            getattr(usage, "cache_read_input_tokens", 0) or 0
+                        ),
+                    },
+                )
+                gen.end(level="DEFAULT")
+                return completion
+            except Exception as exc:
+                gen.end(
+                    level="ERROR",
+                    status_message=f"{type(exc).__name__}: {exc!s}",
+                )
+                raise
 
         decorated = cost_meter(provider="anthropic", model=model)(_call)
         return await decorated()
