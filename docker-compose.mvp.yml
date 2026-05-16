@@ -72,6 +72,21 @@ services:
       # docs/mvp-deploy.md Step 2.
       - HERMES_BASE_URL=${HERMES_BASE_URL:-}
       - HERMES_HMAC_SECRET=${HERMES_HMAC_SECRET:-}
+      # Profile gate: research + proposal-advisor + journaling route
+      # builders flip to ``AnthropicLLMClient`` only when this env in
+      # {paper, live, production} AND ``ANTHROPIC_API_KEY`` is set;
+      # otherwise they fall through to ``FakeLLMClient``. Slice
+      # ``llm-observability-and-signals`` (PR #194).
+      - IGUANATRADER_ENV=${IGUANATRADER_ENV:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Langfuse SaaS — cross-stack LLM observability shared with the
+      # ELIGIA dashboard. Empty values disable export (no-op fallback);
+      # populated values enable per-call generation spans tagged
+      # ``consumer=iguanatrader`` + ``application=iguanatrader-<module>``.
+      # Per ADR-018.
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
     volumes:
       - iguanatrader_data:/data
     ports:
