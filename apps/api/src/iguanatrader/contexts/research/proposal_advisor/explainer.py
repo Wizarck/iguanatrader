@@ -27,8 +27,11 @@ from iguanatrader.contexts.research.synthesis.llm_client import LLMClient
 log = structlog.get_logger("iguanatrader.contexts.research.proposal_advisor.explainer")
 
 #: Default model for the explainer flow — fast + cheap; the task is
-#: restatement, not novel reasoning.
-DEFAULT_EXPLAINER_MODEL = "claude-3-5-haiku-20241022"
+#: restatement, not novel reasoning. Claude 4.5 Haiku per the global
+#: CLAUDE.md model-routing guidance ("default to latest and most
+#: capable"). Slice-O1 deployment-foundation hardcoded the 3.5
+#: identifier which 404s on accounts without 3.x access.
+DEFAULT_EXPLAINER_MODEL = "claude-haiku-4-5"
 
 #: Hard ceiling on output tokens. Explanations are 2-3 paragraphs.
 EXPLAINER_MAX_TOKENS = 800

@@ -26,7 +26,8 @@ from iguanatrader.contexts.research.synthesis.llm_client import LLMClient
 log = structlog.get_logger("iguanatrader.contexts.trading.journaling")
 
 #: Default model — narrative summarisation; haiku is sufficient.
-DEFAULT_JOURNAL_MODEL = "claude-3-5-haiku-20241022"
+#: Claude 4.5 Haiku per global CLAUDE.md model-routing guidance.
+DEFAULT_JOURNAL_MODEL = "claude-haiku-4-5"
 
 #: Output token ceiling. Journal narratives are 2-4 paragraphs.
 JOURNAL_MAX_TOKENS = 1000
