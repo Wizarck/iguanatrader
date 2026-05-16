@@ -36,7 +36,9 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     Uses the same interpreter pytest is running under so the venv's
     typer / iguanatrader install is used.
     """
-    src_root = Path(__file__).resolve().parents[3] / "src"
+    # Test file is at apps/api/tests/integration/test_cli_discovery.py;
+    # parents[0]=integration, [1]=tests, [2]=api → apps/api/src.
+    src_root = Path(__file__).resolve().parents[2] / "src"
     env_path = sys.executable
     return subprocess.run(
         [env_path, "-m", "iguanatrader.cli", *args],
@@ -60,15 +62,19 @@ def _passthrough_env() -> dict[str, str]:
 
 @pytest.fixture
 def stub_subcommand() -> Iterator[Path]:
-    """Drop a stub ``iguanatrader.cli._test_subcommand`` module.
+    """Drop a stub ``iguanatrader.cli.zztest_subcommand`` module.
 
     The module exports ``app: typer.Typer`` with one ``hello`` command;
     discovery should pick it up under the kebab-case CLI name
-    ``-test-subcommand`` (underscore prefix preserved as-is by the
-    ``_`` → ``-`` replace rule).
+    ``zztest-subcommand`` (underscore → hyphen).
+
+    Name uses a ``zz`` prefix to sort last in the package directory so
+    test pollution from a transient module is at the end of the auto-
+    discovery iteration. Avoids a leading underscore (which Typer would
+    parse as a short-option flag in the subprocess invocation).
     """
     pkg_dir = _cli_pkg_dir()
-    stub_path = pkg_dir / "_test_subcommand.py"
+    stub_path = pkg_dir / "zztest_subcommand.py"
     stub_path.write_text(
         '"""Test-only subcommand stub — see test_cli_discovery.py."""\n'
         "from __future__ import annotations\n\n"
@@ -84,7 +90,7 @@ def stub_subcommand() -> Iterator[Path]:
         yield stub_path
     finally:
         stub_path.unlink(missing_ok=True)
-        sys.modules.pop("iguanatrader.cli._test_subcommand", None)
+        sys.modules.pop("iguanatrader.cli.zztest_subcommand", None)
         # The auto-registration runs at import of cli.main; drop the
         # cached main module so the next subprocess re-imports cleanly.
         sys.modules.pop("iguanatrader.cli.main", None)
@@ -114,14 +120,14 @@ def test_new_subcommand_appears_in_help(stub_subcommand: Path) -> None:
     result = _run_cli("--help")
 
     assert result.returncode == 0, result.stderr
-    # Module name '_test_subcommand' renders as '-test-subcommand' in
+    # Module name 'zztest_subcommand' renders as 'zztest-subcommand' in
     # the kebab-case CLI surface (underscore → hyphen replacement).
-    assert "-test-subcommand" in result.stdout, result.stdout
+    assert "zztest-subcommand" in result.stdout, result.stdout
 
 
 def test_new_subcommand_invocable(stub_subcommand: Path) -> None:
     """The stub's ``hello`` command runs and prints the deterministic token."""
-    result = _run_cli("-test-subcommand", "hello")
+    result = _run_cli("zztest-subcommand", "hello")
 
     assert result.returncode == 0, result.stderr
     assert "hello-from-stub" in result.stdout
