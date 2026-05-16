@@ -22,6 +22,7 @@ from iguanatrader.api.deps import COOKIE_NAME
 from iguanatrader.contexts.trading.models import (
     Fill,
     Order,
+    StrategyConfig,
     Trade,
     TradeProposal,
 )
@@ -141,13 +142,28 @@ async def _seed_trade(
     trade_id = uuid4()
     order_id = uuid4()
     fill_id = uuid4()
+    strategy_config_id = uuid4()
     base = datetime.now(UTC)
+    # Flush after each add(): SQLAlchemy 2.x's INSERTMANYVALUES + RETURNING
+    # path on aiosqlite can batch sibling inserts before their parent FK
+    # is visible. One-row-at-a-time flushing sidesteps the race.
     async with with_tenant_context(tenant_id), sf() as s:
+        s.add(
+            StrategyConfig(
+                id=strategy_config_id,
+                tenant_id=tenant_id,
+                strategy_kind="donchian_atr",
+                symbol=symbol,
+                params={"lookback": 20},
+                enabled=True,
+            )
+        )
+        await s.flush()
         s.add(
             TradeProposal(
                 id=proposal_id,
                 tenant_id=tenant_id,
-                strategy_config_id=uuid4(),
+                strategy_config_id=strategy_config_id,
                 research_brief_id=None,
                 correlation_id=uuid4(),
                 symbol=symbol,
@@ -156,8 +172,10 @@ async def _seed_trade(
                 entry_price_indicative=Decimal("100"),
                 stop_price=Decimal("95"),
                 reasoning={"why": "test"},
+                mode="paper",
             )
         )
+        await s.flush()
         s.add(
             Trade(
                 id=trade_id,
@@ -172,6 +190,7 @@ async def _seed_trade(
                 created_at=base + timedelta(seconds=created_offset_seconds),
             )
         )
+        await s.flush()
         s.add(
             Order(
                 id=order_id,
@@ -186,6 +205,7 @@ async def _seed_trade(
                 submitted_at=base,
             )
         )
+        await s.flush()
         s.add(
             Fill(
                 id=fill_id,
@@ -309,5 +329,5 @@ async def test_list_trade_fills_joins_via_orders(
     assert len(body["items"]) == 1
     fill = body["items"][0]
     assert fill["order_id"] == str(ids["order_id"])
-    assert fill["quantity_filled"] == "10"
-    assert fill["fill_price"] == "100.50"
+    assert Decimal(fill["quantity_filled"]) == Decimal("10")
+    assert Decimal(fill["fill_price"]) == Decimal("100.50")
