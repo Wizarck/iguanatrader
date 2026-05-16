@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from iguanatrader.contexts.approval.models import (
     ApprovalDecision,
     ApprovalRequest,
 )
+from iguanatrader.contexts.trading.models import StrategyConfig, TradeProposal
 from iguanatrader.persistence import (
     AppendOnlyViolationError,
     Tenant,
@@ -57,6 +59,49 @@ async def sf(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return session_factory(engine)
 
 
+async def _seed_proposal_chain(
+    sf: async_sessionmaker[AsyncSession],
+    tid: object,
+) -> object:
+    """Seed StrategyConfig + TradeProposal so ApprovalRequest's FK resolves.
+
+    Flush per-add to sidestep SQLAlchemy 2.x INSERTMANYVALUES race on
+    aiosqlite (per PR #184 docs). Returns the proposal_id.
+    """
+    sc_id = uuid4()
+    proposal_id = uuid4()
+    async with with_tenant_context(tid), sf() as s:
+        s.add(
+            StrategyConfig(
+                id=sc_id,
+                tenant_id=tid,
+                strategy_kind="donchian_atr",
+                symbol="AAPL",
+                params={"lookback": 20},
+                enabled=True,
+            )
+        )
+        await s.flush()
+        s.add(
+            TradeProposal(
+                id=proposal_id,
+                tenant_id=tid,
+                strategy_config_id=sc_id,
+                research_brief_id=None,
+                correlation_id=uuid4(),
+                symbol="AAPL",
+                side="buy",
+                quantity=Decimal("10"),
+                entry_price_indicative=Decimal("100"),
+                stop_price=Decimal("90"),
+                reasoning={"why": "test"},
+                mode="paper",
+            )
+        )
+        await s.commit()
+    return proposal_id
+
+
 @pytest.mark.asyncio
 async def test_update_on_approval_request_raises(
     sf: async_sessionmaker[AsyncSession],
@@ -66,12 +111,13 @@ async def test_update_on_approval_request_raises(
     async with sf() as s:
         s.add(Tenant(id=tid, name="t", feature_flags={}))
         await s.commit()
+    proposal_id = await _seed_proposal_chain(sf, tid)
     async with with_tenant_context(tid), sf() as s:
         s.add(
             ApprovalRequest(
                 id=rid,
                 tenant_id=tid,
-                proposal_id=uuid4(),
+                proposal_id=proposal_id,
                 delivered_to_channels=["telegram"],
                 timeout_seconds=60,
                 expires_at=datetime.now(UTC) + timedelta(seconds=60),
@@ -97,18 +143,20 @@ async def test_update_on_approval_decision_raises(
     async with sf() as s:
         s.add(Tenant(id=tid, name="t", feature_flags={}))
         await s.commit()
+    proposal_id = await _seed_proposal_chain(sf, tid)
     async with with_tenant_context(tid), sf() as s:
         s.add(
             ApprovalRequest(
                 id=rid,
                 tenant_id=tid,
-                proposal_id=uuid4(),
+                proposal_id=proposal_id,
                 delivered_to_channels=["telegram"],
                 timeout_seconds=60,
                 expires_at=datetime.now(UTC) + timedelta(seconds=60),
                 created_at=datetime.now(UTC),
             )
         )
+        await s.flush()
         s.add(
             ApprovalDecision(
                 id=did,
