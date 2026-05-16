@@ -122,6 +122,11 @@ class MACDCrossStrategy(Strategy):
         stop = entry - atr_mult * atr
         if stop >= entry:
             return None
+        # Hypothesis-discovered edge: small entry + large ATR drives stop
+        # below zero. Reject — a negative stop violates the proposal
+        # invariant `stop_price > 0` and would crash downstream sizing.
+        if stop <= Decimal("0"):
+            return None
         risk_per_share = entry - stop
         if risk_per_share <= Decimal("0"):
             return None
