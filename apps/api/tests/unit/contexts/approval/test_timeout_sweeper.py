@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from iguanatrader.contexts.approval.events import ApprovalProposalTimedOut
 from iguanatrader.contexts.approval.models import ApprovalRequest
 from iguanatrader.contexts.approval.repository import ApprovalRepository
 from iguanatrader.contexts.approval.service import ApprovalService
+from iguanatrader.contexts.trading.models import StrategyConfig, TradeProposal
 from iguanatrader.persistence import (
     Tenant,
     engine_factory,
@@ -67,11 +69,44 @@ async def test_sweep_records_timeout_and_emits_event(
     tid = uuid4()
     rid = uuid4()
     proposal_id = uuid4()
+    sc_id = uuid4()
     expires_at = datetime.now(UTC) - timedelta(seconds=5)
     async with sf() as s:
         s.add(Tenant(id=tid, name="t", feature_flags={}))
         await s.commit()
+    # Seed StrategyConfig + TradeProposal so the ApprovalRequest's
+    # proposal_id FK to trade_proposals.id resolves. Flush per-add to
+    # sidestep SQLAlchemy 2.x INSERTMANYVALUES race on aiosqlite (see
+    # PR #184 docs).
     async with with_tenant_context(tid), sf() as s:
+        s.add(
+            StrategyConfig(
+                id=sc_id,
+                tenant_id=tid,
+                strategy_kind="donchian_atr",
+                symbol="AAPL",
+                params={"lookback": 20},
+                enabled=True,
+            )
+        )
+        await s.flush()
+        s.add(
+            TradeProposal(
+                id=proposal_id,
+                tenant_id=tid,
+                strategy_config_id=sc_id,
+                research_brief_id=None,
+                correlation_id=uuid4(),
+                symbol="AAPL",
+                side="buy",
+                quantity=Decimal("10"),
+                entry_price_indicative=Decimal("100"),
+                stop_price=Decimal("90"),
+                reasoning={"why": "test"},
+                mode="paper",
+            )
+        )
+        await s.flush()
         s.add(
             ApprovalRequest(
                 id=rid,
