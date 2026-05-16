@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from iguanatrader.contexts.approval.models import (
@@ -61,8 +61,8 @@ async def sf(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 
 async def _seed_proposal_chain(
     sf: async_sessionmaker[AsyncSession],
-    tid: object,
-) -> object:
+    tid: UUID,
+) -> UUID:
     """Seed StrategyConfig + TradeProposal so ApprovalRequest's FK resolves.
 
     Flush per-add to sidestep SQLAlchemy 2.x INSERTMANYVALUES race on
