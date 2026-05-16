@@ -33,7 +33,8 @@ from iguanatrader.contexts.research.synthesis.llm_client import LLMClient
 log = structlog.get_logger("iguanatrader.contexts.research.proposal_advisor.risk")
 
 #: Default model for the risk-review flow — multi-attribute reasoning.
-DEFAULT_RISK_MODEL = "claude-3-5-sonnet-20241022"
+#: Claude 4.6 Sonnet per global CLAUDE.md model-routing guidance.
+DEFAULT_RISK_MODEL = "claude-sonnet-4-6"
 
 #: Output token ceiling. Risk review is structured + concise.
 RISK_MAX_TOKENS = 1200
