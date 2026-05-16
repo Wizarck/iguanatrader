@@ -101,12 +101,13 @@ async def test_status_ok_at_seventy_nine_percent(
     tenant = await _seed_tenant_with_cap(schema_session_factory, Decimal("100.00"))
     await _add_cost_event(session_for_test, tenant, Decimal("79.00"))
 
-    state = await check_budget(tenant)
-    assert state.status is BudgetStatus.OK
-    assert state.percent_used == 79
+    async with with_tenant_context(tenant):
+        state = await check_budget(tenant)
+        assert state.status is BudgetStatus.OK
+        assert state.percent_used == 79
 
-    chosen = await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=tenant)
-    assert chosen is LLMTier.CLAUDE_3_5_SONNET
+        chosen = await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=tenant)
+        assert chosen is LLMTier.CLAUDE_3_5_SONNET
 
 
 async def test_status_warn_80_downgrades_sonnet_to_haiku(
@@ -116,12 +117,13 @@ async def test_status_warn_80_downgrades_sonnet_to_haiku(
     tenant = await _seed_tenant_with_cap(schema_session_factory, Decimal("100.00"))
     await _add_cost_event(session_for_test, tenant, Decimal("85.00"))
 
-    state = await check_budget(tenant)
-    assert state.status is BudgetStatus.WARN_80
-    assert state.percent_used == 85
+    async with with_tenant_context(tenant):
+        state = await check_budget(tenant)
+        assert state.status is BudgetStatus.WARN_80
+        assert state.percent_used == 85
 
-    chosen = await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=tenant)
-    assert chosen is LLMTier.CLAUDE_3_5_HAIKU
+        chosen = await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=tenant)
+        assert chosen is LLMTier.CLAUDE_3_5_HAIKU
 
 
 async def test_status_block_100_raises_budget_exceeded(
@@ -131,14 +133,15 @@ async def test_status_block_100_raises_budget_exceeded(
     tenant = await _seed_tenant_with_cap(schema_session_factory, Decimal("100.00"))
     await _add_cost_event(session_for_test, tenant, Decimal("100.00"))
 
-    state = await check_budget(tenant)
-    assert state.status is BudgetStatus.BLOCK_100
+    async with with_tenant_context(tenant):
+        state = await check_budget(tenant)
+        assert state.status is BudgetStatus.BLOCK_100
 
-    with pytest.raises(BudgetExceededError) as excinfo:
-        await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=tenant)
+        with pytest.raises(BudgetExceededError) as excinfo:
+            await route_llm(TaskClass.RESEARCH_BRIEF, tenant_id=tenant)
 
-    assert excinfo.value.status == 402
-    assert excinfo.value.type == "urn:iguanatrader:error:budget-exceeded"
+        assert excinfo.value.status == 402
+        assert excinfo.value.type == "urn:iguanatrader:error:budget-exceeded"
 
 
 async def test_warn_80_emitted_only_once_per_month(
@@ -149,17 +152,18 @@ async def test_warn_80_emitted_only_once_per_month(
     tenant = await _seed_tenant_with_cap(schema_session_factory, Decimal("100.00"))
     await _add_cost_event(session_for_test, tenant, Decimal("85.00"))
 
-    # First check — emits the warn event (cache populated).
-    s1 = await check_budget(tenant)
-    # Second check at the same instant — should NOT re-emit.
-    s2 = await check_budget(tenant)
+    async with with_tenant_context(tenant):
+        # First check — emits the warn event (cache populated).
+        s1 = await check_budget(tenant)
+        # Second check at the same instant — should NOT re-emit.
+        s2 = await check_budget(tenant)
 
-    assert s1.status is BudgetStatus.WARN_80
-    assert s2.status is BudgetStatus.WARN_80
+        assert s1.status is BudgetStatus.WARN_80
+        assert s2.status is BudgetStatus.WARN_80
 
-    # Advance the dedup cache: simulate "next month" by calling with
-    # a future ``at``. New month → new key → emits again.
-    future = now() + timedelta(days=40)
-    await check_budget(tenant, at=future)
+        # Advance the dedup cache: simulate "next month" by calling with
+        # a future ``at``. New month → new key → emits again.
+        future = now() + timedelta(days=40)
+        await check_budget(tenant, at=future)
     # No assertion on log count (structlog rendering varies); the unit
     # test for ``_warn_seen`` is the per-key behaviour check above.
