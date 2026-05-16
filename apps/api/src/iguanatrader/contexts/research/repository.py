@@ -259,13 +259,17 @@ class ResearchRepository(BaseRepository):
         the call idempotent — a second invocation against an already-
         superseded row updates zero rows (safe).
         """
+        # Raw text() bypasses SQLAlchemy's Uuid → CHAR(32) type adaption;
+        # the sqlite3 DBAPI rejects native UUID objects. Pass .hex so the
+        # bind matches the column's storage shape. Postgres tolerates both
+        # via psycopg adaption, but explicit-hex is portable.
         await self._session.execute(
             sa.text(
                 "UPDATE research_facts "
                 "SET recorded_to = :at "
                 "WHERE id = :old_id AND recorded_to IS NULL"
             ),
-            {"at": at, "old_id": old_id},
+            {"at": at, "old_id": old_id.hex},
         )
 
     # ------------------------------------------------------------------

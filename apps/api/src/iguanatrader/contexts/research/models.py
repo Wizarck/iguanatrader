@@ -273,7 +273,12 @@ class ResearchFact(Base):
         nullable=True,
     )
     value_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    value_jsonb: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    # `none_as_null=True`: Python None maps to SQL NULL instead of the JSON
+    # literal `"null"`. Without it the at_least_one_value CHECK (which
+    # requires `value_jsonb IS NOT NULL`) silently passes for a draft where
+    # all value_* fields are unset — the column ends up storing the string
+    # `'null'`, which is not SQL NULL.
+    value_jsonb: Mapped[Any | None] = mapped_column(JSON(none_as_null=True), nullable=True)
 
     unit: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
@@ -305,7 +310,10 @@ class ResearchFact(Base):
     )
 
     # Hybrid payload storage (per design D3).
-    raw_payload_inline: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    # Same `none_as_null=True` rationale as ``value_jsonb`` above — the
+    # payload_xor_inline_path CHECK requires either inline OR path to be
+    # SQL NULL (not the JSON `null` literal) to fire correctly.
+    raw_payload_inline: Mapped[Any | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     raw_payload_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_payload_sha256: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
     raw_payload_size_bytes: Mapped[int | None] = mapped_column(
