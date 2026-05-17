@@ -6,6 +6,11 @@ Subcommands:
   fresh database. Idempotent on the tenant slug + user email pair
   (re-running with the same slug fails unless ``--force-reset`` is
   passed, which deletes the row first).
+* ``register-symbol`` — register a ticker in the tenant's
+  ``symbol_universe`` + ``watchlist_configs`` tables so research-brief
+  refresh can resolve its FKs. Without this, ``POST
+  /api/v1/research/briefs/{symbol}/refresh`` raises ``LookupError``
+  (surfaced as 404 by the route).
 
 The auth route :mod:`iguanatrader.api.routes.auth` raises
 :class:`BootstrapNotReadyError` when the database has zero tenants and
@@ -146,6 +151,159 @@ async def _bootstrap_tenant_async(
         await engine.dispose()
 
     typer.echo(f"OK — tenant_id={tenant_id} user_id={user_id} email={email} slug={slug}")
+
+
+_METHODOLOGY_CHOICES = ("three_pillar", "canslim", "magic_formula", "qarp", "multi_factor")
+_TIER_CHOICES = ("primary", "secondary")
+_SCHEDULE_CHOICES = ("daily", "weekly", "manual")
+
+
+@app.command("register-symbol")
+def register_symbol(
+    symbol: str = typer.Argument(
+        ...,
+        help="Ticker symbol (e.g. NVDA). Stored verbatim — uppercase recommended.",
+    ),
+    tenant: str = typer.Option(
+        ...,
+        "--tenant",
+        "-t",
+        help="Tenant slug (matches Tenant.name from bootstrap-tenant).",
+    ),
+    exchange: str = typer.Option(
+        "NASDAQ",
+        "--exchange",
+        "-x",
+        help="Exchange code. Free-form text; default NASDAQ.",
+    ),
+    tier: str = typer.Option(
+        "primary",
+        "--tier",
+        help=f"Watchlist tier. One of: {', '.join(_TIER_CHOICES)}.",
+    ),
+    methodology: str = typer.Option(
+        "three_pillar",
+        "--methodology",
+        "-m",
+        help=f"Default brief methodology. One of: {', '.join(_METHODOLOGY_CHOICES)}.",
+    ),
+    schedule: str = typer.Option(
+        "manual",
+        "--schedule",
+        "-s",
+        help=f"Refresh schedule. One of: {', '.join(_SCHEDULE_CHOICES)}.",
+    ),
+) -> None:
+    """Register ``symbol`` for ``tenant`` so research-brief refresh works.
+
+    Inserts one row in ``symbol_universe`` + one in ``watchlist_configs``.
+    Both tables enforce ``(tenant_id, symbol, exchange)`` /
+    ``(tenant_id, symbol_universe_id)`` uniqueness, so re-running for a
+    symbol that's already registered exits non-zero.
+
+    Usage::
+
+        iguanatrader admin register-symbol NVDA --tenant arturo-trading
+
+    The route ``POST /api/v1/research/briefs/{symbol}/refresh`` needs
+    these rows to resolve the FK pair on the new brief; without them it
+    returns HTTP 404 with the message from this command.
+    """
+    if tier not in _TIER_CHOICES:
+        typer.echo(f"ERROR: tier must be one of {_TIER_CHOICES}, got {tier!r}.")
+        raise typer.Exit(code=2)
+    if methodology not in _METHODOLOGY_CHOICES:
+        typer.echo(
+            f"ERROR: methodology must be one of {_METHODOLOGY_CHOICES}, got {methodology!r}."
+        )
+        raise typer.Exit(code=2)
+    if schedule not in _SCHEDULE_CHOICES:
+        typer.echo(f"ERROR: schedule must be one of {_SCHEDULE_CHOICES}, got {schedule!r}.")
+        raise typer.Exit(code=2)
+
+    asyncio.run(
+        _register_symbol_async(
+            symbol=symbol,
+            tenant_slug=tenant,
+            exchange=exchange,
+            tier=tier,
+            methodology=methodology,
+            schedule=schedule,
+        )
+    )
+
+
+async def _register_symbol_async(
+    *,
+    symbol: str,
+    tenant_slug: str,
+    exchange: str,
+    tier: str,
+    methodology: str,
+    schedule: str,
+) -> None:
+    """Async body of the ``register-symbol`` command."""
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+
+    from iguanatrader.contexts.research.models import SymbolUniverse, WatchlistConfig
+    from iguanatrader.persistence import Tenant, engine_factory, session_factory
+    from iguanatrader.shared.contextvars import with_tenant_context
+
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+
+        async with sessionmaker() as session:
+            tenant_row = (
+                (await session.execute(select(Tenant).where(Tenant.name == tenant_slug)))
+                .scalars()
+                .first()
+            )
+            if tenant_row is None:
+                typer.echo(
+                    f"ERROR: tenant {tenant_slug!r} not found. Run "
+                    f"`iguanatrader admin bootstrap-tenant {tenant_slug} ...` first."
+                )
+                raise typer.Exit(code=1)
+            tenant_id = tenant_row.id
+
+        async with with_tenant_context(tenant_id), sessionmaker() as session:
+            symbol_universe_id = uuid4()
+            watchlist_config_id = uuid4()
+            session.add(
+                SymbolUniverse(
+                    id=symbol_universe_id,
+                    tenant_id=tenant_id,
+                    symbol=symbol,
+                    exchange=exchange,
+                )
+            )
+            session.add(
+                WatchlistConfig(
+                    id=watchlist_config_id,
+                    tenant_id=tenant_id,
+                    symbol_universe_id=symbol_universe_id,
+                    tier=tier,
+                    methodology=methodology,
+                    brief_refresh_schedule=schedule,
+                )
+            )
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r}/{exchange!r} already registered for "
+                    f"tenant {tenant_slug!r}: {exc.orig}"
+                )
+                raise typer.Exit(code=1) from exc
+    finally:
+        await engine.dispose()
+
+    typer.echo(
+        f"OK — symbol={symbol} exchange={exchange} tenant={tenant_slug} "
+        f"symbol_universe_id={symbol_universe_id} watchlist_config_id={watchlist_config_id}"
+    )
 
 
 __all__ = ["app"]

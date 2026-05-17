@@ -331,7 +331,10 @@ async def refresh_brief(
     session_var.set(db)
     repo = ResearchRepository()
     service = _build_service(repo)
-    outcome = await service.refresh(symbol=symbol, methodology=methodology)
+    try:
+        outcome = await service.refresh(symbol=symbol, methodology=methodology)
+    except LookupError as exc:
+        raise NotFoundError(detail=str(exc)) from exc
     await db.commit()
     # Re-resolve citations after commit so the response carries the
     # provenance bundle the frontend renderer needs.
