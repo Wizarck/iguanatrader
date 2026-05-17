@@ -123,6 +123,18 @@ async def _production_adapter_lifespan(app: FastAPI) -> AsyncIterator[None]:
     log = structlog.get_logger("iguanatrader.api.app")
     env = (os.environ.get("IGUANATRADER_ENV") or "").strip().lower()
 
+    # Wire the SQLAlchemy global listeners — tenant_id auto-stamp on
+    # INSERT + append-only UPDATE/DELETE guard. The
+    # ``register_global_listeners`` docstring explicitly names the
+    # FastAPI lifespan as the boot site; this call was missing before
+    # the 2026-05-17 NVDA refresh incident, which surfaced as
+    # ``NOT NULL constraint failed: research_briefs.tenant_id`` because
+    # the listener never fired. Idempotent — safe to call once per
+    # worker boot.
+    from iguanatrader.persistence import register_global_listeners
+
+    register_global_listeners()
+
     # Langfuse bootstrap — runs on every env (no-op when creds absent).
     try:
         from iguanatrader.contexts.observability.langfuse_client import init_langfuse
