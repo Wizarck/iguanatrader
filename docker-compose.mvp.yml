@@ -100,6 +100,11 @@ services:
       - BEA_API_KEY=${BEA_API_KEY:-}
       - BLS_API_KEY=${BLS_API_KEY:-}
       - OPENFDA_API_KEY=${OPENFDA_API_KEY:-}
+      # OpenBB sidecar (Ingestion Wave I2). Service DNS resolves via
+      # the compose network; the sidecar's port 8765 is NOT exposed to
+      # the host (AGPL boundary + ops simplicity).
+      - OPENBB_SIDECAR_URL=${OPENBB_SIDECAR_URL:-http://openbb_sidecar:8765}
+      - OPENBB_SIDECAR_ENABLED=${OPENBB_SIDECAR_ENABLED:-true}
     volumes:
       - iguanatrader_data:/data
     ports:
@@ -124,6 +129,31 @@ services:
       - "5173:5173"
     depends_on:
       - api
+
+  # OpenBB Platform sidecar (Ingestion Wave I2 / ADR-015). AGPL-isolated:
+  # the iguanatrader monolith never imports openbb at the Python level;
+  # communicates via HTTP on the internal compose network only. Default
+  # provider is YFinance (free, no key); operators upgrade by passing
+  # OPENBB_<PROVIDER>_API_KEY env vars (FMP / Polygon / Intrinio /
+  # Alpha Vantage) through this service. See docs/roadmap-ingestion.md
+  # §"Future paid options" for the spend-decision principle.
+  openbb_sidecar:
+    image: iguanatrader/openbb-sidecar:mvp
+    build:
+      context: ./apps/openbb-sidecar
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    environment:
+      - OPENBB_SIDECAR_HOST=0.0.0.0
+      - OPENBB_SIDECAR_PORT=8765
+      - OPENBB_SIDECAR_LOG_LEVEL=${OPENBB_SIDECAR_LOG_LEVEL:-INFO}
+      # Premium provider keys — empty by default (YFinance free path).
+      # Populate to upgrade per roadmap-ingestion.md §"Future paid options".
+      - OPENBB_FMP_API_KEY=${OPENBB_FMP_API_KEY:-}
+      - OPENBB_POLYGON_API_KEY=${OPENBB_POLYGON_API_KEY:-}
+      - OPENBB_INTRINIO_API_KEY=${OPENBB_INTRINIO_API_KEY:-}
+      - OPENBB_ALPHA_VANTAGE_API_KEY=${OPENBB_ALPHA_VANTAGE_API_KEY:-}
 
 volumes:
   iguanatrader_data:
