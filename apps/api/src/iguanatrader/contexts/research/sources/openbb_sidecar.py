@@ -209,7 +209,11 @@ class OpenBBSidecarSource:
             effective_from=effective_from,
             recorded_from=retrieved_at,
             source_url=source_url,
-            retrieval_method="http",
+            # The bitemporal CHECK constraint
+            # `retrieval_method IN ('api','scrape','manual','llm')` rejects
+            # `"http"` even though that's literally what we do — categorising
+            # as 'api' fits the spirit (provider HTTP API behind the sidecar).
+            retrieval_method="api",
             retrieved_at=retrieved_at,
             value_jsonb=payload,
             fact_metadata={
