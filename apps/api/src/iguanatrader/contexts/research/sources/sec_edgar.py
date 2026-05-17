@@ -251,7 +251,8 @@ class SECEdgarSource(TierASourceAdapter):
                             unit=unit_label,
                             fact_metadata=xbrl_metadata,
                             dedupe_key=(
-                                f"sec_edgar:xbrl:{cik}:{concept_name}:{end_str}:"
+                                f"sec_edgar:xbrl:{cik}:{concept_name}:"
+                                f"start={obs.get('start', '')}:end={end_str}:"
                                 f"{form}:{unit_label}:{accn}:"
                                 f"fp={obs.get('fp', '')}:fy={obs.get('fy', '')}:"
                                 f"frame={obs.get('frame', '')}:filed={obs.get('filed', '')}"
