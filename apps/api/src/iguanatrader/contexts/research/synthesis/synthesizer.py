@@ -55,7 +55,12 @@ logger = logging.getLogger(__name__)
 MIN_BODY_WORDS = 100
 
 #: Maximum tokens we ask the LLM to produce per call. Bounds cost.
-MAX_OUTPUT_TOKENS = 2000
+#: 4000 picked after a real-world brief at 2000 tokens truncated the
+#: trailing ``audit_trail_entries`` JSON block mid-content. The unparsed
+#: tail then bled into the rendered body as raw JSON. 4000 covers the
+#: longest three_pillar brief observed (~3.2k tokens) with headroom for
+#: the new ``## Recommendation`` section.
+MAX_OUTPUT_TOKENS = 4000
 
 #: Path to the prompt-template directory. Each methodology has a sibling
 #: ``<name>.md`` Jinja2-ish template (we use minimal ``str.format_map``
@@ -283,27 +288,115 @@ class Synthesizer:
     # Output parsing
     # ------------------------------------------------------------------
 
+    # Matches a complete fenced ```json … ``` block whose content names the
+    # ``audit_trail_entries`` key. ``.*?`` is lazy so we end at the first
+    # matching ``` close.
     _AUDIT_TRAIL_RE = re.compile(
         r"```json\s*(\{.*?\"audit_trail_entries\".*?\})\s*```",
+        re.DOTALL,
+    )
+    # Fallback when the LLM hits ``max_tokens`` mid-block: the closing
+    # ```` ``` `` fence never arrives. We strip from the opening fence to
+    # end-of-string and parse whatever JSON we can salvage.
+    _AUDIT_TRAIL_TRUNCATED_RE = re.compile(
+        r"\n?(?:---\s*\n)?```json\s*(\{.*\"audit_trail_entries\".*)\Z",
         re.DOTALL,
     )
 
     @classmethod
     def _parse_output(cls, text: str) -> tuple[str, list[AuditTrailEntry]]:
-        """Extract markdown body + audit_trail_entries from LLM output."""
+        """Extract markdown body + audit_trail_entries from LLM output.
+
+        Three strategies, tried in order:
+
+        1. Complete fenced block — happy path; an opening ``json`` fence
+           closes properly. Strip the whole match and parse.
+        2. Truncated fenced block — opener seen, no closer (LLM ran out
+           of tokens). Strip from the opener to EOF and try a best-effort
+           JSON salvage by appending closing brackets. On any parse
+           failure, still strip the dangling block from the body so
+           users don't see raw JSON.
+        3. No fence at all — return the body untouched, empty entries.
+        """
         match = cls._AUDIT_TRAIL_RE.search(text)
-        if match is None:
-            return text.strip(), []
+        if match is not None:
+            return cls._consume_complete_block(text, match)
+
+        truncated = cls._AUDIT_TRAIL_TRUNCATED_RE.search(text)
+        if truncated is not None:
+            body = text[: truncated.start()].rstrip()
+            entries = cls._best_effort_parse(truncated.group(1))
+            logger.warning(
+                "research.synthesis.audit_trail_block_truncated",
+                extra={"recovered_entries": len(entries)},
+            )
+            return body.strip(), entries
+
+        return text.strip(), []
+
+    @classmethod
+    def _consume_complete_block(
+        cls, text: str, match: re.Match[str]
+    ) -> tuple[str, list[AuditTrailEntry]]:
         try:
             payload = json.loads(match.group(1))
         except json.JSONDecodeError:
             logger.warning("research.synthesis.audit_trail_block_unparseable")
             return text.strip(), []
-
         body = (text[: match.start()] + text[match.end() :]).strip()
-        raw_entries = payload.get("audit_trail_entries", [])
+        return body, cls._coerce_entries(payload.get("audit_trail_entries", []))
+
+    @classmethod
+    def _best_effort_parse(cls, fragment: str) -> list[AuditTrailEntry]:
+        """Try to recover audit entries from a truncated JSON fragment.
+
+        Strategy: drop the trailing partial entry (anything after the
+        last complete ``}``) then close the array + outer object. This
+        keeps every fully-emitted entry and discards the one the LLM
+        was mid-way through when it ran out of tokens.
+        """
+        # Trim any trailing partial entry. We walk the brace depth — when
+        # we land back at depth 0 inside the array (i.e. just after a
+        # complete entry's closing ``}``) that's where we cut.
+        depth = 0
+        last_complete_entry_end = -1
+        in_string = False
+        escape_next = False
+        for idx, ch in enumerate(fragment):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == "\\" and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                # depth==1 means we just closed an entry object and are
+                # back inside the audit_trail_entries array.
+                if depth == 1:
+                    last_complete_entry_end = idx + 1
+        if last_complete_entry_end < 0:
+            return []
+        trimmed = fragment[:last_complete_entry_end]
+        # Close the array + outer object.
+        try:
+            payload = json.loads(trimmed + "]}")
+        except json.JSONDecodeError:
+            return []
+        entries = payload.get("audit_trail_entries", []) if isinstance(payload, dict) else []
+        return cls._coerce_entries(entries)
+
+    @staticmethod
+    def _coerce_entries(raw_entries: Any) -> list[AuditTrailEntry]:
         if not isinstance(raw_entries, list):
-            return body, []
+            return []
         entries: list[AuditTrailEntry] = []
         for raw in raw_entries:
             if not isinstance(raw, dict):
@@ -325,7 +418,7 @@ class Synthesizer:
                     final_output=str(raw.get("final_output", "")).strip(),
                 )
             )
-        return body, entries
+        return entries
 
     @staticmethod
     def _is_partial_in_text(text: str) -> bool:

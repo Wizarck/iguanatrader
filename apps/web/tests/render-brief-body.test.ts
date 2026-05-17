@@ -157,4 +157,44 @@ describe('renderBriefBody — citation chip inlining', () => {
     expect(html.toLowerCase()).not.toContain('<script');
     expect(html.toLowerCase()).not.toContain('javascript:');
   });
+
+  it('renders openbb_sidecar internal URL as span, NOT anchor', () => {
+    // The sidecar's source_url is the compose-network DNS name; browsers
+    // outside the network can't reach it, so we MUST NOT emit an anchor.
+    const html = renderBriefBody(
+      `analyst target per [fact:${FACT_A}]`,
+      _map([
+        [
+          FACT_A,
+          {
+            source_id: 'openbb-sidecar',
+            source_url: 'http://openbb_sidecar:8765/v1/equity/ratings/NVDA',
+            retrieval_method: 'api',
+            retrieved_at: '2026-05-17T18:03:00Z'
+          }
+        ]
+      ])
+    );
+    expect(html).not.toContain('<a ');
+    expect(html).toMatch(/<span [^>]*class="citation-chip"[^>]*>/);
+    expect(html).toContain('openbb-sidecar');
+    // Tooltip preserves the full provenance even though the URL is hidden.
+    expect(html).toMatch(/title="[^"]*openbb-sidecar[^"]*"/);
+  });
+
+  it('renders openbb-sidecar variant hostname as span', () => {
+    const html = renderBriefBody(
+      `see [fact:${FACT_A}]`,
+      _map([
+        [
+          FACT_A,
+          {
+            source_id: 'openbb-sidecar',
+            source_url: 'http://openbb-sidecar:8765/v1/equity/fundamentals/NVDA'
+          }
+        ]
+      ])
+    );
+    expect(html).not.toContain('<a ');
+  });
 });
