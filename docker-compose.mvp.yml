@@ -10,11 +10,14 @@
 #
 #   1. `docker compose -f docker-compose.mvp.yml build`
 #   2. `docker compose -f docker-compose.mvp.yml run --rm api \
-#        python -m alembic -c apps/api/alembic.ini upgrade head`
-#   3. `docker compose -f docker-compose.mvp.yml run --rm api \
 #        iguanatrader admin bootstrap-tenant <slug> \
 #          --email <e> --password <p>`
-#   4. `docker compose -f docker-compose.mvp.yml up -d`
+#   3. `docker compose -f docker-compose.mvp.yml up -d`
+#
+# Schema migrations run automatically on every container boot via the
+# image's docker-entrypoint.sh (`alembic upgrade head`, idempotent).
+# To opt out (e.g. before a planned downgrade), set
+# `IGUANA_SKIP_MIGRATIONS=1` on the api service.
 #
 # Then visit http://<VPS_IP>:5173 and log in with the seeded credentials.
 # Behind a reverse proxy (Caddy/nginx) you'd terminate TLS at the proxy
