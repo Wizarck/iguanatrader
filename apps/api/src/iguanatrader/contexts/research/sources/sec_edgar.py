@@ -252,7 +252,9 @@ class SECEdgarSource(TierASourceAdapter):
                             fact_metadata=xbrl_metadata,
                             dedupe_key=(
                                 f"sec_edgar:xbrl:{cik}:{concept_name}:{end_str}:"
-                                f"{form}:{unit_label}:{accn}"
+                                f"{form}:{unit_label}:{accn}:"
+                                f"fp={obs.get('fp', '')}:fy={obs.get('fy', '')}:"
+                                f"frame={obs.get('frame', '')}:filed={obs.get('filed', '')}"
                             ),
                         ).with_payload(
                             json.dumps(xbrl_payload, sort_keys=True, default=str).encode()
