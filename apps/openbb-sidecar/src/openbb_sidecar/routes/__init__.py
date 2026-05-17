@@ -32,7 +32,7 @@ def register_routers(app: FastAPI) -> None:
         except Exception as exc:  # noqa: BLE001 — boundary; log + skip
             logger.warning(
                 "openbb_sidecar.router.import_failed",
-                extra={"module": module_name, "error": str(exc)},
+                extra={"module_name": module_name, "error": str(exc)},
             )
             continue
 
@@ -40,12 +40,12 @@ def register_routers(app: FastAPI) -> None:
         if router is None:
             logger.info(
                 "openbb_sidecar.router.skipped",
-                extra={"module": module_name, "reason": "no_router_attribute"},
+                extra={"module_name": module_name, "reason": "no_router_attribute"},
             )
             continue
 
         app.include_router(router)
         logger.info(
             "openbb_sidecar.router.registered",
-            extra={"module": module_name},
+            extra={"module_name": module_name},
         )

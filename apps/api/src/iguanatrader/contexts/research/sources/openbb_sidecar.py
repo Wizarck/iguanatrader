@@ -142,15 +142,17 @@ class OpenBBSidecarSource:
                         f"openbb-sidecar {name} returned non-JSON: {exc}"
                     ) from exc
                 return parsed
-            if 400 <= status < 500:
-                # 404 = no data; 4xx in general = upstream rejection — skip + warn,
-                # do not retry. The caller iteration drops this endpoint.
+            if 400 <= status < 500 or status == 502:
+                # 4xx = upstream rejection; 502 = sidecar mapping of openbb
+                # facade errors (e.g. YFinance doesn't have ESG for this
+                # symbol). Both mean "skip this endpoint, don't fail the
+                # whole ingest" — the caller iteration drops this endpoint.
                 logger.warning(
-                    "research.openbb_sidecar.skipped_http_4xx",
+                    "research.openbb_sidecar.skipped_upstream_error",
                     extra={"symbol": symbol, "endpoint": name, "status": status},
                 )
                 return None
-            # 5xx — transient; retry per backoff schedule.
+            # Other 5xx (503/504/etc.) — transient; retry per backoff schedule.
             last_exc = IntegrationError(f"openbb-sidecar {name} returned HTTP {status}")
             self._sleep_for_attempt(attempt, name=name, exc=last_exc)
 
@@ -209,7 +211,11 @@ class OpenBBSidecarSource:
             effective_from=effective_from,
             recorded_from=retrieved_at,
             source_url=source_url,
-            retrieval_method="http",
+            # The bitemporal CHECK constraint
+            # `retrieval_method IN ('api','scrape','manual','llm')` rejects
+            # `"http"` even though that's literally what we do — categorising
+            # as 'api' fits the spirit (provider HTTP API behind the sidecar).
+            retrieval_method="api",
             retrieved_at=retrieved_at,
             value_jsonb=payload,
             fact_metadata={

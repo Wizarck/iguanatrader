@@ -18,6 +18,9 @@ Subcommands:
   fetch + persist macro time-series from FRED. Backfill flag seeds deep
   history (e.g. ``--backfill 5y``) so methodology features that depend
   on regime / mean-reversion windows have data.
+* ``ingest openbb <symbol>`` (Ingestion Wave I2) — fetch fundamentals
+  + analyst ratings + ESG via the OpenBB sidecar (loopback HTTP, AGPL-
+  isolated per ADR-015). Default provider is YFinance (free, no key).
 
 Heavy imports kept lazy per gotcha #29 (``--help`` performance).
 """
@@ -464,6 +467,99 @@ async def _ingest_fred_async(
         f"since={since.isoformat() if since else 'all'} "
         f"facts_inserted={total} ({per_series})"
     )
+
+
+@ingest_app.command("openbb")
+def ingest_openbb(
+    symbol: str = typer.Argument(
+        ...,
+        help="Ticker symbol to fetch via the OpenBB sidecar (e.g. NVDA).",
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Pull fundamentals + ratings + ESG from the OpenBB sidecar.
+
+    Calls the loopback-only sidecar at ``OPENBB_SIDECAR_URL`` (default
+    ``http://openbb_sidecar:8765`` inside the compose network). Yields
+    up to 3 drafts per symbol — one per endpoint surface (fundamentals,
+    analyst ratings, ESG score). 4xx responses skip that endpoint with
+    a warning rather than failing the whole run.
+
+    Default provider is YFinance (free, no key). Operators upgrade by
+    setting OpenBB-recognized env vars on the sidecar container
+    (``OPENBB_FMP_API_KEY`` / ``OPENBB_POLYGON_API_KEY`` / etc.) — see
+    docs/roadmap-ingestion.md for the spend-decision principle.
+
+    Usage::
+
+        iguanatrader research ingest openbb NVDA
+    """
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info("cli.research.ingest.openbb.invoked", symbol=symbol)
+
+    asyncio.run(_ingest_openbb_async(symbol=symbol, tenant_slug=tenant))
+
+
+async def _ingest_openbb_async(
+    *,
+    symbol: str,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of the ``ingest openbb`` command."""
+    from dataclasses import replace as dc_replace
+
+    import sqlalchemy as sa
+
+    from iguanatrader.contexts.research.models import SymbolUniverse
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.openbb_sidecar import OpenBBSidecarSource
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            sym_row = (
+                await session.execute(
+                    sa.select(SymbolUniverse.id).where(SymbolUniverse.symbol == symbol)
+                )
+            ).first()
+            if sym_row is None:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r} not registered for this tenant. Run "
+                    f"`iguanatrader admin register-symbol {symbol} --tenant <slug>` first."
+                )
+                raise typer.Exit(code=1)
+            symbol_universe_id = sym_row[0]
+
+            adapter = OpenBBSidecarSource()
+            repo = ResearchRepository()
+
+            inserted = 0
+            try:
+                for draft in adapter.fetch(symbol, None):
+                    stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+                    await repo.insert_fact(stamped)
+                    inserted += 1
+            finally:
+                adapter.close()
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(f"OK — symbol={symbol} facts_inserted={inserted}")
 
 
 __all__ = ["app"]
