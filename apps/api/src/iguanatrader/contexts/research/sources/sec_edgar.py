@@ -250,7 +250,10 @@ class SECEdgarSource(TierASourceAdapter):
                             value_numeric=value,
                             unit=unit_label,
                             fact_metadata=xbrl_metadata,
-                            dedupe_key=(f"sec_edgar:xbrl:{cik}:{concept_name}:{end_str}:{form}"),
+                            dedupe_key=(
+                                f"sec_edgar:xbrl:{cik}:{concept_name}:{end_str}:"
+                                f"{form}:{unit_label}:{accn}"
+                            ),
                         ).with_payload(
                             json.dumps(xbrl_payload, sort_keys=True, default=str).encode()
                         )
