@@ -21,6 +21,7 @@ Sync :class:`SourcePort` implementation built on top of
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -192,7 +193,7 @@ class SECEdgarSource(TierASourceAdapter):
                 value_jsonb=value_jsonb,
                 fact_metadata={"cik": cik},
                 dedupe_key=f"sec_edgar:{accession}",
-            )
+            ).with_payload(json.dumps(value_jsonb, sort_keys=True).encode())
 
     # ------------------------------------------------------------------
     # XBRL iteration
@@ -227,22 +228,31 @@ class SECEdgarSource(TierASourceAdapter):
                         # through company-facts in practice but defence in depth.
                         if form not in self.XBRL_FORM_TYPES:
                             continue
+                        xbrl_metadata = {
+                            "cik": cik,
+                            "form": form,
+                            "accession_number": accn,
+                            "taxonomy": taxonomy,
+                            "concept": concept_name,
+                            "fiscal_period": obs.get("fp"),
+                            "fiscal_year": obs.get("fy"),
+                        }
+                        xbrl_payload = {
+                            "value": value,
+                            "unit": unit_label,
+                            "end": end_str,
+                            "metadata": xbrl_metadata,
+                        }
                         yield self._make_draft(
                             fact_kind=f"sec_xbrl.{taxonomy}.{concept_name}",
                             effective_from=end_dt,
                             source_url=_SUBMISSIONS_URL.format(cik=cik),
                             value_numeric=value,
                             unit=unit_label,
-                            fact_metadata={
-                                "cik": cik,
-                                "form": form,
-                                "accession_number": accn,
-                                "taxonomy": taxonomy,
-                                "concept": concept_name,
-                                "fiscal_period": obs.get("fp"),
-                                "fiscal_year": obs.get("fy"),
-                            },
+                            fact_metadata=xbrl_metadata,
                             dedupe_key=(f"sec_edgar:xbrl:{cik}:{concept_name}:{end_str}:{form}"),
+                        ).with_payload(
+                            json.dumps(xbrl_payload, sort_keys=True, default=str).encode()
                         )
 
     # ------------------------------------------------------------------
