@@ -250,11 +250,15 @@ The slice should also surface **per-source coverage gaps** as inline help text �
 If transcripts or richer fundamentals become necessary, this is the picking order based on price-to-coverage:
 
 1. **FMP Starter (~$15/mo)** — best entry point. Transcripts + analyst targets + 30-year fundamentals history + insider data + earnings calendar consensus.
-2. **Polygon Basic (~$30/mo)** — adds real-time options chain + tick data. Useful if iguanatrader expands beyond fundamentals into options strategies.
-3. **Intrinio Equity Essentials (~$50/mo+)** — institutional-grade fundamentals + estimates. Overkill for retail until volume justifies.
-4. **Alpha Vantage** — free tier 5 req/min + paid from $50/mo. Niche coverage; rarely the best price/value.
+2. **IBKR Reuters Worldwide Fundamentals (~$5/mo)** — competitive with FMP for fundamentals + analyst estimates, routed through the already-running TWS client. Cheaper but Reuters-only coverage.
+3. **IBKR Reuters real-time news / news tick 292 (~$1–5/mo)** — live news bulletins via TWS news ticks. Useful if alerting flows need sub-minute event detection.
+4. **Polygon Basic (~$30/mo)** — adds real-time options chain + tick data. Useful if iguanatrader expands beyond fundamentals into options strategies.
+5. **Intrinio Equity Essentials (~$50/mo+)** — institutional-grade fundamentals + estimates. Overkill for retail until volume justifies.
+6. **Alpha Vantage** — free tier 5 req/min + paid from $50/mo. Niche coverage; rarely the best price/value.
 
-All four plug into the existing OpenBB sidecar via OpenBB-recognized env vars; no new adapter code.
+Options 1, 4, 5, 6 plug into the existing OpenBB sidecar via OpenBB-recognized env vars; no new adapter code. Options 2 and 3 plug into the planned IBKR adapter (slice I3 — see [roadmap-ingestion.md](../roadmap-ingestion.md)) via `reqFundamentalData` / news tick subscription on the existing TWS connection.
+
+See [`roadmap-ingestion.md` — Future paid options](../roadmap-ingestion.md#future-paid-options-under-consideration) for the decision principle that gates spend on observed gaps.
 
 ---
 
