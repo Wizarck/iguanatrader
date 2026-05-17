@@ -86,3 +86,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # Default entrypoint: dev/smoke uvicorn shim. The compose file overrides
 # `command:` for the `bootstrap-tenant` one-shot init container.
 CMD ["python", "-m", "iguanatrader.api"]
+
+# ---------------------------------------------------------------------------
+# Profile aliases — the compose files (dev/test/paper/live) name distinct
+# build targets so the resulting image tag is auditable, but the build
+# itself is identical to `runtime`; profile divergence is env-only at run
+# time (IBKR port, IGUANATRADER_PROFILE, secrets file). See compose
+# headers for the AGENTS.md §4 rationale.
+# ---------------------------------------------------------------------------
+FROM runtime AS dev
+FROM runtime AS test
+FROM runtime AS paper
+FROM runtime AS live
