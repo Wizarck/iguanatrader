@@ -170,6 +170,67 @@ class OpenBBFacade:
         except Exception as exc:  # noqa: BLE001
             raise OpenBBFacadeError(f"equity_esg({symbol}) failed: {exc}") from exc
 
+    def equity_historical_prices(
+        self,
+        symbol: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a daily OHLCV bar series for ``symbol`` between two dates.
+
+        OpenBB v4 surface: ``obb.equity.price.historical(symbol, start_date,
+        end_date)`` returns OBBject.results = list of bar pydantic rows
+        (date, open, high, low, close, volume, possibly adj_close). We
+        compress to a list of plain dicts on the route boundary so the
+        iguanatrader adapter doesn't need pydantic on its side.
+
+        ``start_date`` / ``end_date`` are ISO 8601 ``YYYY-MM-DD``; omitted
+        bounds default to the openbb provider's full-history window
+        (yfinance: ~5y default).
+        """
+        if not self.is_ready():
+            raise OpenBBFacadeError(f"openbb not loadable: {self._import_error}")
+        try:
+            from openbb import obb  # noqa: PLC0415 — lazy
+
+            kwargs: dict[str, Any] = {"symbol": symbol}
+            if start_date:
+                kwargs["start_date"] = start_date
+            if end_date:
+                kwargs["end_date"] = end_date
+            obj = obb.equity.price.historical(**kwargs)
+            results = getattr(obj, "results", None) or []
+            if not results:
+                raise OpenBBFacadeError(f"no historical prices for {symbol}")
+
+            def _g(row: Any, name: str) -> Any:
+                return getattr(row, name, None)
+
+            bars = [
+                {
+                    "date": _g(r, "date"),
+                    "open": _g(r, "open"),
+                    "high": _g(r, "high"),
+                    "low": _g(r, "low"),
+                    "close": _g(r, "close"),
+                    "adj_close": _g(r, "adj_close") or _g(r, "adjusted_close"),
+                    "volume": _g(r, "volume"),
+                }
+                for r in results
+            ]
+            return {
+                "symbol": symbol.upper(),
+                "start_date": start_date,
+                "end_date": end_date,
+                "bars": bars,
+            }
+        except OpenBBFacadeError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise OpenBBFacadeError(
+                f"equity_historical_prices({symbol}) failed: {exc}"
+            ) from exc
+
     def economy_macro(self, indicator: str) -> dict[str, Any]:
         """Return macro indicator series + unit + frequency.
 
