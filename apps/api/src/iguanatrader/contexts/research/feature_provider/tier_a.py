@@ -10,8 +10,8 @@ Tier-A feature names map to fact_kinds R2 ingested:
 
 Slice R3 adds derived features computed from a window of XBRL facts:
 
-* ``eps_growth_yoy`` — (latest_FY EPS − prior_FY EPS) / |prior_FY EPS|.
-* ``revenue_growth_yoy`` — (latest_FY Revenue − prior_FY Revenue) / |prior_FY Revenue|.
+* ``eps_growth_yoy`` — (latest_FY EPS - prior_FY EPS) / |prior_FY EPS|.
+* ``revenue_growth_yoy`` — (latest_FY Revenue - prior_FY Revenue) / |prior_FY Revenue|.
 
 The YoY computation pulls the most recent two annual filings (``fp=FY``)
 from ``fact_metadata`` and divides. Restatements of the same fiscal
@@ -90,7 +90,7 @@ class TierAFeatureProvider:
                 citations[feature_name] = fact.id
 
         # Derived YoY features — one repo call per concept, then collapse
-        # restatements + compute (latest − prior) / |prior|.
+        # restatements + compute (latest - prior) / |prior|.
         for feature_name, source_kind in _YOY_DERIVATIONS:
             yoy, anchor_fact = await self._compute_yoy(
                 symbol=symbol, fact_kind=source_kind, since=since

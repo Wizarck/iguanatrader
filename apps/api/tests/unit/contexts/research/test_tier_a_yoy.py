@@ -2,7 +2,7 @@
 
 Verifies :class:`TierAFeatureProvider` computes ``eps_growth_yoy`` and
 ``revenue_growth_yoy`` by walking the most recent FY-period XBRL facts
-and dividing (latest − prior) / |prior|.
+and dividing (latest - prior) / |prior|.
 
 Restatement collapse: a 10-K/A re-filing of the same fiscal year wins
 over the original 10-K (latest ``recorded_from`` per ``effective_from``).
@@ -69,7 +69,7 @@ async def test_eps_growth_yoy_from_two_consecutive_fy_filings(
     with_session: AsyncSession,
     repository: ResearchRepository,
 ) -> None:
-    """Two FY EPS rows → ``eps_growth_yoy`` = (FY24 − FY23) / |FY23|."""
+    """Two FY EPS rows → ``eps_growth_yoy`` = (FY24 - FY23) / |FY23|."""
     universe_id = seeded_world["universe_id"]
     tenant_id = seeded_world["tenant_id"]
 
