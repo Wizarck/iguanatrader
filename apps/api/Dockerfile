@@ -72,6 +72,13 @@ COPY --chown=app:app pyproject.toml poetry.lock README.md ./
 # operator UX.
 RUN echo '#!/bin/sh' > /usr/local/bin/iguanatrader && echo 'exec python -m iguanatrader.cli "$@"' >> /usr/local/bin/iguanatrader && chmod +x /usr/local/bin/iguanatrader
 
+# Boot-time migration runner. ENTRYPOINT below execs this before
+# whatever CMD/command the container was launched with, so app and
+# one-shot admin invocations both see an up-to-date schema. Set
+# IGUANA_SKIP_MIGRATIONS=1 to bypass.
+COPY --chown=root:root apps/api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Pre-create /data with app ownership. Docker copies these perms onto
 # a fresh named volume the first time it mounts, so the app user can
 # write the SQLite file without an out-of-band chown step.
@@ -83,8 +90,11 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8000/healthz || exit 1
 
-# Default entrypoint: dev/smoke uvicorn shim. The compose file overrides
-# `command:` for the `bootstrap-tenant` one-shot init container.
+# ENTRYPOINT runs alembic upgrade head before exec'ing CMD. The
+# compose file overrides `command:` for one-shot init containers
+# (e.g. `bootstrap-tenant`); migrations still run first via the
+# entrypoint, which is intentional — bootstrap needs a current schema.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "iguanatrader.api"]
 
 # ---------------------------------------------------------------------------
