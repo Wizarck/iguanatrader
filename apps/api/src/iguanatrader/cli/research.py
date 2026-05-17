@@ -14,6 +14,10 @@ Subcommands:
 * ``ingest sec-edgar <symbol>`` (Ingestion Wave I0) — fetch + persist
   SEC EDGAR filings and XBRL companyfacts as ``research_facts`` rows so
   the tier-A feature provider can serve real values to brief synthesis.
+* ``ingest fred --series <csv> [--backfill Ny]`` (Ingestion Wave I1) —
+  fetch + persist macro time-series from FRED. Backfill flag seeds deep
+  history (e.g. ``--backfill 5y``) so methodology features that depend
+  on regime / mean-reversion windows have data.
 
 Heavy imports kept lazy per gotcha #29 (``--help`` performance).
 """
@@ -22,7 +26,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import UTC, datetime
+import re
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import typer
@@ -309,6 +314,155 @@ async def _ingest_sec_edgar_async(
     typer.echo(
         f"OK — symbol={symbol} since={since.isoformat() if since else 'all'} "
         f"facts_inserted={inserted}"
+    )
+
+
+_BACKFILL_RE = re.compile(r"^(\d+)([dmy])$")
+
+
+def _parse_backfill_to_since(backfill: str) -> datetime:
+    """Translate ``--backfill 5y`` / ``30d`` / ``6m`` to an absolute datetime.
+
+    Months are approximated as 30 days; years as 365. The adapter's
+    ``realtime_start`` filter is date-only so day-level granularity is
+    sufficient — sub-day rounding would have no effect on the query.
+    """
+    match = _BACKFILL_RE.match(backfill.strip())
+    if match is None:
+        raise ValueError(f"--backfill must match <N>d/m/y (e.g. '5y', '30d'); got {backfill!r}")
+    n = int(match.group(1))
+    unit = match.group(2)
+    days_per_unit = {"d": 1, "m": 30, "y": 365}[unit]
+    now = datetime.now(UTC)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+        days=n * days_per_unit
+    )
+
+
+@ingest_app.command("fred")
+def ingest_fred(
+    series: str = typer.Option(
+        ...,
+        "--series",
+        "-s",
+        help=(
+            "Comma-separated FRED series IDs (e.g. CPIAUCSL,UNRATE,DFF). "
+            "Common picks: CPIAUCSL=CPI, UNRATE=unemployment, DFF=fed funds, "
+            "GDP, M2SL, DGS10=10y-treasury."
+        ),
+    ),
+    backfill: str | None = typer.Option(
+        None,
+        "--backfill",
+        "-b",
+        help=(
+            "Backfill window: <N>d/m/y (e.g. '5y'). Default: no backfill "
+            "(adapter's 1900-01-01 floor applies on first run; idempotent "
+            "dedupe_key skips already-persisted vintages)."
+        ),
+    ),
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help=(
+            "Explicit ISO 8601 date (YYYY-MM-DD). Mutually exclusive with "
+            "--backfill; --since wins if both supplied."
+        ),
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Pull FRED macro time-series into ``research_facts``.
+
+    Macro facts are not symbol-scoped — ``symbol_universe_id`` stays NULL
+    on the row (the column is nullable per the bitemporal model).
+    ALFRED-aware: revisions land as NEW facts (bitemporal
+    ``recorded_from``), not overwriting prior vintages.
+
+    Idempotent: re-running ingests only new vintages (dedupe_key is
+    ``fred:<series>:<date>:<realtime_start>``).
+
+    Usage::
+
+        iguanatrader research ingest fred --series CPIAUCSL,UNRATE,DFF
+        iguanatrader research ingest fred --series CPIAUCSL --backfill 5y
+        iguanatrader research ingest fred --series GDP --since 2024-01-01
+    """
+    since_dt: datetime | None = None
+    if since is not None:
+        try:
+            since_dt = datetime.fromisoformat(since).replace(tzinfo=UTC)
+        except ValueError as exc:
+            typer.echo(f"ERROR: --since must be ISO 8601 date (YYYY-MM-DD); got {since!r}: {exc}")
+            raise typer.Exit(code=2) from exc
+    elif backfill is not None:
+        try:
+            since_dt = _parse_backfill_to_since(backfill)
+        except ValueError as exc:
+            typer.echo(f"ERROR: {exc}")
+            raise typer.Exit(code=2) from exc
+
+    series_ids = [s.strip() for s in series.split(",") if s.strip()]
+    if not series_ids:
+        typer.echo("ERROR: --series must contain at least one non-empty FRED series id")
+        raise typer.Exit(code=2)
+
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info(
+        "cli.research.ingest.fred.invoked",
+        series=series_ids,
+        backfill=backfill,
+        since=since,
+    )
+
+    asyncio.run(_ingest_fred_async(series_ids=series_ids, since=since_dt, tenant_slug=tenant))
+
+
+async def _ingest_fred_async(
+    *,
+    series_ids: list[str],
+    since: datetime | None,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of the ``ingest fred`` command."""
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.fred import FREDSource
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            adapter = FREDSource()
+            repo = ResearchRepository()
+
+            per_series: dict[str, int] = {}
+            for series_id in series_ids:
+                count = 0
+                for draft in adapter.fetch_series(series_id, since):
+                    await repo.insert_fact(draft)
+                    count += 1
+                per_series[series_id] = count
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    total = sum(per_series.values())
+    typer.echo(
+        f"OK — series={','.join(series_ids)} "
+        f"since={since.isoformat() if since else 'all'} "
+        f"facts_inserted={total} ({per_series})"
     )
 
 

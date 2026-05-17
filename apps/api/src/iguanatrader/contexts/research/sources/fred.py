@@ -18,6 +18,7 @@ relevant series IDs per methodology.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import Iterable
@@ -121,6 +122,18 @@ class FREDSource(TierASourceAdapter):
                 extra={"series_id": series_id, "value": value_str},
             )
             return None
+        fact_metadata = {
+            "series_id": series_id,
+            "realtime_start": rt_start_str,
+            "realtime_end": rt_end_str,
+        }
+        payload = {
+            "series_id": series_id,
+            "date": date_str,
+            "value": value_str,
+            "realtime_start": rt_start_str,
+            "realtime_end": rt_end_str,
+        }
         return self._make_draft(
             fact_kind=f"fred.{series_id}",
             effective_from=effective_from,
@@ -128,13 +141,9 @@ class FREDSource(TierASourceAdapter):
             effective_to=effective_to,
             source_url=f"{_OBSERVATIONS_URL}?series_id={series_id}",
             value_numeric=value_numeric,
-            fact_metadata={
-                "series_id": series_id,
-                "realtime_start": rt_start_str,
-                "realtime_end": rt_end_str,
-            },
+            fact_metadata=fact_metadata,
             dedupe_key=f"fred:{series_id}:{date_str}:{rt_start_str}",
-        )
+        ).with_payload(json.dumps(payload, sort_keys=True).encode())
 
 
 __all__ = ["FREDSource"]
