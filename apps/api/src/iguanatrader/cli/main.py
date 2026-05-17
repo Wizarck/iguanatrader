@@ -57,6 +57,26 @@ def _version_callback(value: bool) -> None:
 
 
 _langfuse_initialised: bool = False
+_listeners_registered: bool = False
+
+
+def _bootstrap_listeners_once() -> None:
+    """Register SQLAlchemy global listeners (tenant auto-stamp + append-only).
+
+    The API does this from the FastAPI lifespan (per PR #201). CLI processes
+    don't go through the lifespan, so without this call the slice-3
+    ``before_flush`` listener never fires and any insert that leaves
+    ``tenant_id`` unset (e.g. ``ResearchRepository.insert_fact`` for ingest
+    CLIs) fails with NOT NULL. Idempotent — the registry guards against
+    double-register.
+    """
+    global _listeners_registered
+    if _listeners_registered:
+        return
+    from iguanatrader.persistence import register_global_listeners
+
+    register_global_listeners()
+    _listeners_registered = True
 
 
 def _bootstrap_langfuse_once() -> None:
@@ -105,7 +125,12 @@ def _root_callback(
     (research replay, synthesis runners). Eager ``--version`` exits
     before this body runs, so ``iguanatrader --version`` does NOT pay
     the Langfuse-SDK import cost.
+
+    Registers SQLAlchemy global listeners so CLI inserts that rely on
+    the tenant auto-stamp (e.g. ``research ingest sec-edgar``) work
+    outside the FastAPI lifespan.
     """
+    _bootstrap_listeners_once()
     _bootstrap_langfuse_once()
 
 
