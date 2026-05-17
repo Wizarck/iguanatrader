@@ -203,9 +203,7 @@ def test_equity_historical_prices_maps_bar_series() -> None:
     _install_fake_openbb(fake_obb)
 
     facade = OpenBBFacade()
-    result = facade.equity_historical_prices(
-        "AAPL", start_date="2025-01-01", end_date="2025-01-31"
-    )
+    result = facade.equity_historical_prices("AAPL", start_date="2025-01-01", end_date="2025-01-31")
 
     assert result["symbol"] == "AAPL"
     assert result["start_date"] == "2025-01-01"

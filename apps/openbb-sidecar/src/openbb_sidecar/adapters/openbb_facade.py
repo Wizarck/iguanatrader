@@ -227,9 +227,7 @@ class OpenBBFacade:
         except OpenBBFacadeError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise OpenBBFacadeError(
-                f"equity_historical_prices({symbol}) failed: {exc}"
-            ) from exc
+            raise OpenBBFacadeError(f"equity_historical_prices({symbol}) failed: {exc}") from exc
 
     def economy_macro(self, indicator: str) -> dict[str, Any]:
         """Return macro indicator series + unit + frequency.
