@@ -38,7 +38,7 @@
   async function handleDisable(event: MouseEvent, row: StrategyConfigOut): Promise<void> {
     event.stopPropagation();
     const confirmed = confirm(
-      `¿Deshabilitar la estrategia de ${row.symbol}? La configuración se conserva (soft-disable), pero deja de generar señales.`,
+      `Disable the strategy for ${row.symbol}? Config is preserved (soft-disable); it just stops generating signals.`,
     );
     if (!confirmed) return;
     disableError = null;
@@ -49,13 +49,13 @@
         body: new URLSearchParams({ symbol: row.symbol }),
       });
       if (!res.ok && res.status !== 303) {
-        disableError = `No se pudo deshabilitar ${row.symbol}: ${res.status} ${res.statusText}`;
+        disableError = `Failed to disable ${row.symbol}: ${res.status} ${res.statusText}`;
         return;
       }
       await invalidateAll();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      disableError = `No se pudo deshabilitar ${row.symbol}: ${message}`;
+      disableError = `Failed to disable ${row.symbol}: ${message}`;
     }
   }
 </script>
@@ -75,7 +75,7 @@
       data-testid="edit-{row.symbol}"
       onclick={(e) => handleEdit(e, row)}
     >
-      Editar
+      Edit
     </button>
     {#if row.enabled}
       <button
@@ -84,7 +84,7 @@
         data-testid="disable-{row.symbol}"
         onclick={(e) => handleDisable(e, row)}
       >
-        Deshabilitar
+        Disable
       </button>
     {/if}
   </div>
@@ -98,7 +98,7 @@
   <header class="page-header">
     <h1>Strategies</h1>
     <a class="btn btn--primary" href="/strategies/new" data-testid="new-strategy">
-      Nueva estrategia
+      New strategy
     </a>
   </header>
 
@@ -112,9 +112,9 @@
     </div>
   {:else if data.strategies.length === 0}
     <EmptyState
-      title="Sin estrategias configuradas"
-      body="Sin estrategias configuradas. Crea una para empezar a generar señales."
-      hint="docs/strategies.md detalla los kinds disponibles y sus parámetros."
+      title="No strategies configured yet"
+      body="Create one to start generating signals."
+      hint="docs/strategies.md lists every available kind and its parameters."
     />
   {:else}
     <DataTable

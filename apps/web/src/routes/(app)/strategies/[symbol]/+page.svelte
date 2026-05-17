@@ -1,6 +1,6 @@
 <script lang="ts" module>
   /**
-   * Strategy edit/upsert form route (slice strategies-config-ui).
+   * Strategy create/edit form route (slice strategies-form-rewrite-english).
    * Hidden from the sidebar — reached from `/strategies` only.
    */
   export const meta = {
@@ -16,12 +16,15 @@
 
   import Checkbox from '$lib/components/forms/Checkbox.svelte';
   import Select from '$lib/components/forms/Select.svelte';
-  import Textarea from '$lib/components/forms/Textarea.svelte';
   import TextInput from '$lib/components/forms/TextInput.svelte';
   import {
-    STRATEGY_KINDS,
-    defaultParamsJson,
-    type StrategyKind,
+    STRATEGY_CATALOGUE,
+    getStrategySpec,
+    paramsToFormValues,
+    validateParamForm,
+    type ParamFormValues,
+    type ParamSpec,
+    type StrategySpec,
   } from '$lib/strategies/types';
 
   import type { ActionData, PageData } from './$types';
@@ -41,76 +44,105 @@
 
   let { data, form }: { data: PageData; form?: ActionData } = $props();
   const formTyped = $derived(form as FormShape | undefined);
-
   const isNew = $derived(data.mode === 'new');
 
-  // Initial values seed from server load OR from the most-recent failed
-  // submit (so the user does not lose their edits on validation errors).
-  const initialKind: StrategyKind = (formTyped?.values?.strategy_kind as StrategyKind | undefined) ??
-    (data.strategy?.strategy_kind as StrategyKind | undefined) ??
-    'donchian_atr';
-
-  const initialParams: string = formTyped?.values?.params ??
-    (data.strategy ? JSON.stringify(data.strategy.params, null, 2) : defaultParamsJson(initialKind));
-
+  // Seed: server load > most-recent failed submit > catalogue default.
+  const initialKind: string =
+    (formTyped?.values?.strategy_kind as string | undefined) ??
+    (data.strategy?.strategy_kind as string | undefined) ??
+    STRATEGY_CATALOGUE[0].kind;
   const initialSymbol: string = formTyped?.values?.symbol ?? data.strategy?.symbol ?? '';
   const initialEnabled: boolean = formTyped?.values?.enabled ?? data.strategy?.enabled ?? true;
 
+  // Hydrate the param form values from either the previously-failed submit's
+  // raw JSON OR the loaded strategy's params dict OR the catalogue defaults.
+  function initialParamValues(kind: string): ParamFormValues {
+    const spec = getStrategySpec(kind);
+    if (!spec) return {};
+    // 1. Failed submit → try to parse the previous JSON and replay.
+    if (formTyped?.values?.params) {
+      try {
+        const parsed = JSON.parse(formTyped.values.params) as Record<string, unknown>;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return paramsToFormValues(spec, parsed);
+        }
+      } catch {
+        // Fall through to next source.
+      }
+    }
+    // 2. Loaded strategy on edit mode.
+    if (data.strategy?.strategy_kind === kind && data.strategy?.params) {
+      return paramsToFormValues(spec, data.strategy.params);
+    }
+    // 3. Catalogue defaults.
+    return paramsToFormValues(spec, {});
+  }
+
   let symbolInput = $state(initialSymbol);
   let kindInput = $state<string>(initialKind);
-  let paramsInput = $state(initialParams);
+  let paramValues = $state<ParamFormValues>(initialParamValues(initialKind));
   let enabledInput = $state(initialEnabled);
 
-  // Track the last kind-default we suggested. If the textarea still matches
-  // it (or is empty), changing the dropdown overwrites with the new
-  // kind-default. If the user has edited the textarea, preserve their work.
-  let lastSuggestedDefault = $state(initialParams === defaultParamsJson(initialKind) ? initialParams : '');
+  // Per-field client-side errors surfaced on submit attempt.
+  let paramErrors = $state<Record<string, string>>({});
+  let formError = $state<string | null>(null);
 
+  let currentSpec = $derived<StrategySpec | undefined>(getStrategySpec(kindInput));
+
+  // When the kind changes, swap the param values to the new kind's defaults.
+  // We do NOT preserve old values across kinds (parameters are not portable).
+  let lastKindSeen = $state(initialKind);
   $effect(() => {
-    if (!STRATEGY_KINDS.includes(kindInput as StrategyKind)) return;
-    const suggested = defaultParamsJson(kindInput as StrategyKind);
-    const textareaIsEmpty = paramsInput.trim() === '';
-    const textareaMatchesPreviousSuggestion =
-      lastSuggestedDefault !== '' && paramsInput === lastSuggestedDefault;
-    if (textareaIsEmpty || textareaMatchesPreviousSuggestion) {
-      paramsInput = suggested;
-      lastSuggestedDefault = suggested;
-    }
+    if (kindInput === lastKindSeen) return;
+    paramValues = initialParamValues(kindInput);
+    paramErrors = {};
+    lastKindSeen = kindInput;
   });
 
-  const kindOptions = STRATEGY_KINDS.map((k) => ({ value: k, label: k }));
+  const kindOptions = STRATEGY_CATALOGUE.map((s) => ({
+    value: s.kind,
+    label: `${s.displayName} (${s.kind})`,
+  }));
 
   const titleText = $derived(
-    isNew ? 'Nueva estrategia' : `Editar estrategia: ${data.strategy?.symbol ?? ''}`,
+    isNew ? 'New strategy' : `Edit strategy: ${data.strategy?.symbol ?? ''}`,
   );
 
-  // Client-side JSON pre-check — saves a round-trip when the JSON is
-  // obviously invalid. The server action re-validates regardless.
-  let clientParamsError = $state<string | null>(null);
+  // Hidden field holds the serialised JSON we send to the server action.
+  // Driven by the param values + currently-selected spec.
+  let paramsJsonHidden = $state(initialJsonForKind(initialKind));
+
+  function initialJsonForKind(kind: string): string {
+    const spec = getStrategySpec(kind);
+    if (!spec) return '{}';
+    const validation = validateParamForm(spec, initialParamValues(kind));
+    if (validation.ok) {
+      return JSON.stringify(validation.params);
+    }
+    return '{}';
+  }
+
   function preflight(event: SubmitEvent) {
-    clientParamsError = null;
-    const raw = paramsInput.trim();
-    if (!raw) {
-      clientParamsError = 'Params es obligatorio (objeto JSON).';
+    formError = null;
+    paramErrors = {};
+    if (!currentSpec) {
+      formError = 'Pick a strategy type before saving.';
       event.preventDefault();
       return;
     }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        clientParamsError = 'Params debe ser un objeto JSON.';
-        event.preventDefault();
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      clientParamsError = `JSON inválido: ${message}`;
+    const validation = validateParamForm(currentSpec, paramValues);
+    if (!validation.ok) {
+      paramErrors = validation.errors;
+      formError = 'Some parameters need attention — see the messages below.';
       event.preventDefault();
+      return;
     }
+    paramsJsonHidden = JSON.stringify(validation.params);
   }
 
   function confirmDisable(event: SubmitEvent) {
     const ok = confirm(
-      `¿Deshabilitar la estrategia de ${data.strategy?.symbol ?? ''}? Esto pondrá la estrategia en estado disabled — no borra el config ni cierra posiciones abiertas.`,
+      `Disable the strategy for ${data.strategy?.symbol ?? ''}? It stays in the database with enabled=false. Open positions are not closed.`,
     );
     if (!ok) event.preventDefault();
   }
@@ -118,6 +150,28 @@
   const showDisable = $derived(
     !isNew && data.strategy !== null && data.strategy.enabled === true,
   );
+
+  function displayValueFor(p: ParamSpec): string {
+    return paramValues[p.name] ?? '';
+  }
+
+  function setParamValue(p: ParamSpec, value: string): void {
+    paramValues = { ...paramValues, [p.name]: value };
+  }
+
+  function inputModeFor(p: ParamSpec): 'numeric' | 'decimal' | 'text' {
+    if (p.type === 'integer') return 'numeric';
+    if (p.type === 'decimal' || p.type === 'percent' || p.type === 'optional-decimal') {
+      return 'decimal';
+    }
+    return 'text';
+  }
+
+  function placeholderFor(p: ParamSpec): string {
+    if (p.default === null) return 'optional';
+    if (p.type === 'percent') return String(Number(p.default) * 100);
+    return String(p.default);
+  }
 </script>
 
 <svelte:head>
@@ -134,10 +188,13 @@
   {:else}
     {#if formTyped?.formError}
       <div class="error" role="alert" data-testid="form-error">{formTyped.formError}</div>
+    {:else if formError}
+      <div class="error" role="alert" data-testid="client-error">{formError}</div>
     {/if}
 
     <form method="POST" action="?/upsert" use:enhance onsubmit={preflight} novalidate>
       <input type="hidden" name="mode" value={isNew ? 'new' : 'edit'} />
+      <input type="hidden" name="params" value={paramsJsonHidden} />
 
       {#if isNew}
         <TextInput
@@ -146,7 +203,7 @@
           bind:value={symbolInput}
           required
           pattern="^[A-Z0-9]{'{1,16}'}$"
-          helpText="Letras mayúsculas A-Z y dígitos 0-9, máximo 16 caracteres (convención IBKR)."
+          helpText="Uppercase letters A-Z and digits 0-9, max 16 characters (IBKR convention)."
           error={formTyped?.fieldErrors?.symbol}
           placeholder="SPY"
           autocomplete="off"
@@ -161,33 +218,63 @@
 
       <Select
         name="strategy_kind"
-        label="Strategy kind"
+        label="Strategy type"
         bind:value={kindInput}
         options={kindOptions}
         error={formTyped?.fieldErrors?.strategy_kind}
-        helpText="Selecciona el tipo de estrategia. Cambiar el kind sugiere los parámetros por defecto si no has editado el textarea."
+        helpText="Each type runs a different signal-generation algorithm. Switching types resets the parameter values to that type's defaults."
       />
 
-      <Textarea
-        name="params"
-        label="Params (JSON)"
-        bind:value={paramsInput}
-        rows={10}
-        monospace
-        error={clientParamsError ?? formTyped?.fieldErrors?.params}
-        helpText="Objeto JSON con los parámetros del kind. Ej: {`{ "lookback": 20, "atr_mult": 2.0 }`}."
-      />
+      {#if currentSpec}
+        <div class="kind-description" data-testid="kind-description">
+          {currentSpec.description}
+        </div>
+
+        <fieldset class="params" aria-label="Strategy parameters">
+          <legend>Parameters</legend>
+          {#each currentSpec.params as paramSpec (paramSpec.name)}
+            <div class="param-field">
+              <label class="param-label" for={`param-${paramSpec.name}`}>
+                {paramSpec.label}
+              </label>
+              <input
+                id={`param-${paramSpec.name}`}
+                class="param-input"
+                type="text"
+                inputmode={inputModeFor(paramSpec)}
+                value={displayValueFor(paramSpec)}
+                placeholder={placeholderFor(paramSpec)}
+                aria-invalid={paramErrors[paramSpec.name] ? 'true' : undefined}
+                aria-describedby={`help-${paramSpec.name}`}
+                data-testid={`param-${paramSpec.name}`}
+                oninput={(e) =>
+                  setParamValue(paramSpec, (e.currentTarget as HTMLInputElement).value)}
+              />
+              <p class="param-help" id={`help-${paramSpec.name}`}>{paramSpec.help}</p>
+              {#if paramErrors[paramSpec.name]}
+                <p
+                  class="param-error"
+                  role="alert"
+                  data-testid={`param-error-${paramSpec.name}`}
+                >
+                  {paramErrors[paramSpec.name]}
+                </p>
+              {/if}
+            </div>
+          {/each}
+        </fieldset>
+      {/if}
 
       <Checkbox
         name="enabled"
-        label="Enabled (genera señales)"
+        label="Enabled (generates signals)"
         bind:checked={enabledInput}
-        helpText="Si está desmarcado, la estrategia se guarda pero no propondrá trades."
+        helpText="If unchecked, the strategy config is saved but no proposals are emitted."
       />
 
       <div class="actions">
-        <button type="submit" class="btn btn--primary" data-testid="submit">Guardar</button>
-        <a href="/strategies" class="btn btn--ghost" data-testid="cancel">Cancelar</a>
+        <button type="submit" class="btn btn--primary" data-testid="submit">Save</button>
+        <a href="/strategies" class="btn btn--ghost" data-testid="cancel">Cancel</a>
       </div>
     </form>
 
@@ -195,11 +282,11 @@
       <hr class="separator" />
       <div class="disable-section">
         <p class="disable-note">
-          Esto pondrá la estrategia en estado disabled — no borra el config ni cierra posiciones
-          abiertas.
+          Soft-disables the strategy. Config row stays in the database; no proposals are
+          generated. Open positions are NOT closed.
         </p>
         <form method="POST" action="?/disable" use:enhance onsubmit={confirmDisable}>
-          <button type="submit" class="btn btn--danger" data-testid="disable">Deshabilitar</button>
+          <button type="submit" class="btn btn--danger" data-testid="disable">Disable</button>
         </form>
         {#if formTyped?.disableError}
           <p class="error error--inline" role="alert" data-testid="disable-error">
@@ -214,7 +301,7 @@
 <style>
   section {
     color: var(--ink);
-    max-width: 640px;
+    max-width: 720px;
   }
   h1 {
     font-size: 22px;
@@ -239,6 +326,72 @@
     color: var(--ink);
     font-size: 14px;
     font-family: var(--font-mono);
+  }
+  .kind-description {
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    color: var(--mute);
+    font-size: 13px;
+    line-height: 1.5;
+    border-radius: 0 var(--r-2) var(--r-2) 0;
+  }
+  .params {
+    margin: 16px 0;
+    padding: 16px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    background: var(--surface);
+  }
+  .params legend {
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--mute);
+  }
+  .param-field {
+    margin: 0 0 14px;
+  }
+  .param-field:last-of-type {
+    margin-bottom: 0;
+  }
+  .param-label {
+    display: block;
+    font-size: 12px;
+    color: var(--ink);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .param-input {
+    width: 100%;
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+  }
+  .param-input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .param-input[aria-invalid='true'] {
+    border-color: var(--destructive);
+  }
+  .param-help {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--mute);
+    line-height: 1.4;
+  }
+  .param-error {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--destructive);
   }
   .actions {
     display: flex;

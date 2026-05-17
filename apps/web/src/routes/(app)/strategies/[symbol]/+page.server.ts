@@ -47,14 +47,14 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }): Promise<
       return {
         mode: 'edit',
         strategy: null,
-        loadError: `No existe una estrategia activa para ${sym}.`,
+        loadError: `No active strategy found for ${sym}.`,
       };
     }
     if (!res.ok) {
       return {
         mode: 'edit',
         strategy: null,
-        loadError: `No se pudo cargar la estrategia: ${res.status} ${res.statusText}`,
+        loadError: `Failed to load strategy: ${res.status} ${res.statusText}`,
       };
     }
     const strategy = (await res.json()) as StrategyConfigOut;
@@ -64,7 +64,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }): Promise<
     return {
       mode: 'edit',
       strategy: null,
-      loadError: `No se pudo cargar la estrategia: ${message}`,
+      loadError: `Failed to load strategy: ${message}`,
     };
   }
 };
@@ -88,35 +88,35 @@ export const actions: Actions = {
 
     const targetSymbol = mode === 'new' ? symbolRaw : symbolRaw || String(params.symbol ?? '');
     if (!targetSymbol) {
-      fieldErrors.symbol = 'Symbol es obligatorio.';
+      fieldErrors.symbol = 'Symbol is required.';
     } else if (!SYMBOL_PATTERN.test(targetSymbol)) {
-      fieldErrors.symbol = 'Symbol inválido: usa A-Z y 0-9, máximo 16 caracteres.';
+      fieldErrors.symbol = 'Invalid symbol: use A-Z and 0-9, max 16 characters.';
     }
 
     if (!strategyKind || !isStrategyKind(strategyKind)) {
-      fieldErrors.strategy_kind = `Strategy kind inválido. Permitidos: ${STRATEGY_KINDS.join(', ')}.`;
+      fieldErrors.strategy_kind = `Invalid strategy kind. Allowed: ${STRATEGY_KINDS.join(', ')}.`;
     }
 
     let parsedParams: Record<string, unknown> = {};
     if (!paramsRaw) {
-      fieldErrors.params = 'Params es obligatorio (objeto JSON).';
+      fieldErrors.params = 'Params is required (JSON object).';
     } else {
       try {
         const parsed: unknown = JSON.parse(paramsRaw);
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-          fieldErrors.params = 'Params debe ser un objeto JSON.';
+          fieldErrors.params = 'Params must be a JSON object.';
         } else {
           parsedParams = parsed as Record<string, unknown>;
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        fieldErrors.params = `JSON inválido: ${message}`;
+        fieldErrors.params = `Invalid JSON: ${message}`;
       }
     }
 
     if (Object.keys(fieldErrors).length > 0) {
       return fail(400, {
-        formError: 'Revisa los campos marcados.',
+        formError: 'Check the highlighted fields.',
         fieldErrors,
         values: { symbol: symbolRaw, strategy_kind: strategyKind, params: paramsRaw, enabled },
       });
@@ -141,7 +141,7 @@ export const actions: Actions = {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return fail(502, {
-        formError: `Backend inaccesible: ${message}`,
+        formError: `Backend unreachable: ${message}`,
         fieldErrors: {},
         values: { symbol: symbolRaw, strategy_kind: strategyKind, params: paramsRaw, enabled },
       });
@@ -151,7 +151,7 @@ export const actions: Actions = {
       throw redirect(303, '/strategies');
     }
 
-    let detail = `Error ${response.status} al guardar.`;
+    let detail = `Save failed: HTTP ${response.status}.`;
     try {
       const body = (await response.json()) as { detail?: string };
       if (typeof body.detail === 'string') detail = body.detail;
@@ -168,7 +168,7 @@ export const actions: Actions = {
   disable: async ({ fetch, cookies, params }) => {
     const sym = String(params.symbol ?? '');
     if (!sym || sym === 'new') {
-      return fail(400, { disableError: 'No se puede deshabilitar una estrategia sin symbol.' });
+      return fail(400, { disableError: 'Cannot disable a strategy without a symbol.' });
     }
     const sessionCookie = cookies.get(COOKIE_NAME);
     let response: Response;
@@ -179,7 +179,7 @@ export const actions: Actions = {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(502, { disableError: `Backend inaccesible: ${message}` });
+      return fail(502, { disableError: `Backend unreachable: ${message}` });
     }
 
     if (response.status >= 200 && response.status < 300) {
@@ -187,7 +187,7 @@ export const actions: Actions = {
     }
 
     return fail(response.status, {
-      disableError: `No se pudo deshabilitar ${sym}: ${response.status} ${response.statusText}`,
+      disableError: `Failed to disable ${sym}: ${response.status} ${response.statusText}`,
     });
   },
 };

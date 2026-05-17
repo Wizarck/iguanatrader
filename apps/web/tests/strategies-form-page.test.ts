@@ -148,7 +148,7 @@ describe('strategy form upsert action', () => {
 
     expect((result as { status: number }).status).toBe(400);
     const data = (result as { data: { fieldErrors: Record<string, string> } }).data;
-    expect(data.fieldErrors.params).toContain('JSON inválido');
+    expect(data.fieldErrors.params).toContain('Invalid JSON');
     expect(fetchSpy).not.toHaveBeenCalled();
 
     fetchSpy.mockRestore();
@@ -172,7 +172,7 @@ describe('strategy form upsert action', () => {
 
     expect((result as { status: number }).status).toBe(400);
     const data = (result as { data: { fieldErrors: Record<string, string> } }).data;
-    expect(data.fieldErrors.symbol).toContain('Symbol inválido');
+    expect(data.fieldErrors.symbol).toContain('Invalid symbol');
     expect(fetchSpy).not.toHaveBeenCalled();
 
     fetchSpy.mockRestore();
@@ -196,7 +196,7 @@ describe('strategy form upsert action', () => {
 
     expect((result as { status: number }).status).toBe(400);
     const data = (result as { data: { fieldErrors: Record<string, string> } }).data;
-    expect(data.fieldErrors.strategy_kind).toContain('Strategy kind inválido');
+    expect(data.fieldErrors.strategy_kind).toContain('Invalid strategy kind');
     expect(fetchSpy).not.toHaveBeenCalled();
 
     fetchSpy.mockRestore();
