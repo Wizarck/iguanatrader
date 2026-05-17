@@ -90,6 +90,16 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      # Research data-source credentials (Ingestion Wave I0+). Empty
+      # values disable the corresponding adapter — the CLI raises a
+      # ConfigError at init when its required env is unset. See
+      # docs/runbooks/research-data-sources.md for registration links.
+      - SEC_EDGAR_USER_AGENT=${SEC_EDGAR_USER_AGENT:-}
+      - FRED_API_KEY=${FRED_API_KEY:-}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+      - BEA_API_KEY=${BEA_API_KEY:-}
+      - BLS_API_KEY=${BLS_API_KEY:-}
+      - OPENFDA_API_KEY=${OPENFDA_API_KEY:-}
     volumes:
       - iguanatrader_data:/data
     ports:

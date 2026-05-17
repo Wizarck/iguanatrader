@@ -11,6 +11,9 @@ Subcommands:
 * ``audit <brief_id> [--tenant <slug>]`` — render the audit-trail rows
   for ``brief_id`` as markdown (mirrors j3.md §3 Step 3 "Copy as
   markdown" frontend action shape).
+* ``ingest sec-edgar <symbol>`` (Ingestion Wave I0) — fetch + persist
+  SEC EDGAR filings and XBRL companyfacts as ``research_facts`` rows so
+  the tier-A feature provider can serve real values to brief synthesis.
 
 Heavy imports kept lazy per gotcha #29 (``--help`` performance).
 """
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC, datetime
 from uuid import UUID
 
 import typer
@@ -33,6 +37,15 @@ app: typer.Typer = typer.Typer(
     help="Research operator commands (slice R5).",
     no_args_is_help=True,
 )
+
+# Subcommand group for ingestion CLIs (Ingestion Wave I0+). Each source
+# adapter gets a sibling command under ``iguanatrader research ingest``.
+ingest_app: typer.Typer = typer.Typer(
+    name="ingest",
+    help="Fetch + persist research facts from external sources.",
+    no_args_is_help=True,
+)
+app.add_typer(ingest_app, name="ingest")
 
 
 _VALID_METHODOLOGIES = (
@@ -183,6 +196,120 @@ def audit(
             typer.echo("")
 
     asyncio.run(_run())
+
+
+# ----------------------------------------------------------------------
+# Ingestion Wave (I0+) — research_facts pipeline activators
+# ----------------------------------------------------------------------
+
+
+@ingest_app.command("sec-edgar")
+def ingest_sec_edgar(
+    symbol: str = typer.Argument(
+        ...,
+        help="Ticker symbol to ingest (e.g. NVDA).",
+    ),
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help=(
+            "ISO 8601 date (YYYY-MM-DD) — only emit drafts newer than this. "
+            "Default: full history (every filing + every XBRL fact)."
+        ),
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Pull SEC EDGAR filings + XBRL companyfacts into ``research_facts``.
+
+    Requires ``SEC_EDGAR_USER_AGENT="<company> <email>"`` per SEC Fair
+    Access policy. The symbol must already exist in ``symbol_universe``
+    for the tenant (use ``iguanatrader admin register-symbol`` first).
+
+    Idempotent on ``(tenant_id, dedupe_key)`` — the adapter stamps a
+    deterministic ``dedupe_key`` per draft (accession number for filings,
+    ``cik:concept:end_date:form`` for XBRL facts), so re-running the
+    command never duplicates rows.
+
+    Usage::
+
+        iguanatrader research ingest sec-edgar NVDA
+        iguanatrader research ingest sec-edgar NVDA --since 2024-01-01
+    """
+    since_dt: datetime | None = None
+    if since is not None:
+        try:
+            since_dt = datetime.fromisoformat(since).replace(tzinfo=UTC)
+        except ValueError as exc:
+            typer.echo(f"ERROR: --since must be ISO 8601 date (YYYY-MM-DD); got {since!r}: {exc}")
+            raise typer.Exit(code=2) from exc
+
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info("cli.research.ingest.sec_edgar.invoked", symbol=symbol, since=since)
+
+    asyncio.run(_ingest_sec_edgar_async(symbol=symbol, since=since_dt, tenant_slug=tenant))
+
+
+async def _ingest_sec_edgar_async(
+    *,
+    symbol: str,
+    since: datetime | None,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of the ``ingest sec-edgar`` command."""
+    from dataclasses import replace as dc_replace
+
+    import sqlalchemy as sa
+
+    from iguanatrader.contexts.research.models import SymbolUniverse
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.sec_edgar import SECEdgarSource
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            sym_row = (
+                await session.execute(
+                    sa.select(SymbolUniverse.id).where(SymbolUniverse.symbol == symbol)
+                )
+            ).first()
+            if sym_row is None:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r} not registered for this tenant. Run "
+                    f"`iguanatrader admin register-symbol {symbol} --tenant <slug>` first."
+                )
+                raise typer.Exit(code=1)
+            symbol_universe_id = sym_row[0]
+
+            adapter = SECEdgarSource()
+            repo = ResearchRepository()
+
+            inserted = 0
+            for draft in adapter.fetch(symbol, since):
+                stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+                await repo.insert_fact(stamped)
+                inserted += 1
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(
+        f"OK — symbol={symbol} since={since.isoformat() if since else 'all'} "
+        f"facts_inserted={inserted}"
+    )
 
 
 __all__ = ["app"]
