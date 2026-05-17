@@ -68,4 +68,10 @@ EXPOSE 8765
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=12 \
     CMD curl -fsS http://localhost:8765/health || exit 1
 
-CMD ["uvicorn", "openbb_sidecar.main:app", "--host", "0.0.0.0", "--port", "8765"]
+# Use `python -m uvicorn` instead of the `uvicorn` shell wrapper. The
+# wrapper script in /app/.venv/bin/ has a shebang pointing at the
+# builder stage's venv path (/build/.venv/bin/python) which doesn't
+# exist in the runtime image — same gotcha as the api Dockerfile's
+# alembic wrapper. python -m bypasses the shebang and uses the venv's
+# python directly via PYTHONPATH.
+CMD ["python", "-m", "uvicorn", "openbb_sidecar.main:app", "--host", "0.0.0.0", "--port", "8765"]
