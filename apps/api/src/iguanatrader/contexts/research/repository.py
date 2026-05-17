@@ -424,6 +424,47 @@ class ResearchRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return result.scalars().first()
 
+    async def facts_history_by_kinds(
+        self,
+        *,
+        symbol: str,
+        fact_kinds: list[str],
+        limit: int = 20,
+        require_recorded_before: datetime | None = None,
+    ) -> list[ResearchFact]:
+        """Return up to ``limit`` facts matching ``fact_kinds`` for ``symbol``.
+
+        Ordered ``effective_from DESC, recorded_from DESC`` — the second
+        sort key disambiguates restatements of the same fiscal period
+        (newest 10-K/A overrides the initial 10-K). Used by Tier-A YoY
+        computations that need a window of historical facts, not just
+        the latest. ``require_recorded_before`` enforces backtest safety
+        the same way :meth:`latest_fact_by_kinds` does.
+        """
+        from iguanatrader.contexts.research.models import SymbolUniverse
+
+        clauses = [
+            ResearchFact.fact_kind.in_(fact_kinds),
+            SymbolUniverse.symbol == symbol,
+        ]
+        if require_recorded_before is not None:
+            clauses.append(ResearchFact.recorded_from <= require_recorded_before)
+        stmt = (
+            sa.select(ResearchFact)
+            .join(
+                SymbolUniverse,
+                ResearchFact.symbol_universe_id == SymbolUniverse.id,
+            )
+            .where(sa.and_(*clauses))
+            .order_by(
+                ResearchFact.effective_from.desc(),
+                ResearchFact.recorded_from.desc(),
+            )
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def facts_by_ids(
         self,
         ids: list[UUID],
