@@ -102,6 +102,93 @@ Today the recent-symbols list dedupes case-insensitively (good) but doesn't reor
 
 ---
 
+## U5 — Full app English translation
+
+**Status**: proposed
+**Estimated**: ~50 visible strings across 20+ files; mechanical work, no design churn.
+
+### What
+
+Today the app mixes Spanish UI prose with English labels (Spanglish). MVP convention: **English by default**. Per-tenant locale switching is out of scope; this slice only removes the Spanish strings.
+
+### Components
+
+- Grep `apps/web/src` for known Spanish phrases (`Nueva`, `Editar`, `Deshabilitar`, `Guardar`, `Cancelar`, `obligatorio`, `inválido`, `Selecciona`, `usa A-Z`, etc.) and translate to canonical English.
+- Update the matching test assertions in `apps/web/tests/`.
+- Where component help-text or confirm-dialogs reference Spanish, port to English while keeping the meaning.
+
+### Why not now
+
+PR `feat/strategies-form-rewrite-english` (this work) only translated the strategies pages because they were being rewritten anyway. Translating the rest in the same PR would have inflated the diff without solving the underlying UX bug. This slice handles the cleanup pass.
+
+### Files known to contain Spanish strings as of 2026-05-18
+
+- `apps/web/src/routes/(app)/portfolio/**` (some helper copy)
+- `apps/web/src/routes/(app)/trades/**`
+- `apps/web/src/routes/(app)/approvals/**`
+- `apps/web/src/routes/(app)/research/**`
+- `apps/web/src/routes/(app)/risk/**`
+- `apps/web/src/routes/(app)/costs/**`
+- `apps/web/src/routes/(app)/settings/**`
+- Confirmation dialogs and error toasts globally.
+
+---
+
+## U6 — Light theme implementation
+
+**Status**: proposed (currently stubbed)
+**Estimated**: ~50 LoC CSS, plus contrast-audit pass against the OKLCH tokens.
+
+### What
+
+`apps/web/src/lib/stores/theme.svelte.ts` already toggles `data-theme="light"` on `<html>` and the `TopBar` exposes the moon/sun button. But `apps/web/src/app.css:21-23` declares the *same* dark palette under both `:root[data-theme='dark']` and `:root[data-theme='light']` — the toggle is therefore a visual no-op (documented in `theme.svelte.ts:9-13` and `app.css:14-20`).
+
+This slice unblocks the toggle by defining a real light palette.
+
+### Components
+
+- New `:root[data-theme='light']` block in `app.css` with light-mode OKLCH tokens:
+  - `--bg`: light surface (e.g. `oklch(98% 0.005 250)`)
+  - `--surface`, `--surface-2`: lighter than bg
+  - `--ink`: dark text (e.g. `oklch(20% 0.01 250)`)
+  - `--mute`: mid-grey
+  - `--border`: subtle line
+  - Accents and semantic colours can stay; verify legibility.
+- Remove the "render dark regardless" hack so the toggle takes visual effect.
+- Update `html { color-scheme: dark; }` to be theme-aware (or drop it, since `data-theme` now drives the palette).
+- Run `npm run test` + a manual smoke on every page; capture screenshots in the PR.
+
+### Why not now
+
+This is a design exercise (palette contrast, hover/focus states, badge legibility on light surfaces) on top of the CSS plumbing. Better handled as its own slice with the UX checklist.
+
+---
+
+## U7 — Backend strategies catalogue API
+
+**Status**: proposed
+**Estimated**: ~120 LoC backend + ~40 LoC frontend wiring.
+
+### What
+
+The strategy parameter catalogue (display name, description, per-parameter type/default/min/max/help) lives client-side at `apps/web/src/lib/strategies/types.ts`. Defaults are duplicated against the Python `DEFAULT_*` constants in `apps/api/src/iguanatrader/contexts/trading/strategies/*.py`. When a backend param changes, the frontend silently drifts.
+
+This slice moves the catalogue to the backend as the source of truth.
+
+### Components
+
+- Each `Strategy` subclass exposes a `describe()` classmethod returning a Pydantic `StrategyDescriptor` (kind + display_name + description + ParamSpec list).
+- `StrategyManager.registry()` returns the list of descriptors.
+- `GET /api/v1/strategies/catalogue` route surfaces them.
+- Frontend swaps `STRATEGY_CATALOGUE` from the TS module to a server-loaded async value via `+page.server.ts` for `/strategies/new` and `/strategies/[symbol]`.
+- The TS catalogue stays as a fallback for SSR + tests where the API isn't reachable.
+
+### Why not now
+
+Frontend catalogue ships the form today; backend catalogue is the right long-term split but isn't blocking any user flow.
+
+---
+
 ## How to start a slice
 
 ```
