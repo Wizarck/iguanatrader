@@ -73,7 +73,7 @@ class BriefService:
         synthesizer: Synthesizer,
         audit_service: AuditTrailService,
         bus: MessageBus | None = None,
-        default_model: str = "claude-3-5-sonnet",
+        default_model: str = "claude-sonnet-4-6",
         hindsight: Any | None = None,
     ) -> None:
         self._repo = repository
