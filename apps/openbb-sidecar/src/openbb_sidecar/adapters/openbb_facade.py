@@ -85,6 +85,12 @@ class OpenBBFacade:
             return {
                 "symbol": symbol.upper(),
                 "pe_ratio": _g("pe_ratio"),
+                # Forward P/E and price-to-book are surfaced by yfinance via
+                # `forward_pe` and `price_to_book` on the v4 unified schema.
+                # When the provider doesn't populate them they stay None and
+                # the value pillar falls back to trailing pe_ratio only.
+                "forward_pe": _g("forward_pe"),
+                "price_to_book": _g("price_to_book"),
                 "market_cap": _g("market_cap"),
                 "dividend_yield": _g("dividend_yield"),
                 "as_of_date": _g("date") or _g("period_ending"),

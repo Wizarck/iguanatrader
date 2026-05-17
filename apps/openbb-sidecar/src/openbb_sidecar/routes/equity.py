@@ -24,6 +24,8 @@ _facade = OpenBBFacade()
 class EquityFundamentalsResponse(BaseModel):
     symbol: str
     pe_ratio: float | None = None
+    forward_pe: float | None = None
+    price_to_book: float | None = None
     market_cap: float | None = None
     dividend_yield: float | None = None
     as_of_date: Any | None = Field(default=None, description="Date string or ISO 8601 timestamp")

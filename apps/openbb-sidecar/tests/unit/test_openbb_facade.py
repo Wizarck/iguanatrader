@@ -58,6 +58,8 @@ def test_is_ready_returns_false_when_openbb_import_fails() -> None:
 def test_equity_fundamentals_maps_response_shape() -> None:
     fake_row = SimpleNamespace(
         pe_ratio=22.5,
+        forward_pe=18.0,
+        price_to_book=4.7,
         market_cap=3_500_000_000_000.0,
         dividend_yield=0.005,
         date="2026-04-30",
@@ -77,9 +79,35 @@ def test_equity_fundamentals_maps_response_shape() -> None:
 
     assert result["symbol"] == "AAPL"
     assert result["pe_ratio"] == 22.5
+    assert result["forward_pe"] == 18.0
+    assert result["price_to_book"] == 4.7
     assert result["market_cap"] == 3_500_000_000_000.0
     assert result["dividend_yield"] == 0.005
     assert result["as_of_date"] == "2026-04-30"
+
+
+def test_equity_fundamentals_handles_missing_forward_pe_and_pb() -> None:
+    """Provider may not surface forward_pe / price_to_book; stays None."""
+    fake_row = SimpleNamespace(
+        pe_ratio=22.5,
+        market_cap=3_500_000_000_000.0,
+        dividend_yield=0.005,
+        date="2026-04-30",
+    )
+    fake_obj = SimpleNamespace(results=[fake_row])
+    fake_obb = SimpleNamespace(
+        equity=SimpleNamespace(
+            fundamental=SimpleNamespace(metrics=lambda symbol: fake_obj),
+        ),
+    )
+    _install_fake_openbb(fake_obb)
+
+    facade = OpenBBFacade()
+    result = facade.equity_fundamentals("AAPL")
+
+    assert result["pe_ratio"] == 22.5
+    assert result["forward_pe"] is None
+    assert result["price_to_book"] is None
 
 
 def test_equity_fundamentals_raises_when_no_results() -> None:
