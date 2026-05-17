@@ -19,6 +19,7 @@ mitigation #2: NO pre-create in deploy scripts; first write does the
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -37,11 +38,27 @@ from iguanatrader.contexts.research.models import (
 from iguanatrader.contexts.research.ports import ResearchFactDraft
 from iguanatrader.shared.kernel import BaseRepository
 
-#: Default filesystem root for hybrid-storage payload offload. Tests override
-#: via :attr:`ResearchRepository.payload_root`. Production deploy resolves
-#: against the project working directory; the directory is created on first
-#: write (per gotcha #41).
+#: Filesystem root for hybrid-storage payload offload when no explicit
+#: ``payload_root`` is passed AND the ``IGUANATRADER_RESEARCH_CACHE_ROOT``
+#: env var is unset. The path is relative — production deployments are
+#: expected to set the env var to an absolute path (``/data/research_cache``
+#: in the MVP compose stack, mounted via the ``iguanatrader_data`` named
+#: volume). Tests override directly via the constructor.
 DEFAULT_PAYLOAD_ROOT: Path = Path("data/research_cache")
+
+#: Env var that overrides :data:`DEFAULT_PAYLOAD_ROOT`. Set in compose +
+#: helm so CLI commands run from any cwd (gotcha previously required
+#: ``docker exec --workdir /data`` to avoid a PermissionError when the
+#: ``app`` user tried to ``mkdir`` under ``/app/data/``).
+_PAYLOAD_ROOT_ENV = "IGUANATRADER_RESEARCH_CACHE_ROOT"
+
+
+def _resolve_default_payload_root() -> Path:
+    """Pick the production payload root, preferring the env override."""
+    override = os.environ.get(_PAYLOAD_ROOT_ENV, "").strip()
+    if override:
+        return Path(override)
+    return DEFAULT_PAYLOAD_ROOT
 
 
 class ResearchRepository(BaseRepository):
@@ -56,7 +73,9 @@ class ResearchRepository(BaseRepository):
     payload_root: Path
 
     def __init__(self, *, payload_root: Path | None = None) -> None:
-        self.payload_root = payload_root if payload_root is not None else DEFAULT_PAYLOAD_ROOT
+        self.payload_root = (
+            payload_root if payload_root is not None else _resolve_default_payload_root()
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

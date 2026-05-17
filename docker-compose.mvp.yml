@@ -45,6 +45,13 @@ services:
       - IGUANATRADER_API_PORT=8000
       # Single SQLite file under the named volume.
       - IGUANA_DATABASE_URL=sqlite+aiosqlite:////data/iguanatrader.db
+      # Hybrid-storage payload root for research_facts.raw_payload_path.
+      # MUST be absolute + writable by the container's `app` user. Without
+      # this override the repository defaults to ``data/research_cache``
+      # relative to cwd — which is /app for the container, where /app/data
+      # is not writable; operator workaround was `docker exec --workdir
+      # /data`. Setting it explicitly here means any cwd works.
+      - IGUANATRADER_RESEARCH_CACHE_ROOT=/data/research_cache
       # MUST override before `docker compose up` in production. The
       # default below is a non-functional placeholder so the container
       # fails loudly if the operator forgets the override.
