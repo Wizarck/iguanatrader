@@ -73,6 +73,21 @@ function buildTooltip(factId: string, fact: FactProvenance | undefined): string 
   return parts.length > 0 ? parts.join(' · ') : `[fact:${factId.slice(0, 8)}]`;
 }
 
+// Hostnames that resolve only inside the docker-compose / k8s network.
+// We must NOT emit anchors pointing at these — the user's browser will
+// never reach them. Render as a non-clickable span instead so the
+// tooltip + source label still inform the reader.
+const INTERNAL_HOST_PREFIXES = [
+  'http://openbb_sidecar:',
+  'http://openbb-sidecar:',
+  'http://api:',
+  'http://web:'
+];
+
+function isPubliclyReachable(url: string): boolean {
+  return !INTERNAL_HOST_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
 function renderCitationChip(factId: string, fact: FactProvenance | undefined): string {
   const shortId = factId.slice(0, 8);
   const label = fact?.source_id ?? `[fact:${shortId}]`;
@@ -81,13 +96,16 @@ function renderCitationChip(factId: string, fact: FactProvenance | undefined): s
   const safeLabel = escapeHtml(label);
   const safeTitle = escapeHtml(title);
 
-  if (fact?.source_url) {
+  if (fact?.source_url && isPubliclyReachable(fact.source_url)) {
     return (
       `<a class="citation-chip" href="${escapeHtml(fact.source_url)}" ` +
       `target="_blank" rel="noopener noreferrer" ` +
       `data-fact-id="${safeFactId}" title="${safeTitle}">${safeLabel}</a>`
     );
   }
+  // When the fact is known but its URL is internal-only (e.g. the
+  // OpenBB sidecar) we still render an informative chip — just as a
+  // span, not an anchor.
   const brokenClass = fact ? 'citation-chip' : 'citation-chip citation-chip-broken';
   return (
     `<span class="${brokenClass}" data-fact-id="${safeFactId}" ` +
