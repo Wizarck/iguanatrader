@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from openbb_sidecar.adapters.openbb_facade import OpenBBFacade, OpenBBFacadeError
@@ -48,10 +48,25 @@ class EquityESGResponse(BaseModel):
     as_of_date: Any | None = None
 
 
+class EquityHistoricalPricesResponse(BaseModel):
+    """Daily OHLCV bar series; ``bars`` ordered ascending by ``date``."""
+
+    symbol: str
+    start_date: str | None = None
+    end_date: str | None = None
+    bars: list[dict[str, Any]] = Field(default_factory=list)
+
+
 def _map_facade_error_to_http(exc: OpenBBFacadeError, symbol: str) -> HTTPException:
     """Translate facade errors to HTTP 404 (no-data) vs 502 (upstream failure)."""
     msg = str(exc).lower()
-    if "no fundamentals" in msg or "no analyst" in msg or "no esg" in msg or "no macro" in msg:
+    if (
+        "no fundamentals" in msg
+        or "no analyst" in msg
+        or "no esg" in msg
+        or "no macro" in msg
+        or "no historical prices" in msg
+    ):
         return HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"symbol": symbol, "error": str(exc)},
@@ -99,3 +114,26 @@ def esg(symbol: str) -> EquityESGResponse:
         )
         raise _map_facade_error_to_http(exc, symbol) from exc
     return EquityESGResponse(**data)
+
+
+@router.get("/historical_prices/{symbol}", response_model=EquityHistoricalPricesResponse)
+def historical_prices(
+    symbol: str,
+    start_date: str | None = Query(
+        default=None,
+        description="ISO 8601 YYYY-MM-DD inclusive lower bound on the bar series.",
+    ),
+    end_date: str | None = Query(
+        default=None,
+        description="ISO 8601 YYYY-MM-DD inclusive upper bound on the bar series.",
+    ),
+) -> EquityHistoricalPricesResponse:
+    try:
+        data = _facade.equity_historical_prices(symbol, start_date, end_date)
+    except OpenBBFacadeError as exc:
+        logger.warning(
+            "openbb_sidecar.equity_historical_prices.failed",
+            extra={"symbol": symbol, "error": str(exc)},
+        )
+        raise _map_facade_error_to_http(exc, symbol) from exc
+    return EquityHistoricalPricesResponse(**data)

@@ -562,4 +562,128 @@ async def _ingest_openbb_async(
     typer.echo(f"OK — symbol={symbol} facts_inserted={inserted}")
 
 
+@ingest_app.command("openbb-prices")
+def ingest_openbb_prices(
+    symbol: str = typer.Argument(
+        ...,
+        help="Ticker symbol to fetch a price window for (e.g. NVDA, SPY).",
+    ),
+    start_date: str | None = typer.Option(
+        None,
+        "--start-date",
+        help=(
+            "ISO 8601 YYYY-MM-DD start of the window. Default: ~13 months "
+            "back (covers 12-month return + grace period)."
+        ),
+    ),
+    end_date: str | None = typer.Option(
+        None,
+        "--end-date",
+        help="ISO 8601 YYYY-MM-DD end of the window. Default: today.",
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Pull a daily OHLCV price window from the OpenBB sidecar.
+
+    Stores the entire window as one ``historical_prices_window`` fact in
+    ``value_jsonb`` — Tier-A return computation walks the bars list in
+    Python rather than one fact-per-bar (~250x fewer rows per refresh).
+
+    For ``relative_strength`` to compute, run this command for both the
+    target symbol AND ``SPY`` (the benchmark):
+
+        iguanatrader research ingest openbb-prices NVDA
+        iguanatrader admin register-symbol SPY ...
+        iguanatrader research ingest openbb-prices SPY
+    """
+    if start_date is None:
+        # 13 months ≈ 395 days — gives the 12-month return a comfortable
+        # margin around trading-holiday clustering.
+        start_date = (datetime.now(UTC) - timedelta(days=395)).date().isoformat()
+
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info(
+        "cli.research.ingest.openbb_prices.invoked",
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    asyncio.run(
+        _ingest_openbb_prices_async(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            tenant_slug=tenant,
+        )
+    )
+
+
+async def _ingest_openbb_prices_async(
+    *,
+    symbol: str,
+    start_date: str | None,
+    end_date: str | None,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of the ``ingest openbb-prices`` command."""
+    from dataclasses import replace as dc_replace
+
+    import sqlalchemy as sa
+
+    from iguanatrader.contexts.research.models import SymbolUniverse
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.openbb_sidecar import OpenBBSidecarSource
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            sym_row = (
+                await session.execute(
+                    sa.select(SymbolUniverse.id).where(SymbolUniverse.symbol == symbol)
+                )
+            ).first()
+            if sym_row is None:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r} not registered for this tenant. Run "
+                    f"`iguanatrader admin register-symbol {symbol} --tenant <slug>` first."
+                )
+                raise typer.Exit(code=1)
+            symbol_universe_id = sym_row[0]
+
+            adapter = OpenBBSidecarSource()
+            repo = ResearchRepository()
+
+            inserted = 0
+            try:
+                for draft in adapter.fetch_prices(symbol, start_date, end_date):
+                    stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+                    await repo.insert_fact(stamped)
+                    inserted += 1
+            finally:
+                adapter.close()
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(
+        f"OK — symbol={symbol} start_date={start_date} end_date={end_date or 'today'} "
+        f"facts_inserted={inserted}"
+    )
+
+
 __all__ = ["app"]

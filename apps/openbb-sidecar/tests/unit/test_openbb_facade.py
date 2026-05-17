@@ -173,6 +173,61 @@ def test_economy_macro_returns_series_and_metadata() -> None:
     assert result["frequency"] == "Monthly"
 
 
+def test_equity_historical_prices_maps_bar_series() -> None:
+    fake_bars = [
+        SimpleNamespace(
+            date="2025-01-15",
+            open=240.0,
+            high=245.0,
+            low=238.0,
+            close=242.5,
+            adj_close=242.5,
+            volume=70_000_000,
+        ),
+        SimpleNamespace(
+            date="2025-01-16",
+            open=243.0,
+            high=247.0,
+            low=240.0,
+            close=246.0,
+            adj_close=246.0,
+            volume=65_000_000,
+        ),
+    ]
+    fake_obj = SimpleNamespace(results=fake_bars)
+    fake_obb = SimpleNamespace(
+        equity=SimpleNamespace(
+            price=SimpleNamespace(historical=lambda **kwargs: fake_obj),
+        ),
+    )
+    _install_fake_openbb(fake_obb)
+
+    facade = OpenBBFacade()
+    result = facade.equity_historical_prices("AAPL", start_date="2025-01-01", end_date="2025-01-31")
+
+    assert result["symbol"] == "AAPL"
+    assert result["start_date"] == "2025-01-01"
+    assert result["end_date"] == "2025-01-31"
+    assert len(result["bars"]) == 2
+    assert result["bars"][0]["close"] == 242.5
+    assert result["bars"][1]["adj_close"] == 246.0
+
+
+def test_equity_historical_prices_raises_when_no_results() -> None:
+    fake_obj = SimpleNamespace(results=[])
+    fake_obb = SimpleNamespace(
+        equity=SimpleNamespace(
+            price=SimpleNamespace(historical=lambda **kwargs: fake_obj),
+        ),
+    )
+    _install_fake_openbb(fake_obb)
+
+    facade = OpenBBFacade()
+    with pytest.raises(OpenBBFacadeError) as exc:
+        facade.equity_historical_prices("UNKNOWN")
+    assert "no historical prices" in str(exc.value).lower()
+
+
 def test_facade_method_raises_when_openbb_unavailable() -> None:
     real_import = __import__
 

@@ -112,6 +112,50 @@ class OpenBBSidecarSource:
                 symbol=symbol, fact_kind=fact_kind, name=name, payload=payload
             )
 
+    def fetch_prices(
+        self,
+        symbol: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> Iterable[ResearchFactDraft]:
+        """Yield one ``historical_prices_window`` fact per fetch.
+
+        Stored as a single bitemporal blob rather than one-fact-per-bar
+        because (a) the tier-A return computation only needs three points
+        out of ~252 bars and (b) one fact per bar would inflate the
+        ``research_facts`` table by ~250x per refresh. The blob format
+        preserves the full series for any future expansion (drawdown,
+        volatility, max-drawdown features).
+
+        ``start_date`` / ``end_date`` are passed through to the sidecar's
+        query string when set; otherwise the provider's default window is
+        used (yfinance: ~5 years).
+        """
+        if not self._enabled:
+            logger.info(
+                "research.openbb_sidecar.skipped_disabled",
+                extra={"symbol": symbol, "endpoint": "historical_prices"},
+            )
+            return
+
+        query_parts: list[str] = []
+        if start_date:
+            query_parts.append(f"start_date={start_date}")
+        if end_date:
+            query_parts.append(f"end_date={end_date}")
+        query = ("?" + "&".join(query_parts)) if query_parts else ""
+        path = f"/v1/equity/historical_prices/{symbol}{query}"
+
+        payload = self._get_or_skip(symbol=symbol, name="historical_prices", path=path)
+        if payload is None:
+            return
+        yield self._draft_from_payload(
+            symbol=symbol,
+            fact_kind="historical_prices_window",
+            name="historical_prices",
+            payload=payload,
+        )
+
     # ------------------------------------------------------------------
     # HTTP plumbing — backoff loop + 4xx/5xx routing
     # ------------------------------------------------------------------
