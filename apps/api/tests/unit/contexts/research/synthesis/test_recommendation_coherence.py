@@ -198,7 +198,7 @@ def test_amd_style_brief_with_trailing_prose_is_incoherent() -> None:
         "- elevated valuation multiples (forward P/E ~32.7x)\n"
         "- semiconductor cycle volatility\n\n"
         "## Growth\n\nLong prose about EPS expansion.\n\n"
-        "```json\n{\"audit_trail_entries\": []}\n```\n"
+        '```json\n{"audit_trail_entries": []}\n```\n'
     )
     res = _check_recommendation_coherence(
         symbol="AMD",
