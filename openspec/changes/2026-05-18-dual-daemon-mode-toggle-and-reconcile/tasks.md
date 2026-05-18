@@ -65,14 +65,14 @@ The Phase 3 routes write to the DB (toggle) + log audit (reconcile), but the dae
 
 ## Phase 5 — frontend
 
-- [ ] 21. **`apps/web/src/lib/status/types.ts`** — TypeScript mirrors of the new DTOs.
-- [ ] 22. **`apps/web/src/lib/status/client.ts`** — `fetchStatus()` + `toggleDaemon(mode, payload)` + `reconcileDaemon(mode)` functions calling the new endpoints.
-- [ ] 23. **`apps/web/src/lib/stores/daemon-status.svelte.ts`** (Svelte 5 store with `$state`) — polls `/api/v1/status` every 5s when document visible, pauses on hidden. Exposes `status: StatusResponse | null` and `error: string | null`.
-- [ ] 24. **`apps/web/src/lib/components/DaemonModeChip.svelte`** — the layout-header chip. Props: `mode: 'paper' | 'live'`. Reads from `daemon-status` store. Visual states (dim/saturated, pulse-on-recent-fill, hover-tooltip) per proposal §5.
-- [ ] 25. **`apps/web/src/routes/(app)/+layout.svelte`** — mount two `<DaemonModeChip>` instances in the top-right header. Initialize the daemon-status store on mount; destroy on unmount.
-- [ ] 26. **`apps/web/src/lib/components/DaemonToggleModal.svelte`** — opens on chip click. Two variants: paper (simple) + live (with `⚠️` header, required reason ≥20 chars, password re-entry). On submit, calls `toggleDaemon()`. Handles 403 password_mismatch.
-- [ ] 27. **`apps/web/src/routes/(app)/settings/+page.svelte`** — add §Daemons section per proposal §5. Status table + per-daemon `Reconcile` + `Toggle` buttons. Pulls from the same store.
-- [ ] 28. **`apps/web/src/lib/proposals/variants.ts`** — extend mode badge: `paper` → `warning` (yellow), `live` → `destructive` (red). Update `/proposals` list column to use prominent badge instead of muted grey text. ~15 LOC.
+- [x] 21. **`apps/web/src/lib/status/types.ts`** — TypeScript mirrors of the new DTOs (DaemonMode, DaemonStatusOut, StatusResponse, DaemonToggleIn/Out, DaemonReconcileOut).
+- [x] 22. **`apps/web/src/lib/status/client.ts`** — `fetchStatus()` + `toggleDaemon(mode, payload)` + `reconcileDaemon(mode)` over `useFetch` (returns either DTO or RFC 7807 Problem).
+- [x] 23. **`apps/web/src/lib/stores/daemon-status.svelte.ts`** — Svelte 5 store with `$state`; polls every 5s while document.visibilityState === 'visible', pauses on hidden, refreshes immediately on resume. `start()` + `stop()` idempotent for layout-lifecycle wiring.
+- [x] 24. **`apps/web/src/lib/components/DaemonModeChip.svelte`** — header chip; reads from the singleton store. Paper=warning yellow, live=destructive red (color-fixed per §D8); brightness encodes active state (enabled AND ib_connected). Pulse-dot animation when last_fill_at within 60s. Hover tooltip with mode-aware copy. Click is a stub log breadcrumb pending the toggle modal (task 26).
+- [x] 25. **`apps/web/src/routes/(app)/+layout.svelte`** — `$effect` mounts the daemon-status store on first paint + cleans up on unmount. Two `<DaemonModeChip>` instances live in `TopBar.__actions` left of the existing ConnectionIndicator.
+- [ ] 26. **`apps/web/src/lib/components/DaemonToggleModal.svelte`** — opens on chip click. Two variants: paper (simple) + live (`⚠️` header + required reason >=20 chars + password re-entry field). On submit calls `toggleDaemon()`. Handles 403 `password-mismatch`. **DEFERRED to next session** — UX-heavy component; warrants operator design review before committing the live-toggle wording / confirmation copy.
+- [ ] 27. **`apps/web/src/routes/(app)/settings/+page.svelte`** — add §Daemons section per proposal §5. Status table + per-daemon `Reconcile` + `Toggle` buttons reusing the store. Audit log preview of last 10 toggle events. **DEFERRED to next session** — depends on task 26's modal + the audit-log query helper.
+- [x] 28. **`apps/web/src/lib/components/Badge.svelte` + `apps/web/src/routes/(app)/proposals/+page.svelte`** — extended `BadgeVariant` with `'warning'` (yellow). `/proposals` list now renders the mode column as a Badge with `paper → warning` + `live → destructive` (matching the chip color contract).
 
 ## Phase 6 — tests
 

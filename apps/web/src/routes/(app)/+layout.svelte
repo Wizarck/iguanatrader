@@ -16,11 +16,21 @@
   import Sidebar from '$lib/components/nav/Sidebar.svelte';
   import TopBar from '$lib/components/nav/TopBar.svelte';
   import { authStore } from '$lib/stores/auth.svelte';
+  import { daemonStatusStore } from '$lib/stores/daemon-status.svelte';
 
   let { data, children } = $props();
 
   $effect(() => {
     authStore.user = data.user;
+  });
+
+  // Slice ``dual-daemon-mode-toggle-and-reconcile``: poll /api/v1/status
+  // every 5s while the document is visible so the header chips reflect
+  // current daemon state. Cleanup returns from $effect tear down the
+  // poll on layout unmount.
+  $effect(() => {
+    daemonStatusStore.start();
+    return () => daemonStatusStore.stop();
   });
 </script>
 
