@@ -98,7 +98,7 @@ A boot-time SOPS decrypt would mount the age key from `~/.config/sops/age/keys.t
 
 ## O4 — dual-daemon split + mode-toggle + on-demand reconcile
 
-**Status**: proposed (OpenSpec change drafted 2026-05-18: [openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/](../openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/))
+**Status**: merged 2026-05-18 (PR #265 — slice `dual-daemon-mode-toggle-and-reconcile`; pending VPS deploy)
 **Prereq**: PR #261 merged (compose baseline + digest pin).
 **Estimated**: ~700 LOC + 2 migrations + ~25 new tests. 5–6 days.
 

@@ -198,7 +198,7 @@ Frontend catalogue ships the form today; backend catalogue is the right long-ter
 
 ## U-next-1 — global trading-mode indicator chips
 
-**Status**: proposed (folded into the same OpenSpec change as roadmap-ops O4 — they ship together; the chip needs the new `/api/v1/status` endpoint).
+**Status**: merged 2026-05-18 (PR #265 — shipped together with roadmap-ops O4 in slice `dual-daemon-mode-toggle-and-reconcile`; pending VPS deploy).
 **Where**: [apps/web/src/routes/(app)/+layout.svelte](../apps/web/src/routes/(app)/+layout.svelte) header.
 **Estimated**: ~200 LOC (component + store + modal).
 
