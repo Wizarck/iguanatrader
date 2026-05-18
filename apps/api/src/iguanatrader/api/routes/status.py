@@ -17,13 +17,13 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from iguanatrader.api.deps import get_current_user, get_db
 from iguanatrader.api.dtos.status import DaemonStatusOut, StatusResponse
 from iguanatrader.contexts.trading.repository import TradingModeRepository
 from iguanatrader.persistence import User
 from iguanatrader.shared.contextvars import session_var
-from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger("iguanatrader.api.routes.status")
 

@@ -60,9 +60,7 @@ def upgrade() -> None:
                 server_default=sa.text("'pending_approval'"),
             )
         )
-        batch_op.add_column(
-            sa.Column("rejection_reason", sa.Text(), nullable=True)
-        )
+        batch_op.add_column(sa.Column("rejection_reason", sa.Text(), nullable=True))
         batch_op.add_column(
             sa.Column(
                 "rejected_at",

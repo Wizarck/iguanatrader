@@ -155,6 +155,9 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         from iguanatrader.contexts.orchestration.service import OrchestrationService
         from iguanatrader.contexts.risk.repository import RiskRepository
         from iguanatrader.contexts.risk.service import RiskService
+        from iguanatrader.contexts.trading.daemon_lifecycle import (
+            DaemonLifecycleService,
+        )
         from iguanatrader.contexts.trading.equity_snapshot_sweep import (
             EquitySnapshotSweepService,
         )
@@ -167,9 +170,6 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         )
         from iguanatrader.contexts.trading.market_data.service import (
             MarketDataIngestionService,
-        )
-        from iguanatrader.contexts.trading.daemon_lifecycle import (
-            DaemonLifecycleService,
         )
         from iguanatrader.contexts.trading.repository import (
             EquitySnapshotRepository,
@@ -397,9 +397,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # disabled daemon's gateway with reconcile traffic on every
         # restart).
         try:
-            boot_enabled = await trading_mode_repo.load_trading_enabled(
-                tenant_id, mode
-            )
+            boot_enabled = await trading_mode_repo.load_trading_enabled(tenant_id, mode)
         except Exception as exc:
             log.warning(
                 "trading.daemon.boot_reconcile.gate_check_failed",

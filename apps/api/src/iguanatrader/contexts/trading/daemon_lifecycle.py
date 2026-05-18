@@ -200,10 +200,7 @@ class DaemonLifecycleService:
         # Toggle-change detection. ``last_toggled_at`` is NOT NULL
         # (defaulted at insert + restamped on every set) so a simple
         # > compare is safe once the watermark is initialised.
-        if (
-            self._last_toggle_handled is None
-            or row.last_toggled_at > self._last_toggle_handled
-        ):
+        if self._last_toggle_handled is None or row.last_toggled_at > self._last_toggle_handled:
             self._last_toggle_handled = row.last_toggled_at
             if not row.enabled:
                 log.info(
