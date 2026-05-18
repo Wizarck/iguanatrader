@@ -26,7 +26,9 @@
 <section aria-live="polite">
   <h1>Research</h1>
   <p class="lead">
-    Busca un symbol para abrir su brief sintetizado, o vuelve a uno reciente.
+    Look up any ticker to synthesise a brief, or pick one from the recent list.
+    Brand-new symbols auto-register on the first refresh and the system pulls
+    fundamentals + analyst ratings + ESG + a 13-month price window inline.
   </p>
   <SymbolSearchCard />
   <RecentSymbolsList storageKey={STORAGE_KEY} />

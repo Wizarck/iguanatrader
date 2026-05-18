@@ -34,7 +34,7 @@
     event.preventDefault();
     const normalized = value.trim().toUpperCase();
     if (!isValidSymbol(normalized)) {
-      error = 'Symbol inválido. Usa 1-16 caracteres A-Z + dígitos.';
+      error = 'Invalid symbol — use 1-16 characters, A-Z and digits.';
       return;
     }
     error = null;
@@ -50,19 +50,19 @@
   class="symbol-search-card"
   data-testid="symbol-search-card"
   onsubmit={handleSubmit}
-  aria-label="Buscar brief de symbol"
+  aria-label="Research any symbol"
 >
   <TextInput
     name="symbol"
     label="Symbol"
     bind:value
     pattern="^[A-Z0-9]{'{1,16}'}$"
-    placeholder="SPY"
+    placeholder="AMD"
     autocomplete="off"
     error={error ?? undefined}
-    helpText="1-16 caracteres, mayúsculas y dígitos."
+    helpText="Any ticker — first-time symbols auto-register and fetch data on demand."
   />
-  <button type="submit" class="submit">Buscar brief</button>
+  <button type="submit" class="submit">Research</button>
 </form>
 
 <style>
