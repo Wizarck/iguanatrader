@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from iguanatrader.contexts.research.errors import ConfigError, SourceUnavailableError
@@ -25,6 +25,9 @@ from iguanatrader.contexts.research.sources.motley_fool import (
     _extract_title,
     _slug_to_title,
 )
+
+if TYPE_CHECKING:
+    from iguanatrader.contexts.research.scraping.ladder import ScrapeLadder
 
 _SAMPLE_HTML = """
 <!doctype html>
@@ -101,7 +104,9 @@ def test_construct_raises_when_env_flag_false(monkeypatch: pytest.MonkeyPatch) -
 def test_construct_succeeds_when_explicitly_enabled() -> None:
     # `enabled=True` overrides env (so tests can build the adapter even
     # under hostile env state).
-    source = MotleyFoolTranscriptSource(ladder=_FakeLadder(body=_SAMPLE_HTML), enabled=True)
+    source = MotleyFoolTranscriptSource(
+        ladder=cast("ScrapeLadder", _FakeLadder(body=_SAMPLE_HTML)), enabled=True
+    )
     assert source is not None
 
 
@@ -112,7 +117,7 @@ def test_construct_succeeds_when_explicitly_enabled() -> None:
 
 def test_fetch_uses_date_plus_slug_to_build_url() -> None:
     ladder = _FakeLadder(body=_SAMPLE_HTML)
-    source = MotleyFoolTranscriptSource(ladder=ladder, enabled=True)
+    source = MotleyFoolTranscriptSource(ladder=cast("ScrapeLadder", ladder), enabled=True)
     _run(
         source.fetch_transcript_async(
             year=2026,
@@ -130,7 +135,7 @@ def test_fetch_uses_date_plus_slug_to_build_url() -> None:
 
 def test_fetch_accepts_explicit_url() -> None:
     ladder = _FakeLadder(body=_SAMPLE_HTML)
-    source = MotleyFoolTranscriptSource(ladder=ladder, enabled=True)
+    source = MotleyFoolTranscriptSource(ladder=cast("ScrapeLadder", ladder), enabled=True)
     _run(
         source.fetch_transcript_async(
             url="https://www.fool.com/earnings/call-transcripts/2026/05/15/nvidia-corp-nvda-q1-2026/",
@@ -143,7 +148,9 @@ def test_fetch_accepts_explicit_url() -> None:
 
 
 def test_fetch_raises_on_missing_url_components() -> None:
-    source = MotleyFoolTranscriptSource(ladder=_FakeLadder(body=_SAMPLE_HTML), enabled=True)
+    source = MotleyFoolTranscriptSource(
+        ladder=cast("ScrapeLadder", _FakeLadder(body=_SAMPLE_HTML)), enabled=True
+    )
     with pytest.raises(ValueError, match="requires either 'url='"):
         _run(source.fetch_transcript_async(year=2026, month=5))
 
@@ -154,7 +161,9 @@ def test_fetch_raises_on_missing_url_components() -> None:
 
 
 def test_fetch_returns_draft_with_body_text() -> None:
-    source = MotleyFoolTranscriptSource(ladder=_FakeLadder(body=_SAMPLE_HTML), enabled=True)
+    source = MotleyFoolTranscriptSource(
+        ladder=cast("ScrapeLadder", _FakeLadder(body=_SAMPLE_HTML)), enabled=True
+    )
     draft = _run(
         source.fetch_transcript_async(
             year=2026,
@@ -178,7 +187,9 @@ def test_fetch_returns_draft_with_body_text() -> None:
 
 
 def test_draft_payload_carries_url_title_and_metadata() -> None:
-    source = MotleyFoolTranscriptSource(ladder=_FakeLadder(body=_SAMPLE_HTML), enabled=True)
+    source = MotleyFoolTranscriptSource(
+        ladder=cast("ScrapeLadder", _FakeLadder(body=_SAMPLE_HTML)), enabled=True
+    )
     draft = _run(
         source.fetch_transcript_async(
             year=2026,
@@ -202,7 +213,9 @@ def test_draft_payload_carries_url_title_and_metadata() -> None:
 
 
 def test_effective_from_uses_url_date_when_supplied() -> None:
-    source = MotleyFoolTranscriptSource(ladder=_FakeLadder(body=_SAMPLE_HTML), enabled=True)
+    source = MotleyFoolTranscriptSource(
+        ladder=cast("ScrapeLadder", _FakeLadder(body=_SAMPLE_HTML)), enabled=True
+    )
     draft = _run(
         source.fetch_transcript_async(
             year=2026,
@@ -223,7 +236,9 @@ def test_effective_from_uses_url_date_when_supplied() -> None:
 
 def test_fetch_returns_none_when_body_missing() -> None:
     empty_html = "<html><body>no article-body here</body></html>"
-    source = MotleyFoolTranscriptSource(ladder=_FakeLadder(body=empty_html), enabled=True)
+    source = MotleyFoolTranscriptSource(
+        ladder=cast("ScrapeLadder", _FakeLadder(body=empty_html)), enabled=True
+    )
     draft = _run(source.fetch_transcript_async(url="https://example/", symbol="X"))
     assert draft is None
 
@@ -235,14 +250,14 @@ def test_fetch_returns_none_when_body_missing() -> None:
 
 def test_blocked_raises_source_unavailable_with_playwright_hint() -> None:
     ladder = _FakeLadder(raises=ScrapeBlockedError(detail="tier-1 403 at fool.com"))
-    source = MotleyFoolTranscriptSource(ladder=ladder, enabled=True)
+    source = MotleyFoolTranscriptSource(ladder=cast("ScrapeLadder", ladder), enabled=True)
     with pytest.raises(SourceUnavailableError, match="Playwright"):
         _run(source.fetch_transcript_async(url="https://example/", symbol="X"))
 
 
 def test_ladder_not_implemented_propagates_as_source_unavailable() -> None:
     ladder = _FakeLadder(raises=ScrapeNotImplementedError(detail="tier-2 not installed"))
-    source = MotleyFoolTranscriptSource(ladder=ladder, enabled=True)
+    source = MotleyFoolTranscriptSource(ladder=cast("ScrapeLadder", ladder), enabled=True)
     with pytest.raises(SourceUnavailableError):
         _run(source.fetch_transcript_async(url="https://example/", symbol="X"))
 
@@ -281,7 +296,9 @@ def test_slug_to_title_humanises_dashes() -> None:
 
 
 def test_sourceport_fetch_is_empty_iter() -> None:
-    source = MotleyFoolTranscriptSource(ladder=_FakeLadder(body=_SAMPLE_HTML), enabled=True)
+    source = MotleyFoolTranscriptSource(
+        ladder=cast("ScrapeLadder", _FakeLadder(body=_SAMPLE_HTML)), enabled=True
+    )
     # ``fetch(symbol, since)`` is the legacy sync port; for Fool it
     # cannot enumerate from a symbol alone, so it must return empty
     # rather than raise (so a registry-driven runner does not crash).
