@@ -99,6 +99,7 @@ def _build_service(repo: ResearchRepository) -> BriefService:
     lazily and silently no-ops when the sidecar is disabled.
     """
     from iguanatrader.contexts.research.on_demand_ingestion import (
+        EdgarSourceLike,
         OnDemandIngestionService,
     )
     from iguanatrader.contexts.research.sources.openbb_sidecar import (
@@ -113,9 +114,26 @@ def _build_service(repo: ResearchRepository) -> BriefService:
     on_demand: OnDemandIngestionService | None
     try:
         openbb_source = OpenBBSidecarSource()
+        # SEC EDGAR is optional — constructor raises ConfigError when
+        # SEC_EDGAR_USER_AGENT is unset (dev/test) so we degrade to
+        # OpenBB-only ingestion. Production cx43 .env sets the UA.
+        edgar_source: EdgarSourceLike | None
+        try:
+            from iguanatrader.contexts.research.sources.sec_edgar import (
+                SECEdgarSource,
+            )
+
+            edgar_source = SECEdgarSource()
+        except Exception as edgar_exc:
+            log.info(
+                "api.research.edgar.unavailable",
+                error=str(edgar_exc),
+            )
+            edgar_source = None
         on_demand = OnDemandIngestionService(
             repository=repo,
             openbb_source=openbb_source,
+            edgar_source=edgar_source,
         )
     except Exception as exc:  # pragma: no cover - defensive boot path
         log.warning(
