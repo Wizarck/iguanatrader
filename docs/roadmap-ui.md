@@ -69,6 +69,13 @@ Today the user has to know the ticker by heart. The current input only accepts u
 **Status**: proposed
 **Where**: `apps/web/src/lib/components/research/AuditTrailViewer.svelte` already exists; needs to be wired into the brief detail page and the LLM prompt must stop bleeding raw JSON into the body.
 
+> **Related landed slice** (2026-05-18, PR #213): the citation chip rendering
+> now shows `fact_kind · value_excerpt` instead of just `[fact:UUID]` or a
+> bare source name, and `factById` is built from the brief's authoritative
+> `resolved_citations` so previously-unresolved facts now have provenance.
+> The audit-trail viewer slice is the next layer: replace the raw JSON dump
+> below the prose with a table-style view.
+
 ### What
 
 The brief detail page used to show the audit-trail entries as a raw JSON code block under the prose body. PR (in flight) fixes the synthesizer so the JSON is stripped from the body — this slice exposes the same data through `AuditTrailViewer` instead.

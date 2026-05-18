@@ -53,6 +53,8 @@ export type FactProvenance = {
   source_url?: string | null;
   retrieval_method?: 'api' | 'scrape' | 'manual' | 'llm' | null;
   retrieved_at?: string | null;
+  fact_kind?: string;
+  value_excerpt?: string;
 };
 
 function escapeHtml(s: string): string {
@@ -67,10 +69,30 @@ function escapeHtml(s: string): string {
 function buildTooltip(factId: string, fact: FactProvenance | undefined): string {
   if (!fact) return `[fact:${factId.slice(0, 8)}] (unresolved)`;
   const parts: string[] = [];
+  if (fact.fact_kind) {
+    parts.push(
+      fact.value_excerpt ? `${fact.fact_kind}: ${fact.value_excerpt}` : fact.fact_kind
+    );
+  } else if (fact.value_excerpt) {
+    parts.push(fact.value_excerpt);
+  }
   if (fact.source_id) parts.push(fact.source_id);
   if (fact.retrieval_method) parts.push(`via ${fact.retrieval_method}`);
   if (fact.retrieved_at) parts.push(`@ ${fact.retrieved_at}`);
   return parts.length > 0 ? parts.join(' · ') : `[fact:${factId.slice(0, 8)}]`;
+}
+
+function buildChipLabel(factId: string, fact: FactProvenance | undefined): string {
+  if (!fact) return `[fact:${factId.slice(0, 8)}]`;
+  // Prefer the fact's actual content over its source name. A chip that
+  // reads "analyst_target_price · 164.5" beats one that reads
+  // "openbb-sidecar" with no context.
+  if (fact.fact_kind && fact.value_excerpt) {
+    return `${fact.fact_kind} · ${fact.value_excerpt}`;
+  }
+  if (fact.fact_kind) return fact.fact_kind;
+  if (fact.value_excerpt) return fact.value_excerpt;
+  return fact.source_id ?? `[fact:${factId.slice(0, 8)}]`;
 }
 
 // Hostnames that resolve only inside the docker-compose / k8s network.
@@ -89,8 +111,7 @@ function isPubliclyReachable(url: string): boolean {
 }
 
 function renderCitationChip(factId: string, fact: FactProvenance | undefined): string {
-  const shortId = factId.slice(0, 8);
-  const label = fact?.source_id ?? `[fact:${shortId}]`;
+  const label = buildChipLabel(factId, fact);
   const title = buildTooltip(factId, fact);
   const safeFactId = escapeHtml(factId);
   const safeLabel = escapeHtml(label);

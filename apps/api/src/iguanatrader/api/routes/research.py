@@ -193,6 +193,8 @@ async def get_brief(
             source_label=r.source_label,
             retrieved_at=r.retrieved_at,
             retrieval_method=r.retrieval_method,
+            fact_kind=r.fact_kind,
+            value_excerpt=r.value_excerpt,
         )
         for r in resolved
     ]
@@ -240,6 +242,8 @@ async def get_brief_by_version(
             source_label=r.source_label,
             retrieved_at=r.retrieved_at,
             retrieval_method=r.retrieval_method,
+            fact_kind=r.fact_kind,
+            value_excerpt=r.value_excerpt,
         )
         for r in resolved
     ]
@@ -354,6 +358,8 @@ async def refresh_brief(
             source_label=r.source_label,
             retrieved_at=r.retrieved_at,
             retrieval_method=r.retrieval_method,
+            fact_kind=r.fact_kind,
+            value_excerpt=r.value_excerpt,
         )
         for r in resolved
     ]

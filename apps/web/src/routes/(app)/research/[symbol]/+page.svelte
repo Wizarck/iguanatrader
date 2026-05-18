@@ -92,10 +92,44 @@
   }
 
   // Build a fact-id → provenance lookup for the citation chip tooltips.
+  //
+  // Primary source: the brief's `resolved_citations` — server-resolved
+  // against research_facts, complete and authoritative for every UUID
+  // the brief body cites (including facts older than the top-50
+  // returned by `/facts/{symbol}`). Without this the chip would
+  // render `(unresolved)` for any fact outside the latest window.
+  //
+  // Fallback: the loaded `facts` list, so the tooltip still has data
+  // when a chip is rendered from a context where only the facts list
+  // is in scope (e.g. as-of-mode swaps in a different fact set).
   let factById = $derived.by(() => {
     const map = new Map<string, FactProvenance>();
     for (const f of facts) {
       map.set(f.id, f);
+    }
+    const resolved = currentBrief?.resolved_citations as
+      | Array<{
+          fact_id: string;
+          source_id?: string;
+          source_url?: string | null;
+          retrieval_method?: FactProvenance['retrieval_method'];
+          retrieved_at?: string | null;
+          fact_kind?: string;
+          value_excerpt?: string;
+        }>
+      | undefined;
+    if (resolved) {
+      for (const r of resolved) {
+        map.set(r.fact_id, {
+          id: r.fact_id,
+          source_id: r.source_id,
+          source_url: r.source_url ?? null,
+          retrieval_method: r.retrieval_method ?? null,
+          retrieved_at: r.retrieved_at ?? null,
+          fact_kind: r.fact_kind,
+          value_excerpt: r.value_excerpt
+        });
+      }
     }
     return map;
   });
