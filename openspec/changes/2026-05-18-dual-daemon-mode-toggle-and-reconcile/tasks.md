@@ -40,12 +40,21 @@ Acceptance criterion 5 from `proposal.md` (`local trades close with provenance='
 
 ## Phase 3 — API endpoints
 
-- [ ] 11. **`apps/api/src/iguanatrader/api/routes/status.py`** — new file. `GET /api/v1/status` per proposal §3. Session-auth required.
-- [ ] 12. **`apps/api/src/iguanatrader/api/routes/daemons.py`** — new file. `POST /api/v1/daemons/{mode}/toggle` per proposal §3. Admin-role-gated. Live toggle requires `password_reconfirm` field; server verifies via the same hash-compare as login.
-- [ ] 13. **Same file, `POST /api/v1/daemons/{mode}/reconcile`** — emits `daemon.reconcile.requested(mode)` bus event; returns 202 Accepted with a poll URL stub.
-- [ ] 14. **Audit logging** — every toggle/reconcile request writes a structlog event `daemon.toggle` or `daemon.reconcile` tagged with `mode`, `user_id`, `reason`, `new_state` for the audit trail.
-- [ ] 15. **`apps/api/src/iguanatrader/api/dtos/status.py`** — Pydantic schemas `DaemonStatusOut`, `StatusResponse`, `DaemonToggleIn`, `DaemonToggleOut`.
-- [ ] 16. **Register routes** in `apps/api/src/iguanatrader/api/main.py` (or wherever routers are aggregated). Verify OpenAPI docs reflect new endpoints.
+- [x] 11. **`apps/api/src/iguanatrader/api/routes/status.py`** — `GET /api/v1/status` per proposal §3. Session-auth (any logged-in user; admin-only deferred — MVP is single-seat, role gate adds no value yet). Stale-heartbeat (>30s) detection collapses `ib_connected` to false regardless of persisted value.
+- [x] 12. **`apps/api/src/iguanatrader/api/routes/daemons.py`** — `POST /api/v1/daemons/{mode}/toggle` per proposal §3. Live toggle requires `password_reconfirm` + `reason` (>=20 chars); server re-verifies via `verify_password` (same Argon2id compare as login). 403 `password-mismatch` on failure.
+- [x] 13. **Same file, `POST /api/v1/daemons/{mode}/reconcile`** — returns 202 Accepted with a generated `correlation_id` (operator can grep it against the daemon-side reconcile structlog events). The cross-process daemon-side wiring (poll for the request) lands in Phase 3.5.
+- [x] 14. **Audit logging** — every toggle / reconcile request writes a structlog event `daemon.toggle` or `daemon.reconcile` tagged with `mode`, `user_id`, `reason`, `new_state` for the audit trail. The `audit_events` table sweep is a separate slice; structlog events are the durable record for now.
+- [x] 15. **`apps/api/src/iguanatrader/api/dtos/status.py`** — Pydantic schemas `DaemonStatusOut`, `StatusResponse`, `DaemonToggleIn`, `DaemonToggleOut`, `DaemonReconcileOut`.
+- [x] 16. **Register routes** — auto-discovery in [api/routes/__init__.py](../../../apps/api/src/iguanatrader/api/routes/__init__.py) picks up any module exporting `router: APIRouter`. New routes appear under `/api/v1/status` + `/api/v1/daemons/{mode}/(toggle|reconcile)`; OpenAPI docs reflect them automatically.
+
+## Phase 3.5 — daemon-side cross-process bridge (deferred)
+
+The Phase 3 routes write to the DB (toggle) + log audit (reconcile), but the daemon and API run in **separate processes** (Phase 4 compose split makes this explicit). The in-process bus emit can't reach across, so the daemon must pick up state-changes via polling.
+
+- [ ] 3.5a. **Migration `0030_tenant_trading_modes_reconcile_marker.py`** — add `pending_reconcile_at TIMESTAMPTZ NULL` to `tenant_trading_modes`. API reconcile endpoint UPDATEs it; daemon compares to a local watermark.
+- [ ] 3.5b. **Extend `daemons.py::reconcile_daemon`** — UPDATE `pending_reconcile_at = now()` so the daemon poll can detect the request.
+- [ ] 3.5c. **`DaemonLifecycleService.poll_for_state_changes`** — called from the heartbeat cron (every 10s). Compares `tenant_trading_modes.last_toggled_at` + `pending_reconcile_at` against in-memory watermarks; runs drain (when newly-disabled) or reconcile (when marker is newer). Idempotent on both paths.
+- [ ] 3.5d. **`daemon_lifecycle.poll_for_state_changes` hook in `orchestration/service.py::_heartbeat`** — wire the poll inside the existing 10s cron so it shares cadence with the heartbeat write.
 
 ## Phase 4 — compose split
 
