@@ -18,6 +18,37 @@
 
 ---
 
+## 0. Security pre-bring-up (applies to paper AND live)
+
+Run this checklist **once per VPS** before the first bring-up, and re-validate before flipping paper→live. Derived from the deep cybersecurity audit performed 2026-05-18 (see PR #261).
+
+**Image supply chain**:
+
+- [ ] `docker-compose.ibgateway.yml` pins `gnzsnz/ib-gateway` by `sha256` digest (NOT the floating `:stable` tag). Re-pin only after manual review of the next release notes — quarterly cadence (see [roadmap-ops.md](../roadmap-ops.md) O3).
+- [ ] (Pre-rebuild only) cross-check the IB Gateway installer SHA256 in the gnzsnz Dockerfile against IBKR's official `download2.interactivebrokers.com` distribution. One-time, out-of-band.
+
+**Host-side**:
+
+- [ ] `chmod 660 /var/run/docker.sock` on the VPS; audit `getent group docker` — only the operator account should be in it. Anyone with the docker socket bypasses SOPS entirely (can `docker exec` and read env / `config.ini` plaintext).
+- [ ] Age private key (`~/.config/sops/age/keys.txt`) is on your **laptop only**, NEVER copied to the VPS. SOPS decrypt happens locally; the decrypted env is pushed to the VPS at deploy time via `scp` to a tmpfs / direct `docker compose up` from your laptop.
+- [ ] Egress firewall on the VPS restricts the `ib-gateway` container's outbound traffic to `*.interactivebrokers.com` + Akamai edge ranges + your own services. Recommended via `iptables` or `ufw` on the host network namespace.
+
+**Container-side**:
+
+- [ ] `VNC_SERVER_PASSWORD` is UNSET unless you are actively bringing up the gateway (2FA challenge or first login). Setting it permanently leaves an extra credential surface on port 5900 with no benefit.
+- [ ] First-week monitoring: from the VPS, run `nsenter -t $(docker inspect -f '{{.State.Pid}}' iguanatrader-ib-gateway-1) -n ss -tnp` periodically. Expected outbound endpoints only: `gdcdyn.interactivebrokers.com:4000-4002` (or sibling `ndcdyn`/`cdcdyn` depending on region). Anything else = investigate.
+
+**Account-side**:
+
+- [ ] Validate paper-trading account 1–2 weeks **before** populating the live credentials in `live.env.enc`. The cutover is one-line (`TRADING_MODE=live` + `TWS_PORT=4001`) so the practice run in paper gives you confidence the procedure is solid.
+- [ ] When ready to flip to live: confirm with yourself that risk caps in `LIVE_CAPITAL_CAP_USD` are sized appropriately. The cutover is reversible (`TRADING_MODE=paper`) but a misconfigured cap during live can place real orders.
+
+**Domain reference** (for your own verification):
+
+The `Xdcdyn.interactivebrokers.com` pattern is IBKR's regional Gateway Discovery family (g=Europe, n=North America, c=Asia). DigiCert EV cert for `O=IBG LLC, Greenwich, Connecticut` validates these subdomains — verifiable via `openssl s_client -connect gdcdyn.interactivebrokers.com:443 -servername gdcdyn.interactivebrokers.com`.
+
+---
+
 ## 1. Credentials (paper)
 
 Paper account on this deployment: username `okqtbz074`, account `DUR071858` (pending IBKR approval as of 2026-05-15 — verify in the [IBKR portal](https://www.interactivebrokers.com/) before bringing up).
