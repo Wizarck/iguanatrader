@@ -26,9 +26,8 @@ Single source of truth for the LLM-driven feature work that follows PR #194. Eac
 
 ## A0 — LLM budget cap (per-tenant, configurable)
 
-**Status**: proposed
+**Status**: merged (no dedicated slice; landed alongside R6 — `BudgetGuard.check_budget` in [contexts/observability/budget.py](../apps/api/src/iguanatrader/contexts/observability/budget.py) wraps `route_llm`; `tenants.feature_flags["llm_budget_usd"]` exposed via `GET/PUT /api/v1/settings/feature-flags`)
 **Prereq for**: A1, A2, A3, B (any slice that triggers LLM calls without operator interaction)
-**Estimated**: ~200 LOC + 1 migration (0019)
 
 ### Why first
 
@@ -53,9 +52,8 @@ A1/A2/A3 each add automatic LLM invocations behind user-facing events. Without a
 
 ## A3 — Auto-journal on trade-close + Hindsight retain
 
-**Status**: proposed
+**Status**: merged (`AutoJournalOnCloseHandler` in [contexts/trading/auto_journal.py](../apps/api/src/iguanatrader/contexts/trading/auto_journal.py) subscribed via `wire_llm_handlers`; production daemon passes a real `HindsightPort` from `build_hindsight_adapter_from_env`)
 **Prereq**: A0
-**Estimated**: ~180 LOC, no migration
 
 ### Why this is the keystone slice
 
@@ -80,9 +78,8 @@ This is the slice that closes the personal-AI feedback loop: every trade that cl
 
 ## A1 — Auto-explain on dispatch
 
-**Status**: proposed
+**Status**: merged (`AutoExplainEnrichingDispatcher` in [contexts/approval/auto_explain.py](../apps/api/src/iguanatrader/contexts/approval/auto_explain.py) wraps the inner `ChannelDispatcher` via `wire_llm_handlers`; narrative attaches to the outbound `ApprovalRequestRow`)
 **Prereq**: A0
-**Estimated**: ~150 LOC, no migration
 
 ### What
 
@@ -104,9 +101,8 @@ When `ChannelDispatcher` ([contexts/approval/dispatcher.py](../apps/api/src/igua
 
 ## A2 — Auto-risk-review on high-confidence proposals
 
-**Status**: proposed
+**Status**: merged 2026-05-18 (PR #267 — `AutoRiskReviewOnCreateHandler` subscriber + migration 0031 risk_* columns + `build_risk_assessment_persister` + per-tenant threshold via `tenants.feature_flags["risk_review_confidence_threshold"]`)
 **Prereq**: A0, A1
-**Estimated**: ~250 LOC + 1 migration (0020)
 
 ### What
 
