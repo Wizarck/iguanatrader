@@ -20,6 +20,15 @@ export type TradeOut = {
   opened_at: string;
   closed_at: string | null;
   created_at: string;
+  // Slice ``frontend-gaps-batch``: A3 auto-journal writes here on
+  // TradeClosed; the trade-detail page reads it to render the
+  // post-mortem section. NULL until A3 fires (or the manual journal
+  // endpoint is POSTed).
+  exit_reason?: string | null;
+  realised_pnl?: string | null;
+  journal_narrative?: string | null;
+  journal_generated_at?: string | null;
+  journal_model?: string | null;
 };
 
 export type OrderOut = {
