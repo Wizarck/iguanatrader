@@ -25,9 +25,10 @@ listeners (whitelist update for the reconcile UPDATE) are exercised.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -50,6 +51,10 @@ from iguanatrader.contexts.trading.repository import (
     TradeRepository,
     TradingModeRepository,
 )
+
+if TYPE_CHECKING:
+    from iguanatrader.contexts.trading.ports import BrokerPort
+    from iguanatrader.contexts.trading.service import TradingService
 from iguanatrader.persistence import (
     Tenant,
     engine_factory,
@@ -68,7 +73,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 @pytest.fixture(autouse=True)
-def _listeners() -> AsyncIterator[None]:
+def _listeners() -> Iterator[None]:
     register_global_listeners()
     try:
         yield None
@@ -283,9 +288,9 @@ async def test_drain_rejects_pending_proposals(
             mode="paper",
             tenant_id=tid,
             bus=MessageBus(),
-            trading_service=_FakeTradingService(),  # type: ignore[arg-type]
+            trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
-            broker=_FakeBroker(tenant_id=tid, positions=[]),  # type: ignore[arg-type]
+            broker=cast("BrokerPort", _FakeBroker(tenant_id=tid, positions=[])),
             equity_repo=EquitySnapshotRepository(),
             trade_repo=TradeRepository(),
         )
@@ -346,9 +351,9 @@ async def test_reconcile_positions_in_sync_is_noop(
             mode="paper",
             tenant_id=tid,
             bus=MessageBus(),
-            trading_service=_FakeTradingService(),  # type: ignore[arg-type]
+            trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
-            broker=broker,  # type: ignore[arg-type]
+            broker=cast("BrokerPort", broker),
             equity_repo=EquitySnapshotRepository(),
             trade_repo=TradeRepository(),
         )
@@ -384,9 +389,9 @@ async def test_reconcile_closes_orphan_local_trade(
             mode="paper",
             tenant_id=tid,
             bus=MessageBus(),
-            trading_service=_FakeTradingService(),  # type: ignore[arg-type]
+            trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
-            broker=broker,  # type: ignore[arg-type]
+            broker=cast("BrokerPort", broker),
             equity_repo=EquitySnapshotRepository(),
             trade_repo=TradeRepository(),
         )
