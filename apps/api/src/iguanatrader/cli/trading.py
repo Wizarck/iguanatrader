@@ -112,6 +112,20 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             # back to signal.signal which works on the main thread.
             signal.signal(sig, _request_shutdown)
 
+    # Slice ``trading-daemon-scheduler-only-mode``: when the daemon
+    # runs on infrastructure that does NOT have an IB Gateway / TWS
+    # reachable (typical for a cloud VPS — the broker socket lives on
+    # the operator's local machine), the ``IGUANATRADER_DAEMON_SCHEDULER_ONLY``
+    # env flag dispatches to a minimal flow that only runs the I7
+    # ingest cron. See :func:`_run_scheduler_only_daemon`.
+    if os.environ.get("IGUANATRADER_DAEMON_SCHEDULER_ONLY", "false").lower() == "true":
+        await _run_scheduler_only_daemon(
+            tenant_id=tenant_id,
+            log=log,
+            shutdown_event=shutdown_event,
+        )
+        return
+
     # Slice deployment-foundation 3.B.2 wiring — IbAsyncIBClient is a
     # one-line factory call; IBKRAdapter consumes it via client_factory.
     ib_client = build_ib_async_client_from_env()
@@ -360,6 +374,88 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
 
     await engine.dispose()
     log.info("trading.daemon.shutdown.complete")
+
+
+async def _run_scheduler_only_daemon(
+    *,
+    tenant_id: UUID,
+    log: Any,
+    shutdown_event: asyncio.Event,
+) -> None:
+    """Minimal daemon flow: only the I7 ingest scheduler.
+
+    Slice ``trading-daemon-scheduler-only-mode``. Used on infrastructure
+    where the IB Gateway / TWS is unreachable (typical VPS deployment).
+    Skips broker construction entirely — only the I7 ingest cron is
+    registered, so research_facts stay fresh without any trading
+    state-machine wiring.
+
+    Flow:
+
+    1. Build APScheduler + new MessageBus (in-process, unused but
+       :class:`IngestSchedulerService` doesn't currently need it).
+    2. Build the 13-adapter source factory + watchlist snapshot +
+       persist closure (via ``cli/_ingest_factories``).
+    3. Register the cron jobs.
+    4. Start the scheduler + block on SIGTERM.
+    """
+    from iguanatrader.cli._ingest_factories import (
+        build_persist_drafts_closure,
+        build_source_factories,
+        load_watchlist_for_ingest,
+    )
+    from iguanatrader.contexts.orchestration.apscheduler_adapter import (
+        build_apscheduler_adapter_from_env,
+    )
+    from iguanatrader.contexts.research.ingest_scheduler import (
+        IngestRunRecorder,
+        IngestSchedulerService,
+    )
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    log.info("trading.daemon.scheduler_only.boot", tenant_id=str(tenant_id))
+    engine = engine_factory(db_url())
+    sessionmaker = session_factory(engine)
+    scheduler = build_apscheduler_adapter_from_env()
+
+    async with sessionmaker() as session:
+        tenant_id_var.set(tenant_id)
+        session_var.set(session)
+
+        ingest_sources = build_source_factories()
+        ingest_watchlist = await load_watchlist_for_ingest(sessionmaker=sessionmaker)
+        ingest_persist_drafts = build_persist_drafts_closure(sessionmaker=sessionmaker)
+
+        recorder = IngestRunRecorder(session_provider=sessionmaker)
+        ingest_scheduler = IngestSchedulerService(recorder=recorder)
+        specs = ingest_scheduler.bootstrap_ingest_routines(
+            scheduler=scheduler,
+            watchlist=ingest_watchlist,
+            sources=ingest_sources,
+            persist_drafts=ingest_persist_drafts,
+        )
+        log.info(
+            "trading.daemon.scheduler_only.ingest_jobs_registered",
+            jobs=len(specs),
+        )
+
+        await scheduler.start()
+        log.info("trading.daemon.scheduler_only.ready")
+
+        await shutdown_event.wait()
+
+        log.info("trading.daemon.scheduler_only.shutdown.draining")
+        try:
+            await scheduler.shutdown()
+        except Exception as exc:
+            log.warning(
+                "trading.daemon.scheduler_only.scheduler.shutdown_failed",
+                error=str(exc),
+            )
+
+    await engine.dispose()
+    log.info("trading.daemon.scheduler_only.shutdown.complete")
 
 
 async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter:

@@ -117,6 +117,66 @@ services:
     ports:
       - "8000:8000"
 
+  # Trading daemon — long-running APScheduler process owning the I7
+  # ingest cron + (in full mode) bus subscriptions + broker connection.
+  #
+  # Slice ``trading-daemon-scheduler-only-mode`` makes this safe to run
+  # on a cloud VPS without an IB Gateway: setting
+  # ``IGUANATRADER_DAEMON_SCHEDULER_ONLY=true`` dispatches to a minimal
+  # flow that only runs the I7 ingest cron. To enable full trading
+  # mode (requires reachable TWS / IB Gateway on the operator's
+  # machine), set the flag to ``false`` AND configure ``IBKR_*`` env
+  # vars (see ``docs/runbooks/ibkr-paper-mode.md``).
+  #
+  # Shares ``iguanatrader_data`` with ``api`` so research_facts ingested
+  # by the daemon are immediately visible to the API's brief synthesis
+  # path. Migrations are skipped here (``IGUANA_SKIP_MIGRATIONS=1``)
+  # because ``api`` runs them on its own boot — racing the two
+  # processes on alembic upgrade is unsafe.
+  trading_daemon:
+    image: iguanatrader/api:mvp
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    command: ["python", "-m", "iguanatrader", "trading", "run", "--mode=paper"]
+    environment:
+      - IGUANATRADER_PROFILE=mvp
+      - IGUANA_DATABASE_URL=sqlite+aiosqlite:////data/iguanatrader.db
+      - IGUANATRADER_RESEARCH_CACHE_ROOT=/data/research_cache
+      - IGUANA_SKIP_MIGRATIONS=1
+      # Scheduler-only default: VPS does not host TWS / IB Gateway, so
+      # the daemon runs the I7 ingest cron without trying to connect.
+      # Operator overrides to ``false`` when running locally with TWS.
+      - IGUANATRADER_DAEMON_SCHEDULER_ONLY=${IGUANATRADER_DAEMON_SCHEDULER_ONLY:-true}
+      - IGUANATRADER_ENV=${IGUANATRADER_ENV:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      # Research data-source credentials (same as api). Empty values
+      # disable the corresponding adapter via ConfigError-on-init,
+      # which the scheduler logs as an IngestRun status='error' row.
+      - SEC_EDGAR_USER_AGENT=${SEC_EDGAR_USER_AGENT:-}
+      - FRED_API_KEY=${FRED_API_KEY:-}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+      - BEA_API_KEY=${BEA_API_KEY:-}
+      - BLS_API_KEY=${BLS_API_KEY:-}
+      - OPENFDA_API_KEY=${OPENFDA_API_KEY:-}
+      - ENABLE_FOOL_SCRAPER=${ENABLE_FOOL_SCRAPER:-false}
+      - OPENBB_SIDECAR_URL=${OPENBB_SIDECAR_URL:-http://openbb_sidecar:8765}
+      - OPENBB_SIDECAR_ENABLED=${OPENBB_SIDECAR_ENABLED:-true}
+      # IB Gateway connection (only relevant when SCHEDULER_ONLY=false).
+      - IBKR_HOST=${IBKR_HOST:-}
+      - IBKR_PORT=${IBKR_PORT:-4002}
+      - IBKR_CLIENT_ID=${IBKR_CLIENT_ID:-2}
+    volumes:
+      - iguanatrader_data:/data
+    depends_on:
+      - api
+      - openbb_sidecar
+
   web:
     image: iguanatrader/web:mvp
     build:
