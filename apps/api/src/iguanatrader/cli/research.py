@@ -686,4 +686,135 @@ async def _ingest_openbb_prices_async(
     )
 
 
+@ingest_app.command("finnhub")
+def ingest_finnhub(
+    symbol: str = typer.Argument(
+        ...,
+        help="Ticker symbol to fetch via Finnhub (e.g. NVDA).",
+    ),
+    include: str = typer.Option(
+        "all",
+        "--include",
+        help=(
+            "Comma-separated sub-flows: news, earnings, all. Each sub-flow is "
+            "best-effort; a Finnhub hiccup on one does not abort the other."
+        ),
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Pull Finnhub company-news + earnings-calendar facts for ``symbol``.
+
+    Requires ``FINNHUB_API_KEY`` env var. Free tier is 60 req/min — the
+    adapter's token bucket throttles to that ceiling. Sub-flows:
+
+    * ``news`` → ``fact_kind='finnhub.company_news'``, 7-day default
+      lookback. One draft per article keyed by Finnhub's numeric id.
+    * ``earnings`` → ``fact_kind='finnhub.earnings_calendar'``, 30-day
+      lookback. One draft per scheduled report keyed by date+symbol.
+
+    Usage::
+
+        iguanatrader research ingest finnhub NVDA
+        iguanatrader research ingest finnhub NVDA --include news
+    """
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info("cli.research.ingest.finnhub.invoked", symbol=symbol, include=include)
+
+    asyncio.run(_ingest_finnhub_async(symbol=symbol, include=include, tenant_slug=tenant))
+
+
+async def _ingest_finnhub_async(
+    *,
+    symbol: str,
+    include: str,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of the ``ingest finnhub`` command."""
+    from dataclasses import replace as dc_replace
+
+    import sqlalchemy as sa
+
+    from iguanatrader.contexts.research.errors import ConfigError
+    from iguanatrader.contexts.research.models import SymbolUniverse
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.finnhub import FinnhubSource
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    include_lc = include.strip().lower()
+    if include_lc in ("all", ""):
+        want_news, want_earnings = True, True
+    else:
+        tokens = {tok.strip() for tok in include_lc.split(",") if tok.strip()}
+        unknown = tokens - {"news", "earnings"}
+        if unknown:
+            typer.echo(
+                f"ERROR: unknown finnhub sub-flow(s) {sorted(unknown)}. "
+                f"Allowed: news, earnings, all."
+            )
+            raise typer.Exit(code=2)
+        want_news = "news" in tokens
+        want_earnings = "earnings" in tokens
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            sym_row = (
+                await session.execute(
+                    sa.select(SymbolUniverse.id).where(SymbolUniverse.symbol == symbol)
+                )
+            ).first()
+            if sym_row is None:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r} not registered for this tenant. Run "
+                    f"`iguanatrader admin register-symbol {symbol} --tenant <slug>` first."
+                )
+                raise typer.Exit(code=1)
+            symbol_universe_id = sym_row[0]
+
+            try:
+                adapter = FinnhubSource()
+            except ConfigError as exc:
+                typer.echo(f"ERROR: {exc.detail}")
+                raise typer.Exit(code=2) from None
+
+            repo = ResearchRepository()
+            inserted = 0
+
+            if want_news:
+                try:
+                    for draft in adapter.fetch(symbol, None):
+                        stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+                        await repo.insert_fact(stamped)
+                        inserted += 1
+                except Exception as exc:
+                    typer.echo(f"WARN: news sub-flow failed: {exc}")
+
+            if want_earnings:
+                try:
+                    for draft in adapter.fetch_earnings_calendar(symbol, None):
+                        stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+                        await repo.insert_fact(stamped)
+                        inserted += 1
+                except Exception as exc:
+                    typer.echo(f"WARN: earnings sub-flow failed: {exc}")
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(f"OK — symbol={symbol} include={include} facts_inserted={inserted}")
+
+
 __all__ = ["app"]
