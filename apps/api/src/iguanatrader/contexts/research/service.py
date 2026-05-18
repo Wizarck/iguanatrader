@@ -75,6 +75,7 @@ class BriefService:
         bus: MessageBus | None = None,
         default_model: str = "claude-sonnet-4-6",
         hindsight: Any | None = None,
+        on_demand_ingestion: Any | None = None,
     ) -> None:
         self._repo = repository
         self._provider = composite_provider
@@ -86,18 +87,57 @@ class BriefService:
         # When None or feature flag OFF, refresh() skips the recall path
         # transparently. Test-existing callers leave this as None.
         self._hindsight = hindsight
+        # Slice research-ad-hoc-mode: optional ingestion service that
+        # populates research_facts inline when refresh is called for a
+        # brand-new symbol. When None, refresh keeps the legacy
+        # behaviour (requires the symbol pre-registered + facts already
+        # in DB). Production wiring lives in the route handler.
+        self._ingestion = on_demand_ingestion
 
     async def refresh(
         self,
         symbol: str,
         methodology: str,
     ) -> BriefRefreshOutcome:
-        """Run synthesis + persist a new brief version."""
+        """Run synthesis + persist a new brief version.
+
+        Slice research-ad-hoc-mode reorders the pipeline so the
+        symbol's universe row is resolved (or auto-created) BEFORE
+        feature provider fetch — otherwise a brand-new symbol's
+        provider query would always return empty regardless of
+        whether inline ingestion ran. Order:
+
+        1. Resolve / auto-register symbol_universe + watchlist_config.
+        2. If a new symbol was just registered AND an ingestion service
+           is wired, fetch facts from OpenBB sidecar inline.
+        3. Feature provider reads from research_facts.
+        4. Methodology scoring + LLM synthesis + persist.
+        """
         if methodology not in METHODOLOGY_REGISTRY:
             raise ValueError(
                 f"unknown methodology {methodology!r}; "
                 f"expected one of {sorted(METHODOLOGY_REGISTRY)}"
             )
+
+        symbol_universe_id, watchlist_config_id, newly_registered = (
+            await self._resolve_or_register_fks(symbol)
+        )
+        if newly_registered and self._ingestion is not None:
+            try:
+                await self._ingestion.ingest(
+                    symbol=symbol,
+                    symbol_universe_id=symbol_universe_id,
+                )
+            except Exception as exc:
+                # Ingestion failure is non-fatal: brief synthesis can
+                # still proceed and will simply emit partial=True with
+                # null pillars. The operator sees the empty result and
+                # can retry, but we don't 5xx the route on a flaky
+                # upstream.
+                logger.warning(
+                    "research.brief.on_demand_ingestion_failed",
+                    extra={"symbol": symbol, "error": str(exc)},
+                )
 
         feature_bundle = await self._provider.fetch(
             symbol=symbol,
@@ -119,9 +159,9 @@ class BriefService:
             narrative_context=narrative_context,
         )
 
-        # Resolve symbol_universe + watchlist FK ids needed for the brief insert.
-        symbol_universe_id, watchlist_config_id = await self._resolve_brief_fks(symbol)
-
+        # symbol_universe_id + watchlist_config_id already resolved at
+        # the top of the method (slice research-ad-hoc-mode). Locals
+        # remain in scope for the persist block below.
         attempt = 0
         last_exc: Exception | None = None
         while attempt < MAX_INSERT_RETRIES:
@@ -278,39 +318,41 @@ class BriefService:
             )
             return []
 
-    async def _resolve_brief_fks(self, symbol: str) -> tuple[UUID, UUID]:
-        """Return ``(symbol_universe_id, watchlist_config_id)`` for ``symbol``.
+    async def _resolve_or_register_fks(
+        self,
+        symbol: str,
+    ) -> tuple[UUID, UUID, bool]:
+        """Return ``(symbol_universe_id, watchlist_config_id, newly_registered)``.
 
-        Raises if the symbol is not in the tenant's universe or has no
-        watchlist config (R5 assumes both exist; T4/W2 land the
-        bootstrap-tenant CLI that seeds them).
+        Slice research-ad-hoc-mode: if the symbol is not yet in the
+        tenant's universe, auto-create the rows with the
+        :mod:`registration` module's defaults (tier=primary,
+        schedule=manual). The third tuple element distinguishes the
+        first-time path (caller may want to trigger inline ingestion)
+        from the steady-state path (rows already existed).
         """
-        from iguanatrader.contexts.research.models import (
-            SymbolUniverse,
-            WatchlistConfig,
+        from iguanatrader.contexts.research.registration import (
+            ensure_symbol_registered,
         )
+        from iguanatrader.shared.contextvars import tenant_id_var
 
-        # Casts to ResearchRepository to access the protected session via the
-        # only public surface we have — the inherited BaseRepository
-        # ``self._session`` attribute. This is a slice-internal helper.
-        session = self._repo._session
-        stmt = (
-            sa.select(SymbolUniverse.id, WatchlistConfig.id)
-            .join(
-                WatchlistConfig,
-                WatchlistConfig.symbol_universe_id == SymbolUniverse.id,
+        tenant_id = tenant_id_var.get()
+        if tenant_id is None:
+            raise RuntimeError(
+                "BriefService.refresh requires tenant_id_var to be set; "
+                "request middleware should populate it before invoking the route."
             )
-            .where(SymbolUniverse.symbol == symbol)
-            .limit(1)
+
+        outcome = await ensure_symbol_registered(
+            session=self._repo._session,
+            tenant_id=tenant_id,
+            symbol=symbol,
         )
-        result = await session.execute(stmt)
-        row = result.first()
-        if row is None:
-            raise LookupError(
-                f"no symbol_universe + watchlist_config pair exists for symbol {symbol!r}; "
-                "tenant must register the symbol via T4 bootstrap-tenant first"
-            )
-        return row[0], row[1]
+        return (
+            outcome.symbol_universe_id,
+            outcome.watchlist_config_id,
+            outcome.created,
+        )
 
     async def _next_version(self, *, symbol_universe_id: UUID) -> int:
         """Compute next monotonic version for ``(tenant, symbol_universe)``.
