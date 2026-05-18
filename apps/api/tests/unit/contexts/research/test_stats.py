@@ -205,3 +205,27 @@ def test_analyst_block_falls_back_to_alt_keys() -> None:
     assert stats.analyst_target_price == 90.0
     assert stats.analyst_count == 12
     assert math.isclose(stats.upside_to_target_pct or 0.0, -10.0, abs_tol=1e-6)
+
+
+def test_briefstats_asdict_roundtrips_into_response_dto() -> None:
+    """Regression: BriefStats is frozen+slots → no `__dict__`.
+
+    The /research/stats/{symbol} route serialises via dataclasses.asdict;
+    if a future BriefStats field is added without a matching DTO field,
+    this test fails at DTO construction with extra="forbid" instead of
+    in prod with a 500.
+    """
+    import dataclasses
+
+    from iguanatrader.api.dtos.research import BriefStatsResponse
+
+    stats = compute_stats(
+        symbol="AMD",
+        prices_payload=_payload([100.0, 101.0, 102.0]),
+        benchmark_payload=None,
+        fundamentals_payload=None,
+        analyst_payload=None,
+    )
+    payload = dataclasses.asdict(stats)
+    dto = BriefStatsResponse(**payload)
+    assert dto.symbol == "AMD"
