@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Iterable, Iterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -114,6 +115,44 @@ class _FakeOpenBBSource:
         yield from self._prices_drafts
 
 
+class _FakeEdgarSource:
+    """Stand-in for SECEdgarSource — scripted XBRL drafts, optional raise."""
+
+    def __init__(
+        self,
+        *,
+        drafts: list[ResearchFactDraft] | None = None,
+        raises: Exception | None = None,
+    ) -> None:
+        self._drafts = drafts or []
+        self._raises = raises
+        self.calls: list[tuple[str, datetime | None]] = []
+
+    def fetch(self, symbol: str, since: datetime | None) -> Iterable[ResearchFactDraft]:
+        self.calls.append((symbol, since))
+        if self._raises is not None:
+            raise self._raises
+        yield from self._drafts
+
+
+def _edgar_xbrl_draft(fact_kind: str = "sec_xbrl.us-gaap.Revenues") -> ResearchFactDraft:
+    now = datetime(2026, 5, 18, tzinfo=UTC)
+    payload = {"value": 60.92e9, "unit": "USD"}
+    payload_bytes = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return ResearchFactDraft(
+        source_id="sec_edgar",
+        fact_kind=fact_kind,
+        effective_from=now,
+        recorded_from=now,
+        source_url="https://data.sec.gov/submissions/CIK0000002488.json",
+        retrieval_method="api",
+        retrieved_at=now,
+        value_numeric=Decimal("60920000000"),
+        unit="USD",
+        value_jsonb=payload,
+    ).with_payload(payload_bytes)
+
+
 async def _seed_tenant_and_universe(
     sf: async_sessionmaker[AsyncSession],
     *,
@@ -130,6 +169,14 @@ async def _seed_tenant_and_universe(
                 display_name="OpenBB sidecar",
                 tier=2,
                 pit_class="B",
+            )
+        )
+        s.add(
+            ResearchSource(
+                id="sec_edgar",
+                display_name="SEC EDGAR",
+                tier=1,
+                pit_class="A",
             )
         )
         await s.commit()
@@ -213,3 +260,82 @@ async def test_ingest_with_empty_prices_window_skips_gracefully(
 
     assert outcome.facts_inserted == 1
     assert outcome.endpoints_attempted == 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_persists_edgar_xbrl_drafts_when_source_wired(
+    sf: async_sessionmaker[AsyncSession],
+) -> None:
+    """When the EDGAR source is wired, its XBRL drafts persist alongside
+    OpenBB's. ``edgar_facts_inserted`` is broken out in the outcome so
+    callers can detect tier-A gap closure."""
+    tid = uuid4()
+    sym_uid = uuid4()
+    await _seed_tenant_and_universe(sf, tenant_id=tid, symbol_universe_id=sym_uid)
+
+    openbb_fake = _FakeOpenBBSource(
+        fetch_drafts=[_draft("fundamentals")],
+        prices_drafts=[_draft("historical_prices_window")],
+    )
+    edgar_fake = _FakeEdgarSource(
+        drafts=[
+            _edgar_xbrl_draft("sec_xbrl.us-gaap.Revenues"),
+            _edgar_xbrl_draft("sec_xbrl.us-gaap.EarningsPerShareDiluted"),
+        ],
+    )
+
+    async with with_tenant_context(tid), sf() as session:
+        session_var.set(session)
+        repo = ResearchRepository()
+        service = OnDemandIngestionService(
+            repository=repo,
+            openbb_source=openbb_fake,
+            edgar_source=edgar_fake,
+        )
+        outcome = await service.ingest(symbol="AMD", symbol_universe_id=sym_uid)
+        await session.commit()
+
+        kinds = {r[0] for r in (await session.execute(sa.select(ResearchFact.fact_kind))).all()}
+
+    assert outcome.facts_inserted == 4
+    assert outcome.edgar_facts_inserted == 2
+    assert "sec_xbrl.us-gaap.Revenues" in kinds
+    assert "sec_xbrl.us-gaap.EarningsPerShareDiluted" in kinds
+    assert edgar_fake.calls and edgar_fake.calls[0][0] == "AMD"
+    # The service passes a `since` ~2.5 years back so EDGAR doesn't
+    # return the full company history.
+    assert edgar_fake.calls[0][1] is not None
+
+
+@pytest.mark.asyncio
+async def test_ingest_swallows_edgar_outage_and_keeps_openbb_drafts(
+    sf: async_sessionmaker[AsyncSession],
+) -> None:
+    """EDGAR rate limit / 5xx during ad-hoc ingest must NOT 5xx the route.
+    OpenBB drafts already persisted should remain; the synthesizer will
+    just see partial=true and HOLD-low-confidence per slice #217."""
+    tid = uuid4()
+    sym_uid = uuid4()
+    await _seed_tenant_and_universe(sf, tenant_id=tid, symbol_universe_id=sym_uid)
+
+    openbb_fake = _FakeOpenBBSource(
+        fetch_drafts=[_draft("fundamentals")],
+        prices_drafts=[],
+    )
+    edgar_fake = _FakeEdgarSource(raises=RuntimeError("SEC rate limited"))
+
+    async with with_tenant_context(tid), sf() as session:
+        session_var.set(session)
+        repo = ResearchRepository()
+        service = OnDemandIngestionService(
+            repository=repo,
+            openbb_source=openbb_fake,
+            edgar_source=edgar_fake,
+        )
+        outcome = await service.ingest(symbol="AMD", symbol_universe_id=sym_uid)
+        await session.commit()
+
+    # OpenBB fundamentals draft survived; EDGAR contributed nothing.
+    assert outcome.facts_inserted == 1
+    assert outcome.edgar_facts_inserted == 0
+    assert edgar_fake.calls and edgar_fake.calls[0][0] == "AMD"
