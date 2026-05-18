@@ -33,12 +33,37 @@ from typing import Protocol
 
 @dataclass(frozen=True, slots=True)
 class Contract:
-    """Minimal :class:`ib_async.Stock` shape — symbol + exchange + currency."""
+    """IBKR contract value-object — covers equity + futures + options + FX + crypto.
+
+    The required fields per ``sec_type``:
+
+    * ``STK`` — symbol, exchange, currency. (Equities — original default.)
+    * ``FUT`` — symbol, ``expiry`` (YYYYMM or YYYYMMDD), exchange, currency.
+    * ``OPT`` — symbol, ``expiry`` (YYYYMMDD), ``strike``, ``right``
+      (``"C"`` call or ``"P"`` put), exchange, currency.
+    * ``CASH`` — symbol = pair (e.g. ``"EUR.USD"``), exchange
+      (typically ``"IDEALPRO"``).
+    * ``CRYPTO`` — symbol, exchange (typically ``"PAXOS"``), currency.
+    * ``CFD`` — symbol, exchange, currency (UK/EU equities only — IBKR
+      blocks US residents per regulator rules).
+    * ``IND`` — symbol, exchange, currency (cash indices like ``"SPX"``).
+
+    All extension fields are optional with ``None`` defaults; the
+    translator in :mod:`ib_async_client` validates the sec-type-specific
+    requirements when building the SDK contract.
+    """
 
     symbol: str
     exchange: str = "SMART"
     currency: str = "USD"
     sec_type: str = "STK"
+    # Derivative / FX / crypto extensions. Optional so equity callers
+    # keep their existing 4-field constructor signature.
+    expiry: str | None = None  # YYYYMM or YYYYMMDD (FUT / OPT)
+    strike: Decimal | None = None  # OPT only
+    right: str | None = None  # "C" or "P" (OPT only)
+    multiplier: str | None = None  # FUT / OPT contract multiplier (e.g. "100")
+    trading_class: str | None = None  # Optional disambiguator for FUT/OPT
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,21 +77,55 @@ class IBOrder:
 
     action: str  # "BUY" / "SELL"
     total_quantity: Decimal
-    order_type: str  # "MKT" / "LMT" / "STP" / "STP LMT"
+    # Allowed order types — covered by :func:`_to_order` in
+    # ``ib_async_client``:
+    #
+    # * ``MKT``       — market order; fills at best available price.
+    # * ``LMT``       — limit; fills only at ``limit_price`` or better.
+    # * ``STP``       — stop; once trigger price ``aux_price`` is hit,
+    #                   becomes a market order.
+    # * ``STP LMT``   — stop-limit; once ``aux_price`` is hit, becomes
+    #                   a limit at ``limit_price``.
+    # * ``TRAIL``     — trailing stop; trigger price follows the market
+    #                   by ``trail_amount`` or ``trail_percent``.
+    # * ``TRAIL LIMIT`` — trailing stop-limit; same trail logic plus a
+    #                   limit offset (``limit_price`` offset from trigger).
+    # * ``MOC``       — market-on-close; queues a market order auctioned
+    #                   at the closing print.
+    # * ``LOC``       — limit-on-close; queues a limit at ``limit_price``,
+    #                   only fills if the closing print honours it.
+    order_type: str
     limit_price: Decimal | None = None
     aux_price: Decimal | None = None  # stop price for STP / STP LMT
+    # Trailing-stop parameters (TRAIL / TRAIL LIMIT). Exactly one of
+    # ``trail_amount`` or ``trail_percent`` must be set; the translator
+    # raises ValueError otherwise. The values are absolute (currency
+    # amount per share) and percentage-of-trigger respectively.
+    trail_amount: Decimal | None = None
+    trail_percent: Decimal | None = None
     transmit: bool = True
     account: str | None = None
     order_ref: str | None = None  # Mirror of NewOrder.client_order_id for
     # IBKR-side tracing.
-    # Slice ``ibkr-execution-algos-entry``: when set, the translator in
+    # Slice ``ibkr-execution-algos-entry`` (expanded in
+    # ``ib-translators-full``): when set, the translator in
     # ``ib_async_client._to_order`` attaches ``algoStrategy`` +
     # ``algoParams`` to the ``ib_async.Order``. Allowed values:
-    # ``"market"`` (no algo — default behaviour, equivalent to
-    # ``algo_kind=None``), ``"adaptive"`` (IBKR's smart-routing,
-    # priority=Normal), ``"twap"`` (time-weighted slicing with strategy
-    # type Marketable). The default ``None`` preserves pre-slice
-    # behaviour so existing callers do not need to change.
+    #
+    # * ``None`` / ``"market"`` — no algo (default; raw order).
+    # * ``"adaptive"`` — IBKR's smart-routing single-order algo.
+    #   Param: ``adaptivePriority`` ∈ {Patient, Normal, Urgent}.
+    # * ``"twap"`` — time-weighted average price (sliced execution).
+    #   Param: ``strategyType`` ∈ {Marketable, Matching Midpoint,
+    #   Matching Same Side, Matching Last} + optional startTime/endTime.
+    # * ``"vwap"`` — volume-weighted average price.
+    #   Param: ``maxPctVol`` (max % of volume; default 10).
+    # * ``"arrival_price"`` — minimises slippage vs the arrival price
+    #   (price at submission). Params: ``maxPctVol``, ``riskAversion``
+    #   ∈ {Get Done, Aggressive, Neutral, Passive}.
+    #
+    # The default ``None`` preserves pre-slice behaviour so existing
+    # callers do not need to change.
     algo_kind: str | None = None
     algo_params: dict[str, str] | None = None
 

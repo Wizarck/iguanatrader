@@ -60,6 +60,65 @@ def fake_ib_async_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
             self.symbol = symbol
             self.exchange = exchange
             self.currency = currency
+            self.sec_type = "STK"
+
+    class _Future:
+        def __init__(self, **kwargs: object) -> None:
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+            self.sec_type = "FUT"
+
+    class _Option:
+        def __init__(self, **kwargs: object) -> None:
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+            self.sec_type = "OPT"
+
+    class _Forex:
+        def __init__(self, pair: str) -> None:
+            self.pair = pair
+            self.sec_type = "CASH"
+
+    class _Crypto:
+        def __init__(self, symbol: str, exchange: str, currency: str) -> None:
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.sec_type = "CRYPTO"
+
+    class _CFD:
+        def __init__(self, symbol: str, exchange: str, currency: str) -> None:
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.sec_type = "CFD"
+
+    class _Index:
+        def __init__(self, symbol: str, exchange: str, currency: str) -> None:
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.sec_type = "IND"
+
+    class _Order:
+        """Base ``ib_async.Order`` — used for TRAIL / MOC / LOC paths."""
+
+        def __init__(
+            self,
+            action: str = "",
+            totalQuantity: float = 0.0,
+            orderType: str = "",
+        ) -> None:
+            self.action = action
+            self.totalQuantity = totalQuantity
+            self.orderType = orderType
+            self.lmtPrice = 0.0
+            self.auxPrice = 0.0
+            self.trailingPercent = 0.0
+            self.lmtPriceOffset = 0.0
+            self.transmit = True
+            self.account = None
+            self.orderRef = None
 
     class _ExecutionFilter:
         def __init__(self) -> None:
@@ -85,6 +144,13 @@ def fake_ib_async_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
     module.IB = _IB  # type: ignore[attr-defined]
     module.Stock = _Stock  # type: ignore[attr-defined]
+    module.Future = _Future  # type: ignore[attr-defined]
+    module.Option = _Option  # type: ignore[attr-defined]
+    module.Forex = _Forex  # type: ignore[attr-defined]
+    module.Crypto = _Crypto  # type: ignore[attr-defined]
+    module.CFD = _CFD  # type: ignore[attr-defined]
+    module.Index = _Index  # type: ignore[attr-defined]
+    module.Order = _Order  # type: ignore[attr-defined]
     module.MarketOrder = _MarketOrder  # type: ignore[attr-defined]
     module.LimitOrder = _LimitOrder  # type: ignore[attr-defined]
     module.StopOrder = _StopOrder  # type: ignore[attr-defined]
@@ -200,12 +266,220 @@ def test_value_object_translator_rejects_lmt_without_price() -> None:
 
 
 def test_value_object_translator_rejects_unsupported_sec_type() -> None:
+    """Slice ``ib-translators-full`` supports STK/FUT/OPT/CASH/CRYPTO/CFD/IND.
+    Anything else (warrant, bag, fund) still raises."""
     from iguanatrader.contexts.trading.brokers.client_protocol import Contract
     from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
 
-    bad = Contract(symbol="ES", sec_type="FUT")
-    with pytest.raises(NotImplementedError, match="sec_type='FUT'"):
+    bad = Contract(symbol="ABC", sec_type="WAR")
+    with pytest.raises(NotImplementedError, match="sec_type='WAR'"):
         _to_contract(bad)
+
+
+# ---------------------------------------------------------------------------
+# Slice ``ib-translators-full`` — sec_type expansion
+# ---------------------------------------------------------------------------
+
+
+def test_future_contract_requires_expiry() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    bad = Contract(symbol="ES", sec_type="FUT", exchange="CME")
+    with pytest.raises(ValueError, match="FUT contract requires"):
+        _to_contract(bad)
+
+
+def test_future_contract_with_expiry_builds_sdk_future() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    ok = Contract(symbol="ES", sec_type="FUT", exchange="CME", expiry="202612", multiplier="50")
+    sdk = _to_contract(ok)
+    assert sdk.sec_type == "FUT"
+    assert sdk.symbol == "ES"
+    assert sdk.lastTradeDateOrContractMonth == "202612"
+    assert sdk.exchange == "CME"
+    assert sdk.multiplier == "50"
+
+
+def test_option_contract_requires_expiry_strike_right() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    bad = Contract(symbol="AAPL", sec_type="OPT", expiry="20261218")  # missing strike + right
+    with pytest.raises(ValueError, match="OPT contract requires"):
+        _to_contract(bad)
+
+
+def test_option_contract_with_all_fields_builds_sdk_option() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    ok = Contract(
+        symbol="AAPL",
+        sec_type="OPT",
+        exchange="SMART",
+        expiry="20261218",
+        strike=Decimal("250"),
+        right="C",
+    )
+    sdk = _to_contract(ok)
+    assert sdk.sec_type == "OPT"
+    assert sdk.strike == 250.0
+    assert sdk.right == "C"
+    assert sdk.multiplier == "100"  # default for US equity options
+
+
+def test_forex_contract_uses_pair_symbol() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    sdk = _to_contract(Contract(symbol="EUR.USD", sec_type="CASH", exchange="IDEALPRO"))
+    assert sdk.sec_type == "CASH"
+    assert sdk.pair == "EUR.USD"
+
+
+def test_crypto_contract_defaults_paxos_exchange() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    sdk = _to_contract(Contract(symbol="BTC", sec_type="CRYPTO", exchange="", currency="USD"))
+    assert sdk.sec_type == "CRYPTO"
+    assert sdk.exchange == "PAXOS"
+    assert sdk.currency == "USD"
+
+
+def test_index_contract_builds_sdk_index() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    sdk = _to_contract(Contract(symbol="SPX", sec_type="IND", exchange="CBOE"))
+    assert sdk.sec_type == "IND"
+    assert sdk.symbol == "SPX"
+
+
+# ---------------------------------------------------------------------------
+# Slice ``ib-translators-full`` — order_type expansion (TRAIL / MOC / LOC)
+# ---------------------------------------------------------------------------
+
+
+def test_trail_order_with_absolute_amount() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(
+        action="SELL",
+        total_quantity=Decimal("10"),
+        order_type="TRAIL",
+        trail_amount=Decimal("5"),
+    )
+    sdk = _to_order(order)
+    assert sdk.orderType == "TRAIL"
+    assert sdk.auxPrice == 5.0
+
+
+def test_trail_order_with_percent() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(
+        action="SELL",
+        total_quantity=Decimal("10"),
+        order_type="TRAIL",
+        trail_percent=Decimal("3.5"),
+    )
+    sdk = _to_order(order)
+    assert sdk.orderType == "TRAIL"
+    assert sdk.trailingPercent == 3.5
+
+
+def test_trail_order_rejects_missing_trail_params() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    bad = IBOrder(action="SELL", total_quantity=Decimal("10"), order_type="TRAIL")
+    with pytest.raises(ValueError, match="exactly one of"):
+        _to_order(bad)
+
+
+def test_trail_order_rejects_both_amount_and_percent() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    bad = IBOrder(
+        action="SELL",
+        total_quantity=Decimal("10"),
+        order_type="TRAIL",
+        trail_amount=Decimal("5"),
+        trail_percent=Decimal("3"),
+    )
+    with pytest.raises(ValueError, match="cannot set both"):
+        _to_order(bad)
+
+
+def test_trail_limit_order_requires_limit_offset() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    bad = IBOrder(
+        action="SELL",
+        total_quantity=Decimal("10"),
+        order_type="TRAIL LIMIT",
+        trail_amount=Decimal("5"),
+    )
+    with pytest.raises(ValueError, match="TRAIL LIMIT requires limit_price"):
+        _to_order(bad)
+
+
+def test_trail_limit_order_full() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(
+        action="SELL",
+        total_quantity=Decimal("10"),
+        order_type="TRAIL LIMIT",
+        trail_amount=Decimal("5"),
+        limit_price=Decimal("0.10"),  # offset
+    )
+    sdk = _to_order(order)
+    assert sdk.orderType == "TRAIL LIMIT"
+    assert sdk.auxPrice == 5.0
+    assert sdk.lmtPriceOffset == 0.10
+
+
+def test_moc_order_builds_no_extra_fields() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(action="BUY", total_quantity=Decimal("10"), order_type="MOC")
+    sdk = _to_order(order)
+    assert sdk.orderType == "MOC"
+
+
+def test_loc_order_requires_limit_price() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    bad = IBOrder(action="BUY", total_quantity=Decimal("10"), order_type="LOC")
+    with pytest.raises(ValueError, match=r"LOC.*requires limit_price"):
+        _to_order(bad)
+
+
+def test_loc_order_with_limit() -> None:
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(
+        action="BUY",
+        total_quantity=Decimal("10"),
+        order_type="LOC",
+        limit_price=Decimal("100.5"),
+    )
+    sdk = _to_order(order)
+    assert sdk.orderType == "LOC"
+    assert sdk.lmtPrice == 100.5
 
 
 # ---------------------------------------------------------------------------
