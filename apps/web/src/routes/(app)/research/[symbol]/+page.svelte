@@ -19,6 +19,7 @@
   import FactTimeline, {
     type FactTimelineRow
   } from '$lib/components/research/FactTimeline.svelte';
+  import StatBlock, { type BriefStats } from '$lib/components/research/StatBlock.svelte';
   import { readRecent, recordRecent, writeRecent } from '$lib/research/recent';
   import { renderBriefBody, type FactProvenance } from '$lib/research/render-brief-body';
 
@@ -43,6 +44,19 @@
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
   let currentBrief = $state(data.brief as Record<string, unknown> | null);
+  let stats = $state<BriefStats | null>((data.stats as BriefStats | null) ?? null);
+
+  async function loadStats(): Promise<void> {
+    try {
+      const res = await fetch(`/api/v1/research/stats/${encodeURIComponent(data.symbol)}`, {
+        credentials: 'include'
+      });
+      if (!res.ok) return;
+      stats = (await res.json()) as BriefStats;
+    } catch {
+      // Stat block is optional — quietly degrade.
+    }
+  }
 
   // Latest-mode facts come from server-side load; as-of mode swaps in
   // a client-side refetched list. `asOfInput` is the picker's bound
@@ -161,6 +175,10 @@
         return;
       }
       currentBrief = await res.json();
+      // Stats are derived from the same facts the LLM read — refresh
+      // them too so the operator's snapshot is consistent with the
+      // brief they just re-synthesised.
+      void loadStats();
     } catch (err) {
       refreshError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -187,6 +205,10 @@
 
     {#if currentBrief.partial}
       <div role="status" class="warn">Partial brief — required tier-A features missing.</div>
+    {/if}
+
+    {#if stats}
+      <StatBlock {stats} />
     {/if}
 
     <article class="brief-body" aria-label="Brief summary">

@@ -170,6 +170,54 @@ class BriefResponse(BaseModel):
     resolved_citations: list[ResolvedCitationDetail] = Field(default_factory=list)
 
 
+class BriefStatsResponse(BaseModel):
+    """Snapshot KPIs for the brief detail page (slice research-stat-block).
+
+    Computed live from the latest ingested facts — independent of brief
+    synthesis, so the stat block updates whenever the operator hits
+    refresh on the page without re-incurring LLM cost.
+
+    Every field is Optional: a brand-new ad-hoc symbol with only the
+    OpenBB endpoints completed will populate the price + valuation
+    blocks; benchmark-dependent fields (beta, relative strength) need
+    SPY's historical_prices_window to be ingested separately.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    as_of: str | None
+
+    last_price: float | None
+    day_change_pct: float | None
+    high_52w: float | None
+    low_52w: float | None
+    position_in_52w_pct: float | None
+    avg_volume_20d: float | None
+
+    volatility_20d_annualized: float | None
+    beta_vs_spy_60d: float | None
+
+    forward_pe: float | None
+    pe_ratio: float | None
+    price_to_book: float | None
+    market_cap: float | None
+
+    rsi_14: float | None
+    sma_50: float | None
+    sma_200: float | None
+    pos_vs_sma_50_pct: float | None
+    pos_vs_sma_200_pct: float | None
+    return_3m_pct: float | None
+    return_12m_pct: float | None
+    relative_strength_vs_spy_3m_pct: float | None
+    relative_strength_vs_spy_12m_pct: float | None
+
+    analyst_target_price: float | None
+    analyst_count: int | None
+    upside_to_target_pct: float | None
+
+
 class BriefRefreshRequest(BaseModel):
     """Request body for ``POST /api/v1/research/briefs/{symbol}/refresh``.
 
