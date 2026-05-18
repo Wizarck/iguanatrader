@@ -686,4 +686,121 @@ async def _ingest_openbb_prices_async(
     )
 
 
+@ingest_app.command("ibkr")
+def ingest_ibkr(
+    symbol: str = typer.Argument(
+        ...,
+        help="Ticker symbol to fetch via the live TWS / IB Gateway session (e.g. NVDA).",
+    ),
+    include: str = typer.Option(
+        "all",
+        "--include",
+        help=(
+            "Comma-separated sub-flows to run. Allowed: snapshot, historical, "
+            "contract, all. Each sub-flow is best-effort; a TWS hiccup on one "
+            "does not abort the others."
+        ),
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Pull market snapshot + historical OHLCV + contract details from TWS.
+
+    Requires a running TWS / IB Gateway accepting API connections on the
+    configured host/port (env: ``IGUANATRADER_IBKR_HOST`` /
+    ``IGUANATRADER_IBKR_PORT``). The research client connects with a
+    distinct ``IGUANATRADER_IBKR_RESEARCH_CLIENT_ID`` (default 17) so it
+    cannot collide with an active paper-trade session sharing the same
+    TWS instance.
+
+    Each sub-flow yields exactly one ``ResearchFactDraft``:
+
+    * ``snapshot`` → ``fact_kind='ibkr_snapshot'`` carrying the
+      fundamentals ratios (forward P/E, beta, market cap, dividend
+      yield, 52w hi/lo).
+    * ``historical`` → ``fact_kind='historical_prices_window'`` with a
+      ~395 calendar-day daily OHLCV bar list.
+    * ``contract`` → ``fact_kind='contract_details'`` with
+      sector / industry / primary_exchange / currency / long_name —
+      the metadata that ``symbol_universe`` rows leave NULL today.
+
+    Usage::
+
+        iguanatrader research ingest ibkr NVDA
+        iguanatrader research ingest ibkr NVDA --include snapshot,contract
+    """
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info("cli.research.ingest.ibkr.invoked", symbol=symbol, include=include)
+
+    asyncio.run(_ingest_ibkr_async(symbol=symbol, include=include, tenant_slug=tenant))
+
+
+async def _ingest_ibkr_async(
+    *,
+    symbol: str,
+    include: str,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of the ``ingest ibkr`` command."""
+    from dataclasses import replace as dc_replace
+
+    import sqlalchemy as sa
+
+    from iguanatrader.contexts.research.models import SymbolUniverse
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.ibkr import IBKRSource
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    if include.strip().lower() in ("all", ""):
+        include_set: list[str] | None = None
+    else:
+        include_set = [tok.strip().lower() for tok in include.split(",") if tok.strip()]
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            sym_row = (
+                await session.execute(
+                    sa.select(SymbolUniverse.id).where(SymbolUniverse.symbol == symbol)
+                )
+            ).first()
+            if sym_row is None:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r} not registered for this tenant. Run "
+                    f"`iguanatrader admin register-symbol {symbol} --tenant <slug>` first."
+                )
+                raise typer.Exit(code=1)
+            symbol_universe_id = sym_row[0]
+
+            adapter = IBKRSource()
+            repo = ResearchRepository()
+
+            inserted = 0
+            try:
+                drafts = await adapter.fetch_async(symbol, include=include_set)
+                for draft in drafts:
+                    stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+                    await repo.insert_fact(stamped)
+                    inserted += 1
+            finally:
+                await adapter.close()
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(f"OK — symbol={symbol} include={include} facts_inserted={inserted}")
+
+
 __all__ = ["app"]
