@@ -24,6 +24,7 @@ Bitemporal mapping:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import Iterable
@@ -126,7 +127,7 @@ class FinnhubSource(TierASourceAdapter):
         if article_id == 0 or datetime_unix == 0:
             return None
         effective_from = datetime.fromtimestamp(datetime_unix, tz=UTC)
-        return self._make_draft(
+        draft = self._make_draft(
             fact_kind="finnhub.company_news",
             effective_from=effective_from,
             source_url=str(entry.get("url", "")) or f"{_BASE_URL}/company-news",
@@ -144,6 +145,7 @@ class FinnhubSource(TierASourceAdapter):
             fact_metadata={"symbol": symbol, "article_id": article_id},
             dedupe_key=f"finnhub:news:{article_id}",
         )
+        return draft.with_payload(json.dumps(entry, default=str).encode("utf-8"))
 
     def _build_earnings_draft(
         self,
@@ -159,7 +161,7 @@ class FinnhubSource(TierASourceAdapter):
             return None
         eps_estimate = row.get("epsEstimate")
         eps_actual = row.get("epsActual")
-        return self._make_draft(
+        draft = self._make_draft(
             fact_kind="finnhub.earnings_calendar",
             effective_from=effective_from,
             source_url=f"{_BASE_URL}/calendar/earnings?symbol={symbol}",
@@ -178,6 +180,7 @@ class FinnhubSource(TierASourceAdapter):
             },
             dedupe_key=f"finnhub:earnings:{symbol}:{date_str}",
         )
+        return draft.with_payload(json.dumps(row, default=str).encode("utf-8"))
 
     @staticmethod
     def _date_range(
