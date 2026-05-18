@@ -271,6 +271,7 @@ class OrchestrationService:
         daemon_tenant_id: Any | None = None,
         trading_mode_repo: Any | None = None,
         broker: Any | None = None,
+        daemon_lifecycle_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
     ) -> None:
@@ -578,6 +579,7 @@ class OrchestrationService:
             hb_tenant_id: Any = daemon_tenant_id
             hb_repo: Any = trading_mode_repo
             hb_broker: Any = broker
+            hb_lifecycle: Any = daemon_lifecycle_service
 
             async def _heartbeat() -> None:
                 try:
@@ -598,6 +600,24 @@ class OrchestrationService:
                             "type": type(exc).__name__,
                         },
                     )
+
+                # Phase 3.5 cross-process poll — detect API-side toggle
+                # / reconcile requests + run drain or reconcile when
+                # newer than the in-memory watermarks. Best-effort: a
+                # failure here logs but does not break the heartbeat
+                # write loop above.
+                if hb_lifecycle is not None:
+                    try:
+                        await hb_lifecycle.poll_for_state_changes()
+                    except Exception as exc:
+                        logger.warning(
+                            "orchestration.daemon_heartbeat.poll_failed",
+                            extra={
+                                "mode": hb_mode,
+                                "error": str(exc),
+                                "type": type(exc).__name__,
+                            },
+                        )
 
             heartbeat_spec = JobSpec(
                 name="daemon_heartbeat",

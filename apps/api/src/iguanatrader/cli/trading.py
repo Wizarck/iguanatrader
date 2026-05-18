@@ -383,6 +383,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             daemon_tenant_id=tenant_id,
             trading_mode_repo=trading_mode_repo,
             broker=broker,
+            daemon_lifecycle_service=lifecycle_service,
         )
 
         # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close

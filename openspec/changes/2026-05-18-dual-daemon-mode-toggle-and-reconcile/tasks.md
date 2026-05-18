@@ -47,14 +47,14 @@ Acceptance criterion 5 from `proposal.md` (`local trades close with provenance='
 - [x] 15. **`apps/api/src/iguanatrader/api/dtos/status.py`** — Pydantic schemas `DaemonStatusOut`, `StatusResponse`, `DaemonToggleIn`, `DaemonToggleOut`, `DaemonReconcileOut`.
 - [x] 16. **Register routes** — auto-discovery in [api/routes/__init__.py](../../../apps/api/src/iguanatrader/api/routes/__init__.py) picks up any module exporting `router: APIRouter`. New routes appear under `/api/v1/status` + `/api/v1/daemons/{mode}/(toggle|reconcile)`; OpenAPI docs reflect them automatically.
 
-## Phase 3.5 — daemon-side cross-process bridge (deferred)
+## Phase 3.5 — daemon-side cross-process bridge
 
-The Phase 3 routes write to the DB (toggle) + log audit (reconcile), but the daemon and API run in **separate processes** (Phase 4 compose split makes this explicit). The in-process bus emit can't reach across, so the daemon must pick up state-changes via polling.
+The Phase 3 routes write to the DB (toggle) + log audit (reconcile), but the daemon and API run in **separate processes** (Phase 4 compose split makes this explicit). The in-process bus emit can't reach across — the daemon picks up state-changes via DB polling on the heartbeat cron tick.
 
-- [ ] 3.5a. **Migration `0030_tenant_trading_modes_reconcile_marker.py`** — add `pending_reconcile_at TIMESTAMPTZ NULL` to `tenant_trading_modes`. API reconcile endpoint UPDATEs it; daemon compares to a local watermark.
-- [ ] 3.5b. **Extend `daemons.py::reconcile_daemon`** — UPDATE `pending_reconcile_at = now()` so the daemon poll can detect the request.
-- [ ] 3.5c. **`DaemonLifecycleService.poll_for_state_changes`** — called from the heartbeat cron (every 10s). Compares `tenant_trading_modes.last_toggled_at` + `pending_reconcile_at` against in-memory watermarks; runs drain (when newly-disabled) or reconcile (when marker is newer). Idempotent on both paths.
-- [ ] 3.5d. **`daemon_lifecycle.poll_for_state_changes` hook in `orchestration/service.py::_heartbeat`** — wire the poll inside the existing 10s cron so it shares cadence with the heartbeat write.
+- [x] 3.5a. **Migration `0029_tenant_trading_modes_reconcile_marker.py`** — adds `pending_reconcile_at TIMESTAMPTZ NULL` to `tenant_trading_modes`. (Renumbered to 0029 to follow Phase 1.5's 0028.)
+- [x] 3.5b. **`daemons.py::reconcile_daemon`** — now calls `TradingModeRepository.mark_reconcile_pending` which UPDATEs `pending_reconcile_at = now()`. The response's `accepted_at` echoes the persisted timestamp so the operator can trace the request through to the daemon-side log entry.
+- [x] 3.5c. **`DaemonLifecycleService.poll_for_state_changes`** — compares `last_toggled_at` + `pending_reconcile_at` against in-memory watermarks. First call initialises watermarks from current column values (no retroactive trigger on boot). Subsequent calls run drain when `enabled=false` AND `last_toggled_at` advanced; run reconcile when `pending_reconcile_at` advanced.
+- [x] 3.5d. **Heartbeat cron poll hook in `orchestration/service.py`** — after `write_heartbeat` succeeds the cron also calls `daemon_lifecycle_service.poll_for_state_changes()`. Best-effort wrapper isolates poll failures from the heartbeat write loop.
 
 ## Phase 4 — compose split
 

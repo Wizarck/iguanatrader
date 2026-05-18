@@ -430,6 +430,14 @@ class TenantTradingMode(Base):
         nullable=True,
     )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Slice ``dual-daemon-...`` Phase 3.5: durable marker for the
+    # cross-process reconcile request. API endpoint writes ``now()`` on
+    # every request; daemon-side ``poll_for_state_changes`` compares
+    # against its in-memory watermark + runs reconcile when newer.
+    pending_reconcile_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class DaemonHeartbeat(Base):

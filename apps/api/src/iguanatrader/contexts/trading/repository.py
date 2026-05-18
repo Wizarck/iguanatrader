@@ -569,6 +569,56 @@ class TradingModeRepository(BaseRepository):
         row.reason = reason
         return row
 
+    async def mark_reconcile_pending(
+        self,
+        *,
+        tenant_id: UUID,
+        mode: str,
+    ) -> datetime:
+        """Stamp ``tenant_trading_modes.pending_reconcile_at = now()``.
+
+        Cross-process signal for the on-demand reconcile request: the
+        API endpoint calls this, the daemon-side ``poll_for_state_changes``
+        compares the column against an in-memory watermark. Returns the
+        timestamp written so the API can include it in the response /
+        audit log.
+        """
+        stmt = select(TenantTradingMode).where(
+            TenantTradingMode.tenant_id == tenant_id,
+            TenantTradingMode.mode == mode,
+        )
+        result = await self.session.execute(stmt)
+        row = cast("TenantTradingMode | None", result.scalars().first())
+        if row is None:
+            raise LookupError(
+                f"tenant_trading_modes row missing for (tenant_id={tenant_id}, mode={mode}); "
+                "migration 0026 should have seeded it — investigate."
+            )
+        now = utc_now()
+        row.pending_reconcile_at = now
+        return now
+
+    async def load_for_polling(
+        self,
+        *,
+        tenant_id: UUID,
+        mode: str,
+    ) -> TenantTradingMode | None:
+        """Return the full ``tenant_trading_modes`` row for poll-watermark compare.
+
+        Daemon-side ``poll_for_state_changes`` reads
+        ``last_toggled_at`` + ``pending_reconcile_at`` + ``enabled``
+        from this row every heartbeat tick to detect API-side state
+        changes. Returns ``None`` if the row is missing (caller can
+        skip the tick rather than crash on a transient seed-gap).
+        """
+        stmt = select(TenantTradingMode).where(
+            TenantTradingMode.tenant_id == tenant_id,
+            TenantTradingMode.mode == mode,
+        )
+        result = await self.session.execute(stmt)
+        return cast("TenantTradingMode | None", result.scalars().first())
+
     async def write_heartbeat(
         self,
         *,

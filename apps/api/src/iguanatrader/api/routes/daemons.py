@@ -22,7 +22,6 @@ the prod multi-process deployment needs DB-driven polling.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import structlog
@@ -161,15 +160,21 @@ async def reconcile_daemon(
     the daemon's side. The ``correlation_id`` in the response can be
     grepped against daemon-side structlog events for trace continuity.
 
-    NOTE: cross-process signal wiring is **Phase 3.5** (see module
-    docstring). This endpoint currently emits the audit event only;
-    once the daemon-side poll lands, the same endpoint will continue
-    to work without changes.
+    Cross-process signal (Phase 3.5): stamps
+    ``tenant_trading_modes.pending_reconcile_at = now()``. The daemon's
+    heartbeat-tick ``poll_for_state_changes`` compares this column
+    against an in-memory watermark and runs reconcile when newer.
     """
     session_var.set(db)
     mode = _validate_mode(mode)
     correlation_id = uuid4()
-    accepted_at = datetime.now(UTC)
+
+    repo = TradingModeRepository()
+    accepted_at = await repo.mark_reconcile_pending(
+        tenant_id=user.tenant_id,
+        mode=mode,
+    )
+    await db.commit()
 
     log.info(
         "daemon.reconcile",
@@ -177,6 +182,7 @@ async def reconcile_daemon(
         user_id=str(user.id),
         mode=mode,
         correlation_id=str(correlation_id),
+        pending_reconcile_at=accepted_at.isoformat(),
     )
 
     return DaemonReconcileOut(

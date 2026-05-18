@@ -28,6 +28,7 @@ so the paper daemon ignores live events and vice versa.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -77,6 +78,13 @@ class DaemonLifecycleService:
         self._trading_mode_repo = trading_mode_repo
         self._broker = broker
         self._equity_repo = equity_repo
+        # Phase 3.5 cross-process poll watermarks. Initialised on the
+        # first ``poll_for_state_changes`` call to the current column
+        # values so historical state does not retroactively fire drain
+        # or reconcile on daemon boot.
+        self._last_toggle_handled: datetime | None = None
+        self._last_reconcile_handled: datetime | None = None
+        self._poll_initialised = False
 
     def register_subscriptions(self) -> None:
         """Subscribe ``DaemonDrainRequested`` + ``DaemonReconcileRequested``.
@@ -149,6 +157,76 @@ class DaemonLifecycleService:
             reason=reason,
         )
         return rowcount
+
+    async def poll_for_state_changes(self) -> None:
+        """Detect API-side toggle / reconcile requests + react.
+
+        Phase 3.5 cross-process bridge. Called from the 10s heartbeat
+        cron so the daemon picks up changes within ~10 seconds even
+        when the in-process bus cannot cross container boundaries.
+
+        Logic:
+
+        1. Load the ``tenant_trading_modes`` row.
+        2. On the FIRST call, initialise watermarks from the current
+           column values (no retroactive trigger on boot).
+        3. If ``last_toggled_at`` is newer than the watermark, advance
+           the watermark + run drain when ``enabled=false``. (Enabled
+           toggles do not need a daemon-side action — the propose-tick
+           gate picks them up on the next cron fire.)
+        4. If ``pending_reconcile_at`` is newer than the watermark,
+           advance the watermark + run reconcile.
+
+        Silently no-ops when ``session_var`` is unset (the heartbeat
+        cron sometimes fires before the session contextvar is bound
+        on a fresh boot — drain/reconcile will catch up on the next
+        tick).
+        """
+        session = session_var.get()
+        if session is None:
+            return
+        row = await self._trading_mode_repo.load_for_polling(
+            tenant_id=self._tenant_id, mode=self._mode
+        )
+        if row is None:
+            return
+
+        if not self._poll_initialised:
+            self._last_toggle_handled = row.last_toggled_at
+            self._last_reconcile_handled = row.pending_reconcile_at
+            self._poll_initialised = True
+            return
+
+        # Toggle-change detection. ``last_toggled_at`` is NOT NULL
+        # (defaulted at insert + restamped on every set) so a simple
+        # > compare is safe once the watermark is initialised.
+        if (
+            self._last_toggle_handled is None
+            or row.last_toggled_at > self._last_toggle_handled
+        ):
+            self._last_toggle_handled = row.last_toggled_at
+            if not row.enabled:
+                log.info(
+                    "daemon_lifecycle.poll.toggle_off_detected",
+                    mode=self._mode,
+                    tenant_id=str(self._tenant_id),
+                )
+                await self._drain_pending_proposals(reason="daemon_drained")
+
+        # Reconcile-pending detection. ``pending_reconcile_at`` is
+        # nullable; we treat NULL → non-NULL as the only fire path.
+        if row.pending_reconcile_at is not None and (
+            self._last_reconcile_handled is None
+            or row.pending_reconcile_at > self._last_reconcile_handled
+        ):
+            self._last_reconcile_handled = row.pending_reconcile_at
+            log.info(
+                "daemon_lifecycle.poll.reconcile_pending_detected",
+                mode=self._mode,
+                tenant_id=str(self._tenant_id),
+                pending_reconcile_at=row.pending_reconcile_at.isoformat(),
+            )
+            await self.reconcile_with_ibkr()
 
     async def reconcile_with_ibkr(
         self,
