@@ -37,14 +37,88 @@ if TYPE_CHECKING:
 
 
 def _to_contract(c: Contract) -> Any:
-    """Translate our :class:`Contract` value into an ``ib_async.Stock`` (or future sec_type)."""
-    from ib_async import Stock  # lazy import — keeps module importable without dep.
+    """Translate our :class:`Contract` value into an ``ib_async`` SDK contract.
 
-    if c.sec_type == "STK":
+    Slice ``ib-translators-full`` expands beyond equities. Required
+    fields per sec_type:
+
+    * ``STK`` — symbol/exchange/currency (defaults).
+    * ``FUT`` — adds ``expiry`` (YYYYMM / YYYYMMDD). Exchange almost
+      always specific (e.g. ``"CME"``); SMART is rejected by IBKR.
+    * ``OPT`` — adds ``expiry`` (YYYYMMDD), ``strike``, ``right``
+      (``"C"`` or ``"P"``).
+    * ``CASH`` — symbol is the pair (e.g. ``"EUR.USD"``); exchange
+      ``"IDEALPRO"`` for spot FX. The SDK splits the pair on the dot.
+    * ``CRYPTO`` — exchange ``"PAXOS"`` for IBKR-supported BTC / ETH /
+      LTC. Currency is fiat (e.g. ``"USD"``).
+    * ``CFD`` — UK/EU residents only; same shape as STK plus the SDK's
+      :class:`ib_async.CFD` class.
+    * ``IND`` — cash index (e.g. ``"SPX"``); same shape as STK but
+      :class:`ib_async.Index`.
+    """
+    sec_type = c.sec_type.upper()
+
+    if sec_type == "STK":
+        from ib_async import Stock
+
         return Stock(c.symbol, c.exchange, c.currency)
+
+    if sec_type == "FUT":
+        from ib_async import Future
+
+        if not c.expiry:
+            raise ValueError("FUT contract requires non-empty 'expiry' (YYYYMM or YYYYMMDD)")
+        return Future(
+            symbol=c.symbol,
+            lastTradeDateOrContractMonth=c.expiry,
+            exchange=c.exchange,
+            currency=c.currency,
+            multiplier=c.multiplier or "",
+            tradingClass=c.trading_class or "",
+        )
+
+    if sec_type == "OPT":
+        from ib_async import Option
+
+        if not c.expiry or c.strike is None or c.right not in {"C", "P"}:
+            raise ValueError(
+                "OPT contract requires expiry (YYYYMMDD), strike, and right ∈ {'C','P'}"
+            )
+        return Option(
+            symbol=c.symbol,
+            lastTradeDateOrContractMonth=c.expiry,
+            strike=float(c.strike),
+            right=c.right,
+            exchange=c.exchange,
+            currency=c.currency,
+            multiplier=c.multiplier or "100",
+            tradingClass=c.trading_class or "",
+        )
+
+    if sec_type == "CASH":
+        from ib_async import Forex
+
+        # IBKR's Forex expects the pair as one string ("EURUSD" or "EUR.USD").
+        return Forex(c.symbol)
+
+    if sec_type == "CRYPTO":
+        from ib_async import Crypto
+
+        return Crypto(c.symbol, c.exchange or "PAXOS", c.currency or "USD")
+
+    if sec_type == "CFD":
+        from ib_async import CFD
+
+        return CFD(c.symbol, c.exchange, c.currency)
+
+    if sec_type == "IND":
+        from ib_async import Index
+
+        return Index(c.symbol, c.exchange, c.currency)
+
     raise NotImplementedError(
-        f"sec_type={c.sec_type!r} not yet wired in IbAsyncIBClient — "
-        "extend translator when adding futures / options."
+        f"sec_type={c.sec_type!r} not wired in IbAsyncIBClient — "
+        "supported: STK / FUT / OPT / CASH / CRYPTO / CFD / IND."
     )
 
 
@@ -57,7 +131,7 @@ def _to_order(o: IBOrder) -> Any:
     independent of the algo — IBKR layers the algo on top of any order
     type, though in practice we ship algos with MKT only in this slice.
     """
-    from ib_async import LimitOrder, MarketOrder, StopLimitOrder, StopOrder
+    from ib_async import LimitOrder, MarketOrder, Order, StopLimitOrder, StopOrder
 
     qty = float(o.total_quantity)  # ib_async expects float-ish quantities.
     order: Any
@@ -75,8 +149,43 @@ def _to_order(o: IBOrder) -> Any:
         if o.aux_price is None or o.limit_price is None:
             raise ValueError("STP LMT order requires limit_price and aux_price")
         order = StopLimitOrder(o.action, qty, float(o.limit_price), float(o.aux_price))
+    elif o.order_type in ("TRAIL", "TRAIL LIMIT", "MOC", "LOC"):
+        # The SDK ``Order`` base class accepts arbitrary ``orderType``;
+        # the higher-level helpers (``MarketOrder`` etc.) only cover the
+        # four most common shapes. For trailing + auction types we build
+        # the base ``Order`` and stamp the IBKR-specific fields directly.
+        order = Order(
+            action=o.action,
+            totalQuantity=qty,
+            orderType=o.order_type,
+        )
+        if o.order_type in ("TRAIL", "TRAIL LIMIT"):
+            if o.trail_amount is None and o.trail_percent is None:
+                raise ValueError(
+                    f"{o.order_type} order requires exactly one of " "trail_amount or trail_percent"
+                )
+            if o.trail_amount is not None and o.trail_percent is not None:
+                raise ValueError(
+                    f"{o.order_type} order: cannot set both trail_amount AND trail_percent"
+                )
+            if o.trail_amount is not None:
+                order.auxPrice = float(o.trail_amount)
+            else:
+                order.trailingPercent = float(o.trail_percent or 0)
+            if o.order_type == "TRAIL LIMIT":
+                if o.limit_price is None:
+                    raise ValueError("TRAIL LIMIT requires limit_price (offset from trigger)")
+                order.lmtPriceOffset = float(o.limit_price)
+        elif o.order_type == "LOC":
+            if o.limit_price is None:
+                raise ValueError("LOC (limit-on-close) requires limit_price")
+            order.lmtPrice = float(o.limit_price)
+        # MOC needs no extra fields — IBKR auctions at the closing print.
     else:
-        raise NotImplementedError(f"order_type={o.order_type!r} not wired")
+        raise NotImplementedError(
+            f"order_type={o.order_type!r} not wired — supported: "
+            "MKT / LMT / STP / STP LMT / TRAIL / TRAIL LIMIT / MOC / LOC."
+        )
 
     order.transmit = o.transmit
     if o.account is not None:
@@ -114,10 +223,20 @@ def _attach_algo(order: Any, algo_kind: str, algo_params: dict[str, str] | None)
     defaults: dict[str, dict[str, str]] = {
         "adaptive": {"adaptivePriority": "Normal"},
         "twap": {"strategyType": "Marketable"},
+        "vwap": {"maxPctVol": "10"},
+        "arrival_price": {"maxPctVol": "10", "riskAversion": "Neutral"},
     }
-    strategy_name = {"adaptive": "Adaptive", "twap": "Twap"}.get(algo_kind)
+    strategy_name = {
+        "adaptive": "Adaptive",
+        "twap": "Twap",
+        "vwap": "Vwap",
+        "arrival_price": "ArrivalPx",
+    }.get(algo_kind)
     if strategy_name is None:
-        raise NotImplementedError(f"algo_kind={algo_kind!r} not wired in IbAsyncIBClient")
+        raise NotImplementedError(
+            f"algo_kind={algo_kind!r} not wired — supported: "
+            "adaptive / twap / vwap / arrival_price."
+        )
 
     merged_params = dict(defaults[algo_kind])
     if algo_params is not None:
