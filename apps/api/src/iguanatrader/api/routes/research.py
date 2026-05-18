@@ -91,17 +91,44 @@ def _build_service(repo: ResearchRepository) -> BriefService:
     :func:`_build_llm_client` factory: production envs swap in
     :class:`AnthropicLLMClient` while dev/test stay on
     :class:`FakeLLMClient`.
+
+    Slice ``research-ad-hoc-mode`` adds the on-demand ingestion
+    service so refreshing a brand-new symbol triggers a synchronous
+    OpenBB sidecar fetch (fundamentals + ratings + ESG + 13-month
+    historical prices) before synthesis. The service is constructed
+    lazily and silently no-ops when the sidecar is disabled.
     """
+    from iguanatrader.contexts.research.on_demand_ingestion import (
+        OnDemandIngestionService,
+    )
+    from iguanatrader.contexts.research.sources.openbb_sidecar import (
+        OpenBBSidecarSource,
+    )
+
     composite = CompositeFeatureProvider(
         tier_a=TierAFeatureProvider(repo),
         tier_b=TierBFeatureProvider(repo),
         tier_c=TierCFeatureProvider(repo),
     )
+    on_demand: OnDemandIngestionService | None
+    try:
+        openbb_source = OpenBBSidecarSource()
+        on_demand = OnDemandIngestionService(
+            repository=repo,
+            openbb_source=openbb_source,
+        )
+    except Exception as exc:  # pragma: no cover - defensive boot path
+        log.warning(
+            "api.research.on_demand_ingestion.unavailable",
+            error=str(exc),
+        )
+        on_demand = None
     return BriefService(
         repository=repo,
         composite_provider=composite,
         synthesizer=Synthesizer(llm_client=_build_llm_client()),
         audit_service=AuditTrailService(repo),
+        on_demand_ingestion=on_demand,
     )
 
 
