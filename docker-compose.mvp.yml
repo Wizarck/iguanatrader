@@ -144,6 +144,9 @@ services:
     environment:
       - IGUANATRADER_PROFILE=mvp
       - IGUANA_DATABASE_URL=sqlite+aiosqlite:////data/iguanatrader.db
+      # APScheduler's jobstore lives in a sibling sqlite file so its
+      # write traffic does not contend with the main DB's WAL.
+      - DATABASE_PATH=/data/iguanatrader_scheduler.db
       - IGUANATRADER_RESEARCH_CACHE_ROOT=/data/research_cache
       - IGUANA_SKIP_MIGRATIONS=1
       # Scheduler-only default: VPS does not host TWS / IB Gateway, so
