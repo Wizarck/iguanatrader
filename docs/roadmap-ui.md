@@ -196,6 +196,42 @@ Frontend catalogue ships the form today; backend catalogue is the right long-ter
 
 ---
 
+## U-next-1 — global trading-mode indicator chips
+
+**Status**: proposed (folded into the same OpenSpec change as roadmap-ops O4 — they ship together; the chip needs the new `/api/v1/status` endpoint).
+**Where**: [apps/web/src/routes/(app)/+layout.svelte](../apps/web/src/routes/(app)/+layout.svelte) header.
+**Estimated**: ~200 LOC (component + store + modal).
+
+Two chips in the top-right header — `PAPER · dinero ficticio` (yellow tint) + `LIVE · dinero real` (red tint) — visible on every authenticated page. Color encodes risk (fixed); brightness encodes active/inactive. Pulses on recent fill (last 60s). Click opens a toggle modal — paper is one-click, live requires reason + password re-entry. Hover tooltip explains paper-vs-live in plain language for newbies.
+
+Polls `/api/v1/status` every 5s while tab visible; pauses on `document.hidden`.
+
+---
+
+## U-next-2 — trade state Order timeline + variant fix
+
+**Status**: proposed
+**Where**: [apps/web/src/routes/(app)/trades/[id]/+page.svelte](../apps/web/src/routes/(app)/trades/[id]/+page.svelte) + [apps/web/src/lib/trades/variants.ts](../apps/web/src/lib/trades/variants.ts).
+**Estimated**: ~150 LOC.
+
+Two concerns, one slice:
+
+1. **Variant fix**: `stateVariant()` today returns `accent` for `open` and `mute` for both `closing` and `closed`. A `closing` trade has active risk (exit order in flight) while `closed` does not — they must look different. Add a third variant (`warning` for `closing`, `mute` for `closed`).
+2. **Order timeline**: `/trades/[id]` gains a timeline section under the summary showing the underlying Order rows — Entry / Stop / Target / Exit — each with its own `Order.status` badge (`new`, `submitted`, `partially_filled`, `filled`, `canceled`, `rejected`) and timestamps. Today the Order substate is invisible in the UI; an operator cannot tell if their stop-loss has been accepted by IBKR.
+
+List view `/trades` stays as-is (avoid table overload — Order detail belongs in the detail page).
+
+---
+
+## U-next-3 — trades + proposals filter panel
+
+**Status**: proposed (folded into roadmap-ops O7 — see there for full scope).
+**Where**: new `apps/web/src/lib/components/FilterPanel.svelte` + `/trades`, `/proposals`, `/orders`.
+
+Reusable filter component (symbol, strategy_kind, state, mode, date range). Today none of the three pages have filters — the whole table renders raw. Becomes critical at scale and when shadow rows enter the picture (O7).
+
+---
+
 ## How to start a slice
 
 ```

@@ -96,6 +96,65 @@ A boot-time SOPS decrypt would mount the age key from `~/.config/sops/age/keys.t
 
 ---
 
+## O4 — dual-daemon split + mode-toggle + on-demand reconcile
+
+**Status**: proposed (OpenSpec change drafted 2026-05-18: [openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/](../openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/))
+**Prereq**: PR #261 merged (compose baseline + digest pin).
+**Estimated**: ~700 LOC + 2 migrations + ~25 new tests. 5–6 days.
+
+Split the single `trading_daemon` into parallel paper + live daemons each with its own IB Gateway, add a `tenant_trading_modes` flag, a `/api/v1/status` endpoint, a `/api/v1/daemons/{mode}/toggle` endpoint (password re-entry for live), an on-demand reconcile endpoint, persistent mode chips in the web header (color = risk-fixed, brightness = active), and a §Daemons section in `/settings` with a "Reconcile ahora" button.
+
+Drain semantics: toggle-off rejects pending_approval proposals; IBKR-side orders remain untouched (IBKR is authoritative); reconcile-on-resume is mandatory. Full architectural rationale in the slice's `design.md`.
+
+---
+
+## O5 — per-mode strategy gating
+
+**Status**: proposed
+**Prereq**: O4
+**Estimated**: ~250 LOC + 1 migration.
+
+Add `Strategy.enabled_modes: list[str]` (subset of `{'paper','live'}`). Each daemon's strategy ticker filters to strategies whose `enabled_modes` includes its own mode. Enables the "validate in paper before promoting to live" workflow that Diana (compliance) flagged in the roundtable: a strategy newly authored can run in paper for two weeks, accumulate metrics, then be promoted to live by editing the row to add `'live'` to the list.
+
+UI: `/strategies` list grows two columns (`Paper` checkbox + `Live` checkbox); `/strategies/[symbol]` form gains the same.
+
+---
+
+## O6 — strategy health observability
+
+**Status**: proposed
+**Prereq**: none (independent of O4-O5; ships in parallel).
+**Estimated**: ~400 LOC + 1 migration + ~12 new tests.
+
+Add the missing strategy-level observability fields the roundtable flagged: `last_run_at`, `last_error_text`, `last_error_at`, `signals_today`, `proposals_emitted_today`, plus per-strategy performance aggregates (`win_rate`, `realised_pnl_30d`, `max_drawdown_30d`, `sharpe_30d` — computed by a nightly cron from the `trades` table, mode-scoped).
+
+UI surface: `/strategies` list grows status columns (last run, last error indicator, signals today); `/strategies/[symbol]` gains a §Health panel + §Performance metrics panel (per-mode breakdown).
+
+Today there is no way to tell from the UI whether a strategy is silently broken — error-tracking is the must-have piece (B1 in the roundtable); activity + performance (B2/B3) ship together for one cohesive slice.
+
+---
+
+## O7 — trades-filters + shadow mode
+
+**Status**: proposed
+**Prereq**: O4 (shadow daemon writes against live book; needs the dual-daemon scaffolding).
+**Estimated**: ~500 LOC + 1 migration + filter component.
+
+Two intertwined concerns shipped together because the UI work overlaps:
+
+1. **Generic filter component** for `/trades` (and reusable for `/proposals`, `/orders`): filter rows by symbol, strategy_kind, state, mode, date range. Today there is no filter UI on `/trades` — the whole table is rendered raw.
+2. **Shadow mode**: extend `Trade.state` enum to include `shadow`. Add an optional shadow-daemon flag (`IGUANATRADER_DAEMON_SHADOW_FROM_LIVE=true`) — when enabled, the live daemon runs strategies against the live book but instead of submitting orders to IBKR, writes a Trade row with `state='shadow'` for audit / "what would have happened" inspection. Default filter on `/trades` hides shadow rows; user can toggle them in via the filter UI.
+
+Iván (quant) in the roundtable: "shadow validates strategy decisions against live conditions without simulated-fill optimism."
+
+---
+
+## O8 — sops-decrypt-at-boot (renumbered from O1)
+
+> **Note**: O1 in the original ordering. Renumbered here only for narrative flow; the slice itself is unchanged. See [O1 section above](#o1--sops-decrypt-at-boot).
+
+---
+
 ## Out of scope for this track (future, not promised)
 
 - Multi-host orchestration (k8s / swarm): single-host compose is canonical until the operator decides otherwise.
