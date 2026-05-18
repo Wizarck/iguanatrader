@@ -361,6 +361,12 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             trading_mode_repo=trading_mode_repo,
             broker=broker,
             equity_repo=equity_repo,
+            # Slice ``dual-daemon-followups`` Phase-2.5: lifecycle
+            # service uses ``TradeRepository.list_open_for_tenant`` to
+            # diff local open trades against broker positions during
+            # reconcile. The same repo is already constructed for the
+            # LLM-handler wiring above; we reuse it here.
+            trade_repo=TradeRepository(),
         )
         lifecycle_service.register_subscriptions()
 

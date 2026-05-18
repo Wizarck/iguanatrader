@@ -91,6 +91,9 @@ class _TenantAwareFakeBroker(BrokerPort):
     async def get_position(self, symbol: str) -> Position:  # pragma: no cover
         raise NotImplementedError
 
+    async def list_positions(self) -> list[Position]:  # pragma: no cover
+        return []
+
     async def reconcile_fills(self, since: datetime) -> Any:  # pragma: no cover
         if False:
             yield

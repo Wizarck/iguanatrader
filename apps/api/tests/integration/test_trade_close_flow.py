@@ -79,6 +79,9 @@ class _FakeBroker(BrokerPort):
     async def get_position(self, symbol: str) -> Position:  # pragma: no cover
         raise NotImplementedError
 
+    async def list_positions(self) -> list[Position]:  # pragma: no cover
+        return []
+
     async def get_account_equity(self) -> EquitySnapshotValue:
         return EquitySnapshotValue(
             tenant_id=self._tenant_id,

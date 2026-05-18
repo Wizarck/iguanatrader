@@ -119,11 +119,15 @@ class TradeNotClosableError(IguanaError):
 
 #: Valid ``reason`` values accepted by :meth:`TradingService.close_trade`.
 #: Mirrors the ``ck_trades_exit_reason_allowed`` CHECK constraint enum
-#: (migration 0015): ``stop`` (stop-loss hit), ``target`` (take-profit
-#: hit), ``manual`` (operator-initiated close), ``expiry`` (option
+#: (migrations 0015 + 0030): ``stop`` (stop-loss hit), ``target`` (take-
+#: profit hit), ``manual`` (operator-initiated close), ``expiry`` (option
 #: expiry — not relevant to v1.5 equities but kept for forward-
-#: compatibility with options contracts).
-_VALID_EXIT_REASONS: frozenset[str] = frozenset({"stop", "target", "manual", "expiry"})
+#: compatibility with options contracts), ``ibkr_reconcile`` (slice
+#: dual-daemon-followups Phase-2.5: reconcile detected the broker no
+#: longer holds the position so the daemon closes the local row).
+_VALID_EXIT_REASONS: frozenset[str] = frozenset(
+    {"stop", "target", "manual", "expiry", "ibkr_reconcile"}
+)
 
 
 # Type alias for the strategy resolver callable injected at construction.

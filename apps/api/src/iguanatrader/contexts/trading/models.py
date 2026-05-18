@@ -559,7 +559,8 @@ Trade.__table_args__ = (
     # ``Base.metadata.create_all`` (used by the in-memory SQLite test
     # path) ships the same constraint as the migrated DB.
     CheckConstraint(
-        "exit_reason IS NULL OR exit_reason IN ('stop','target','manual','expiry')",
+        "exit_reason IS NULL OR exit_reason IN "
+        "('stop','target','manual','expiry','ibkr_reconcile')",
         name="ck_trades_exit_reason_allowed",
     ),
 )

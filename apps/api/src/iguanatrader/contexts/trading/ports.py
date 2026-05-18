@@ -237,6 +237,19 @@ class BrokerPort(Port, Protocol):
         """Return the current broker-side position for ``symbol``."""
         ...
 
+    async def list_positions(self) -> Sequence[Position]:
+        """Return every broker-side position currently held.
+
+        Slice ``dual-daemon-followups`` Phase-2.5. The reconcile path
+        (:meth:`DaemonLifecycleService.reconcile_with_ibkr`) needs to
+        diff the daemon's open-trade view against the broker book to
+        close any local trade IBKR no longer holds (typically because
+        the operator flat-closed the position manually via TWS while
+        the daemon was off). Returns only non-zero positions — zero-
+        quantity rows are filtered out adapter-side.
+        """
+        ...
+
     async def get_account_equity(self) -> EquitySnapshotValue:
         """Return a fresh equity snapshot for the active account."""
         ...

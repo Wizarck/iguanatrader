@@ -368,6 +368,26 @@ class IBKRAdapter(HeartbeatMixin):
             currency="USD",
         )
 
+    async def list_positions(self) -> list[Position]:
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter.list_positions: client not connected")
+        raw = await self._client.positions()
+        out: list[Position] = []
+        for pos in raw:
+            if pos.quantity == 0:
+                continue
+            out.append(
+                Position(
+                    tenant_id=self._tenant_id_or_zero(),
+                    symbol=pos.symbol,
+                    quantity=pos.quantity,
+                    average_price=pos.average_cost,
+                    unrealized_pnl=pos.unrealized_pnl,
+                    currency=pos.currency,
+                )
+            )
+        return out
+
     async def get_account_equity(self) -> EquitySnapshotValue:
         if self._client is None:
             raise IntegrationError(detail="IBKRAdapter.get_account_equity: client not connected")

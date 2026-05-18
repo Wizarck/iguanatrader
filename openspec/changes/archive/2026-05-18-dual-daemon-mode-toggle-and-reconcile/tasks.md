@@ -25,7 +25,7 @@ Discovered during Task 4 that the spec's `pending_proposals_count` query + the P
 - [x] 5. **`apps/api/src/iguanatrader/contexts/orchestration/service.py::bootstrap_routines`** — gate every propose cron handler on `trading_enabled` for the daemon's `(tenant_id, mode)`. Reads at the top of each routine via `TradingModeRepository.load_trading_enabled`; short-circuits with structlog breadcrumb `orchestration.propose.skipped_disabled` when off.
 - [x] 6. **`apps/api/src/iguanatrader/contexts/trading/daemon_lifecycle.py::DaemonLifecycleService._drain_pending_proposals`** — bulk `UPDATE trade_proposals SET state='rejected', rejection_reason='daemon_drained', rejected_at=now() WHERE mode=:mode AND state='pending_approval'`. Triggered by `DaemonDrainRequested` event filtered to this daemon's mode. Idempotent — second drain in same toggle finds no pending rows and updates 0.
 - [x] 7. **`apps/api/src/iguanatrader/contexts/orchestration/service.py` — `daemon_heartbeat` JobSpec** — 10s cron (`second="*/10"`) calling `TradingModeRepository.write_heartbeat` with `ib_connected` derived from `broker.state == ConnectionState.CONNECTED`. Fires unconditionally so disabled daemons still surface as alive (no false "down" signal in the chip).
-- [x] 8. **`DaemonLifecycleService.reconcile_with_ibkr`** — first cut: delegates to existing `TradingService.startup_reconcile()` for fills + writes an `EquitySnapshot(snapshot_kind='event')` row from `broker.get_account_equity()`. **Position-side reconcile deferred to Phase 2.5** (needs `BrokerPort.list_positions()` + a fake-adapter fixture + extending the `Trade.exit_reason` CHECK to include `'ibkr_reconcile'`).
+- [x] 8. **`DaemonLifecycleService.reconcile_with_ibkr`** — delegates to existing `TradingService.startup_reconcile()` for fills + writes an `EquitySnapshot(snapshot_kind='event')` row from `broker.get_account_equity()` + (Phase-2.5 followup landed) diffs `broker.list_positions()` vs local open trades, closes orphans with `exit_reason='ibkr_reconcile'`.
 - [x] 9. **`DaemonLifecycleService._reconcile_handler`** — bus subscriber for `DaemonReconcileRequested` (filtered by mode + tenant_id). Calls `reconcile_with_ibkr` with the event's correlation_id for trace continuity. Registered `idempotent=True` so retries collapse.
 - [x] 10. **Boot reconcile wiring in `cli/trading.py::_run_daemon`** — after `lifecycle_service.register_subscriptions()` and before `scheduler.start()`: read the `trading_enabled` flag; if true, call `lifecycle_service.reconcile_with_ibkr()`; if false, log `trading.daemon.boot_reconcile.skipped_disabled` and skip. The existing `trading_service.startup_reconcile()` call stays as the unconditional broker-fills drain (covers disabled-boot crash-recovery; idempotent at `broker_fill_id`).
 
@@ -33,10 +33,10 @@ Discovered during Task 4 that the spec's `pending_proposals_count` query + the P
 
 Acceptance criterion 5 from `proposal.md` (`local trades close with provenance='ibkr_reconcile'`) needs the following follow-ups before the slice can archive:
 
-- [ ] 2.5a. **Migration `0029_trade_exit_reason_extend.py`** — extend the `ck_trades_exit_reason_allowed` CHECK to allow `'ibkr_reconcile'` (existing set: `stop` / `target` / `manual` / `expiry`). Also update `Trade.__table_args__` model-side CHECK to match.
-- [ ] 2.5b. **`BrokerPort.list_positions() -> Iterable[Position]`** — add to the port + implement on `IBKRAdapter` (delegate to `IbAsyncIBClient.positions()`) + the fake adapter (parameterised fixture for the reconcile test).
-- [ ] 2.5c. **`DaemonLifecycleService._reconcile_positions`** — load all open `Trade` rows for `(tenant_id, mode)`; intersect with `broker.list_positions()` symbol set; for each local trade whose symbol is absent from the broker book, `UPDATE` `state='closed'`, `closed_at=now()`, `exit_reason='ibkr_reconcile'`.
-- [ ] 2.5d. **Integration test** — pre-seed 2 local open trades; fake broker returns only 1 of them; assert the other transitions to `closed`/`exit_reason='ibkr_reconcile'`.
+- [x] 2.5a. **Migration `0030_trades_exit_reason_ibkr_reconcile.py`** — extends the `ck_trades_exit_reason_allowed` CHECK to allow `'ibkr_reconcile'` (existing set: `stop` / `target` / `manual` / `expiry`). Also updates `Trade.__table_args__` model-side CHECK + `_VALID_EXIT_REASONS` in `service.py`. (Renumbered to 0030 — 0029 was used for the reconcile marker.)
+- [x] 2.5b. **`BrokerPort.list_positions() -> Sequence[Position]`** — added to the port + implemented on `IBKRAdapter` (delegates to `IbAsyncIBClient.positions()`, filters out zero-quantity rows) + 7 test fakes updated to satisfy Protocol conformance.
+- [x] 2.5c. **`DaemonLifecycleService._reconcile_positions`** — loads `TradeRepository.list_open_for_tenant()`, filters by mode, intersects with `broker.list_positions()` symbol set, UPDATEs orphan local trades with `state='closed'`, `closed_at=now()`, `exit_reason='ibkr_reconcile'`. Wired into `reconcile_with_ibkr` step 3.
+- [x] 2.5d. **Integration test** — `test_daemon_lifecycle_drain_reconcile.py::test_reconcile_closes_orphan_local_trade` + `test_reconcile_positions_in_sync_is_noop` cover both branches.
 
 ## Phase 3 — API endpoints
 
@@ -77,10 +77,10 @@ The Phase 3 routes write to the DB (toggle) + log audit (reconcile), but the dae
 ## Phase 6 — tests
 
 - [x] 29/30/33. **`apps/api/tests/integration/test_daemon_routes_smoke.py`** — consolidated smoke pass covering: migration-equivalent seeded rows + status endpoint shape + paper toggle happy path + live toggle missing-password/short-reason (422) + wrong-password (403) + correct-password+valid-reason (200) + reconcile stamps `pending_reconcile_at`. 7/7 green locally.
-- [ ] 31. **`apps/api/tests/integration/test_daemon_drain.py`** — integration drain test (bus event → bulk reject + idempotency check + IBKR-fake no cancel calls). Deferred to next session; happy-path is exercised indirectly by `poll_for_state_changes` but a dedicated integration test is still needed.
-- [ ] 32. **`apps/api/tests/integration/test_daemon_reconcile.py`** — fake-IBKR end-to-end reconcile test. Deferred — depends on Phase-2.5 position reconcile + a `BrokerPort.list_positions()` fake fixture.
-- [ ] 34. **`apps/api/tests/unit/contexts/trading/test_trading_daemon_drain.py`** — pure-unit drain idempotency test. Deferred — overlaps significantly with the smoke test; revisit if the route-layer test misses a regression.
-- [ ] 35. **`apps/web/tests/e2e/daemon-chip.spec.ts`** (Playwright) — chip renders, polls, opens toggle modal on click. Deferred to next session; depends on the modal (task 26) landing.
+- [x] 31. **Drain integration test** — `test_daemon_lifecycle_drain_reconcile.py::test_drain_rejects_pending_proposals` covers drain happy path + idempotency (second call updates 0 rows).
+- [x] 32. **Fake-IBKR reconcile test** — `test_daemon_lifecycle_drain_reconcile.py::test_reconcile_positions_in_sync_is_noop` + `test_reconcile_closes_orphan_local_trade` cover both branches.
+- [x] 34. **Drain unit test** — same file's drain test exercises `_drain_pending_proposals` directly (unit-level) and asserts row-level state transition; the route-layer smoke test (task 29) covers the API-side wrapper.
+- [ ] 35. **`apps/web/tests/e2e/daemon-chip.spec.ts`** (Playwright) — chip renders, polls, opens toggle modal on click. Deferred — depends on the Playwright test runner being set up in the web app (not present yet); tracked as a standalone web-side slice when the runner lands.
 
 ## Phase 7 — docs + housekeeping
 
