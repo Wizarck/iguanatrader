@@ -280,7 +280,7 @@ def _build_draft(filing: Any, symbol: str, fact_kind: str, text: str) -> Researc
         value_jsonb=payload,
         fact_metadata={"symbol": symbol, "accession_number": accession},
         dedupe_key=f"edgartools:{fact_kind}:{accession}",
-    )
+    ).with_payload(text.encode("utf-8"))
 
 
 def _filing_date(filing: Any) -> datetime | None:

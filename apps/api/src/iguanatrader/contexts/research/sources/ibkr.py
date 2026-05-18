@@ -34,6 +34,7 @@ used by the CLI.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from collections.abc import Iterable
@@ -236,6 +237,7 @@ class IBKRSource:
             return []
 
         now = utc_now()
+        payload_dict = dict(payload)
         return [
             ResearchFactDraft(
                 source_id=self.SOURCE_ID,
@@ -245,10 +247,10 @@ class IBKRSource:
                 source_url=f"ibkr://snapshot/{symbol}",
                 retrieval_method="api",
                 retrieved_at=now,
-                value_jsonb=dict(payload),
+                value_jsonb=payload_dict,
                 fact_metadata={"symbol": symbol},
                 dedupe_key=f"ibkr:snapshot:{symbol}:{now.date().isoformat()}",
-            )
+            ).with_payload(json.dumps(payload_dict, default=str).encode("utf-8"))
         ]
 
     async def _fetch_historical(
@@ -282,6 +284,7 @@ class IBKRSource:
             effective_from = utc_now() - timedelta(days=DEFAULT_HISTORICAL_DURATION_DAYS)
 
         now = utc_now()
+        history_payload = {"symbol": symbol, "bars": bars, "bar_size": "1 day"}
         return [
             ResearchFactDraft(
                 source_id=self.SOURCE_ID,
@@ -291,10 +294,10 @@ class IBKRSource:
                 source_url=f"ibkr://historical/{symbol}",
                 retrieval_method="api",
                 retrieved_at=now,
-                value_jsonb={"symbol": symbol, "bars": bars, "bar_size": "1 day"},
+                value_jsonb=history_payload,
                 fact_metadata={"symbol": symbol, "duration": duration_str},
                 dedupe_key=f"ibkr:historical:{symbol}:{now.date().isoformat()}",
-            )
+            ).with_payload(json.dumps(history_payload, default=str).encode("utf-8"))
         ]
 
     async def _fetch_contract(
@@ -317,6 +320,7 @@ class IBKRSource:
             return []
 
         now = utc_now()
+        details_dict = dict(details)
         return [
             ResearchFactDraft(
                 source_id=self.SOURCE_ID,
@@ -326,10 +330,10 @@ class IBKRSource:
                 source_url=f"ibkr://contract/{symbol}",
                 retrieval_method="api",
                 retrieved_at=now,
-                value_jsonb=dict(details),
+                value_jsonb=details_dict,
                 fact_metadata={"symbol": symbol},
                 dedupe_key=f"ibkr:contract:{symbol}",
-            )
+            ).with_payload(json.dumps(details_dict, default=str).encode("utf-8"))
         ]
 
     # ------------------------------------------------------------------

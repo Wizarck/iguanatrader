@@ -178,7 +178,7 @@ class MotleyFoolTranscriptSource:
             value_jsonb=payload,
             fact_metadata={"symbol": symbol, "slug": slug, "title": title},
             dedupe_key=f"motley-fool:{result.final_url}",
-        )
+        ).with_payload(result.body.encode("utf-8"))
 
     def fetch(
         self,
