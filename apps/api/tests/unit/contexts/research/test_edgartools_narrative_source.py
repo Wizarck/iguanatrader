@@ -205,7 +205,7 @@ def test_accession_number_filter() -> None:
     drafts = _run(
         source.fetch_narrative_async(ticker_or_cik="AAPL", symbol="AAPL", accession_number=target)
     )
-    assert all(d.value_jsonb["accession_number"] == target for d in drafts)  # type: ignore[index]
+    assert all(d.value_jsonb["accession_number"] == target for d in drafts)
     assert drafts[0].value_text == "historical"
 
 
