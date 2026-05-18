@@ -15,7 +15,6 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-
 from iguanatrader.api.dtos.settings import FeatureFlagsIn, FeatureFlagsOut
 
 
@@ -36,7 +35,7 @@ def test_feature_flags_in_forbids_unknown_keys() -> None:
     """Schema is whitelisted — typos / future flags must be rejected
     rather than silently persisted."""
     with pytest.raises(ValueError):
-        FeatureFlagsIn.model_validate({"bogus_flag": True})  # type: ignore[arg-type]
+        FeatureFlagsIn.model_validate({"bogus_flag": True})
 
 
 def test_feature_flags_out_serialises_empty_cap_as_null() -> None:
@@ -62,9 +61,7 @@ class _FakeTenant:
     """Stands in for the SQLAlchemy ``Tenant`` row in unit tests."""
 
     def __init__(self, feature_flags: dict[str, Any] | None = None) -> None:
-        self.feature_flags: dict[str, Any] | None = (
-            dict(feature_flags) if feature_flags else None
-        )
+        self.feature_flags: dict[str, Any] | None = dict(feature_flags) if feature_flags else None
 
 
 def _merge(tenant: _FakeTenant, payload: FeatureFlagsIn) -> dict[str, Any]:
