@@ -1,16 +1,13 @@
 /**
- * Theme store — slice W1.
+ * Theme store — slice W1 + slice U6 light-theme activation.
  *
  * Reads `prefers-color-scheme` (system) + `localStorage['iguanatrader:theme']`
  * (user choice; latter wins). Applies `data-theme` attribute to `<html>`
  * via a `$effect`.
  *
- * **MVP constraint** (per design D10 + gotcha entry): light-variant CSS
- * vars are NOT declared in `app.css`. This store may report `'light'`
- * based on stored preference, but the page renders dark until the light
- * vars land. The contract is preserved (attribute exists, system
- * preference is read) — only the user-facing visual difference is
- * deferred.
+ * Light-variant CSS vars landed with slice U6, so the toggle now has a
+ * real visual effect — the previous "MVP constraint deferred" caveat
+ * is gone.
  */
 
 const STORAGE_KEY = 'iguanatrader:theme';
@@ -47,11 +44,6 @@ class ThemeStore {
           } catch {
             // Ignore quota / disabled storage.
           }
-          // TODO(W1-followup): once light-variant CSS vars land,
-          // the attribute correctly reflects `this.current`. Today
-          // the attribute IS set, but only dark CSS vars exist in
-          // `app.css` so `data-theme="light"` is a no-op visually
-          // (see gotcha #74).
           document.documentElement.setAttribute('data-theme', this.current);
         });
       });
