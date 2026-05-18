@@ -2,6 +2,7 @@
   import { Moon, Sun } from 'lucide-svelte';
 
   import ConnectionIndicator from '$lib/components/nav/ConnectionIndicator.svelte';
+  import DaemonModeChip from '$lib/components/DaemonModeChip.svelte';
   import { themeStore } from '$lib/stores/theme.svelte';
 
   /**
@@ -36,6 +37,12 @@
   </div>
 
   <div class="topbar__actions">
+    <!-- Slice ``dual-daemon-mode-toggle-and-reconcile``: persistent
+         mode chips. Color is fixed (paper=yellow, live=red); brightness
+         encodes whether the daemon is currently operating. -->
+    <DaemonModeChip mode="paper" />
+    <DaemonModeChip mode="live" />
+
     <ConnectionIndicator />
 
     <!-- K1 fills this slot with KillSwitchButton; W1 leaves it empty. -->

@@ -161,3 +161,53 @@ docker compose -f docker-compose.mvp.yml \
 ```
 
 The api container restarts without the `IBKR_HOST=ib-gateway` override; broker calls in the trade flow surface as `MissingSecretError` (HTTP 500). UI + research surfaces are unaffected.
+
+---
+
+## §7 Dual-daemon (paper + live) bring-up + toggle / reconcile via the UI
+
+Slice `2026-05-18-dual-daemon-mode-toggle-and-reconcile` splits the single trading daemon into two parallel processes (`trading_daemon_paper` + `trading_daemon_live`) with their own gateway sidecars + own IBKR client ID + own scheduler jobstore. The live daemon **defaults to `enabled=false`** (migration 0026 seed) so the container can boot before the operator has populated live credentials.
+
+### 7.1 Operator toggle via the header chip (recommended path)
+
+Once both daemons are running:
+
+1. Open the dashboard. Two chips appear at the top-right of every `(app)/*` page: yellow **PAPER** + red **LIVE**.
+2. Click the chip to open the toggle modal.
+   - **Paper toggle**: simple "Activar / Desactivar paper" + optional reason → submit. No password re-entry.
+   - **Live toggle**: warning header + REQUIRED reason (>=20 chars) + REQUIRED password re-entry. The server re-verifies the password via the same Argon2id compare as login; a wrong password returns 403 and the modal stays open with a "contraseña incorrecta" hint + cleared password field.
+3. The chip updates within ~10s of the toggle. Behind the scenes the API writes to `tenant_trading_modes.last_toggled_at` and the daemon's heartbeat cron (every 10s) reads that timestamp and runs drain when the flag transitioned to false.
+
+### 7.2 On-demand reconcile (Settings → §Daemons → "Reconcile" button)
+
+Triggers a forced sync between local state and IBKR's authoritative book. First cut reconciles fills (via the existing `TradingService.startup_reconcile`) + writes one `EquitySnapshot(snapshot_kind='event')` row from `broker.get_account_equity()`. Position-side reconcile (closing local trades absent from IBKR) is a Phase-2.5 follow-up.
+
+Cross-process signal: API endpoint writes `tenant_trading_modes.pending_reconcile_at = now()`; daemon heartbeat cron compares against an in-memory watermark + runs reconcile when newer.
+
+Returns 202 Accepted with a `correlation_id` UUID. Grep that ID against daemon-side structlog to trace the reconcile through to fill ingestion.
+
+### 7.3 Drain semantics
+
+On a true→false toggle the daemon's next heartbeat tick bulk-rejects `trade_proposals` rows where `mode = :mode AND state = 'pending_approval'`:
+
+```sql
+UPDATE trade_proposals
+SET state = 'rejected',
+    rejection_reason = 'daemon_drained',
+    rejected_at = now()
+WHERE tenant_id = :tenant AND mode = :mode AND state = 'pending_approval'
+```
+
+IBKR-side orders are **NOT** cancelled — IBKR is the authoritative book; we only refuse to create new orders going forward. To cancel an in-flight order, use IBKR's own TWS UI or `iguanatrader trading cancel <order_id>`.
+
+### 7.4 Operator pre-bring-up checklist for live
+
+Before flipping `live.enabled = true`:
+
+- [ ] `.secrets/live.env.enc` carries `IBKR_USERNAME_LIVE` + `IBKR_PASSWORD_LIVE` (operator-owned SOPS edit; see §0).
+- [ ] `IGUANATRADER_DAEMON_LIVE_SCHEDULER_ONLY` is `false` on the host (default is `true` for VPS where TWS is unreachable).
+- [ ] `ib-gateway-live` health is `service_healthy` (compose port 4001 reachable, IBC auto-login completed).
+- [ ] Recent reconcile (`POST /api/v1/daemons/live/reconcile` or the Settings button) shows fresh equity snapshot in `equity_snapshots` for `mode='live'`.
+- [ ] Risk caps for live (`LIVE_CAPITAL_CAP_USD`) are set to the operator-intended ceiling (not the same number as paper).
+
+After ticking all five, the toggle modal's live submit becomes the appropriate gate.

@@ -119,6 +119,18 @@ class TradeProposal(Base):
     # class attributes (no ClassVar annotation) so mypy doesn't flag a
     # variance mismatch with the parent's declaration.
     __tablename_is_append_only__ = True
+    # Slice ``dual-daemon-mode-toggle-and-reconcile``: ``state`` +
+    # ``rejection_reason`` + ``rejected_at`` are mutable post-INSERT so
+    # the approval-decision handlers + the drain logic can advance the
+    # lifecycle. Same column-whitelist pattern that ``Trade`` already
+    # uses for its close-flow columns.
+    __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset(
+        {
+            "state",
+            "rejection_reason",
+            "rejected_at",
+        }
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -167,6 +179,21 @@ class TradeProposal(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
+    )
+    # Slice ``dual-daemon-mode-toggle-and-reconcile``: proposal lifecycle
+    # state — ``pending_approval`` until an approval decision lands,
+    # then ``approved`` / ``rejected`` (human or daemon-drained) /
+    # ``expired`` (approval timeout). Migration 0028 backfills legacy
+    # rows as ``approved`` so they stay out of any toggle-off drain.
+    state: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default="'pending_approval'",
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
 
@@ -363,6 +390,86 @@ class Fill(Base):
     )
 
 
+class TenantTradingMode(Base):
+    """Per-tenant per-mode trading enable flag (slice ``dual-daemon-mode-toggle-and-reconcile``).
+
+    Mutable: toggled via ``POST /api/v1/daemons/{mode}/toggle``. The
+    composite primary key ``(tenant_id, mode)`` ensures exactly one row
+    per (tenant, mode) pair. Migration 0026 seeds paper-enabled + live-
+    disabled for every existing tenant.
+
+    ``ondelete=CASCADE`` on ``tenant_id`` (not the usual project
+    RESTRICT) — these rows are pure config, not historical truth, so
+    deleting a tenant should sweep their flags rather than block the
+    delete. ``ondelete=SET NULL`` on ``last_toggled_by_user_id`` so the
+    audit row survives user deletion.
+    """
+
+    __tablename__ = "tenant_trading_modes"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(Text, primary_key=True)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="0",
+    )
+    last_toggled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )
+    last_toggled_by_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Slice ``dual-daemon-...`` Phase 3.5: durable marker for the
+    # cross-process reconcile request. API endpoint writes ``now()`` on
+    # every request; daemon-side ``poll_for_state_changes`` compares
+    # against its in-memory watermark + runs reconcile when newer.
+    pending_reconcile_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class DaemonHeartbeat(Base):
+    """Per-(tenant, mode) daemon liveness row (slice ``dual-daemon-mode-toggle-and-reconcile``).
+
+    Upserted every ~10s by each running daemon with the current IBKR
+    connection state. Read by ``GET /api/v1/status``; stale (>30s)
+    rows surface as ``ib_connected=false``. No seed — rows appear on
+    first heartbeat write per (tenant, mode).
+    """
+
+    __tablename__ = "daemon_heartbeats"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_heartbeat_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )
+    ib_connected: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="0",
+    )
+
+
 class EquitySnapshot(Base):
     """Account equity snapshot (pure append-only).
 
@@ -428,6 +535,10 @@ TradeProposal.__table_args__ = (
         "confidence_score IS NULL OR (confidence_score BETWEEN 0 AND 1)",
         name="ck_trade_proposals_confidence_score_range",
     ),
+    CheckConstraint(
+        "state IN ('pending_approval','approved','rejected','expired')",
+        name="ck_trade_proposals_state_allowed",
+    ),
 )
 Trade.__table_args__ = (
     CheckConstraint("side IN ('buy','sell')", name="ck_trades_side_allowed"),
@@ -474,6 +585,18 @@ Fill.__table_args__ = (
         name="ck_fills_quantity_filled_positive",
     ),
 )
+TenantTradingMode.__table_args__ = (
+    CheckConstraint(
+        "mode IN ('paper','live')",
+        name="ck_tenant_trading_modes_mode_allowed",
+    ),
+)
+DaemonHeartbeat.__table_args__ = (
+    CheckConstraint(
+        "mode IN ('paper','live')",
+        name="ck_daemon_heartbeats_mode_allowed",
+    ),
+)
 EquitySnapshot.__table_args__ = (
     CheckConstraint("mode IN ('paper','live')", name="ck_equity_snapshots_mode_allowed"),
     # Per data-model §7.2 update — drop ``'tick'`` (and ``'hourly'`` per
@@ -511,10 +634,12 @@ def _strategy_config_before_update(mapper: Any, connection: Any, target: Strateg
 
 
 __all__ = [
+    "DaemonHeartbeat",
     "EquitySnapshot",
     "Fill",
     "Order",
     "StrategyConfig",
+    "TenantTradingMode",
     "Trade",
     "TradeProposal",
 ]

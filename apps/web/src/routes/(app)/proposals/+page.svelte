@@ -26,6 +26,10 @@
   <Badge label={row.side} variant={sideVariant(row.side)} />
 {/snippet}
 
+{#snippet modeCell(row: ProposalOut)}
+  <Badge label={row.mode} variant={row.mode === 'live' ? 'destructive' : 'warning'} />
+{/snippet}
+
 {#snippet targetCell(row: ProposalOut)}
   {row.target_price ?? '—'}
 {/snippet}
@@ -65,7 +69,7 @@
         { key: 'stop_price', header: 'Stop' },
         { key: 'target_price', header: 'Target', cell: targetCell },
         { key: 'confidence_score', header: 'Conf.', cell: confidenceCell },
-        { key: 'mode', header: 'Mode' }
+        { key: 'mode', header: 'Mode', cell: modeCell }
       ] satisfies DataTableColumn<ProposalOut>[]}
       rowKey={(p) => p.id}
       onRowClick={handleRowClick}

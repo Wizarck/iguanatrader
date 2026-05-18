@@ -1,5 +1,5 @@
 <script lang="ts">
-  export type BadgeVariant = 'success' | 'destructive' | 'accent' | 'mute';
+  export type BadgeVariant = 'success' | 'destructive' | 'accent' | 'mute' | 'warning';
 
   type Props = {
     label: string;
@@ -44,5 +44,10 @@
     background: oklch(70% 0.012 250 / 0.14);
     color: var(--mute);
     border-color: var(--border);
+  }
+  .badge--warning {
+    background: oklch(82% 0.16 95 / 0.18);
+    color: oklch(82% 0.16 95);
+    border-color: oklch(82% 0.16 95 / 0.4);
   }
 </style>

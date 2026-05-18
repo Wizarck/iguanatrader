@@ -54,7 +54,7 @@ class IngestRunResponse(BaseModel):
 async def list_ingest_runs(
     status: str | None = Query(
         default=None,
-        regex=r"^(started|ok|error|cancelled)$",
+        pattern=r"^(started|ok|error|cancelled)$",
         description="Filter by status. Omit for all.",
     ),
     source_id: str | None = Query(default=None, description="Filter by research_sources.id."),

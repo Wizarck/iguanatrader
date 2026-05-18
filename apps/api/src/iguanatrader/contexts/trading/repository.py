@@ -11,23 +11,27 @@ repositories ship empty bodies and gain query helpers in slice T4.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from iguanatrader.contexts.trading.models import (
+    DaemonHeartbeat,
     EquitySnapshot,
     Fill,
     Order,
     StrategyConfig,
+    TenantTradingMode,
     Trade,
     TradeProposal,
 )
 from iguanatrader.shared.contextvars import tenant_id_var
 from iguanatrader.shared.kernel import BaseRepository
+from iguanatrader.shared.time import now as utc_now
 
 
 class StrategyConfigRepository(BaseRepository):
@@ -179,12 +183,15 @@ class StrategyConfigRepository(BaseRepository):
 class TradeProposalRepository(BaseRepository):
     """Persistence operations for :class:`TradeProposal` (slice T4).
 
-    Note: ``trade_proposals`` is strict-append-only (no
-    ``__append_only_mutable_columns__`` allow-list). Rejection state is
-    tracked exclusively via the :class:`ProposalRejected` bus event
-    (durable through the in-process bus) plus structlog breadcrumbs;
-    NO DB UPDATE is issued for state mutation. This avoids a schema
-    change in T4 (proposal: T4 ships no migrations).
+    Slice ``dual-daemon-mode-toggle-and-reconcile`` (migration 0028)
+    promotes 3 columns to the append-only whitelist (``state`` +
+    ``rejection_reason`` + ``rejected_at``) so the approval handlers +
+    the daemon drain logic can advance the proposal lifecycle without
+    breaking the otherwise-strict append-only contract. The bus events
+    (:class:`ProposalApproved` / :class:`ProposalRejected`) remain the
+    cross-context truth — the new columns are a row-level denormalisation
+    so ``pending_proposals_count`` is an O(1) WHERE filter instead of a
+    LEFT JOIN against ``approval_decisions``.
     """
 
     async def get_by_id(self, proposal_id: UUID) -> TradeProposal | None:
@@ -207,6 +214,33 @@ class TradeProposalRepository(BaseRepository):
         stmt = select(TradeProposal).order_by(TradeProposal.created_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def set_state(
+        self,
+        *,
+        proposal_id: UUID,
+        state: str,
+        rejection_reason: str | None = None,
+    ) -> TradeProposal | None:
+        """Transition a proposal to ``approved`` / ``rejected`` / ``expired``.
+
+        Called from the approval handlers (on bus events
+        :class:`ProposalApproved` / :class:`ProposalRejected`) and the
+        daemon drain path. Sets ``rejected_at`` when ``state`` is
+        ``rejected`` or ``expired``; otherwise leaves it NULL. Returns
+        ``None`` if the proposal does not exist (caller can decide
+        whether that is a hard error or a benign idempotent skip).
+        """
+        proposal = await self.get_by_id(proposal_id)
+        if proposal is None:
+            return None
+        proposal.state = state
+        proposal.rejection_reason = rejection_reason
+        if state in ("rejected", "expired"):
+            from iguanatrader.shared.time import now as utc_now
+
+            proposal.rejected_at = utc_now()
+        return proposal
 
 
 class TradeRepository(BaseRepository):
@@ -456,17 +490,242 @@ class EquitySnapshotRepository(BaseRepository):
         return list(result.scalars().all())
 
 
+@dataclass(frozen=True)
+class DaemonStatusRow:
+    """Repository row for daemon-status summary (slice ``dual-daemon-...``).
+
+    Mirrored by ``DaemonStatusOut`` Pydantic DTO at the API layer (added
+    in task 15). Kept here as a plain dataclass so the persistence layer
+    does not depend on the Pydantic API DTOs.
+    """
+
+    mode: str
+    enabled: bool
+    ib_connected: bool
+    last_heartbeat_at: datetime | None
+    last_fill_at: datetime | None
+    pending_proposals_count: int
+
+
+class TradingModeRepository(BaseRepository):
+    """Persistence operations for :class:`TenantTradingMode` +
+    :class:`DaemonHeartbeat` (slice ``dual-daemon-mode-toggle-and-reconcile``).
+
+    Both tables are composite-keyed on ``(tenant_id, mode)``; methods
+    take ``tenant_id`` explicitly so the daemon can call them outside of
+    a request-scope ``tenant_id_var`` (the bus listener that drives
+    daemon ticks may not propagate the contextvar — daemon callers must
+    pass the value they were spawned with).
+    """
+
+    async def load_trading_enabled(self, tenant_id: UUID, mode: str) -> bool:
+        """Return ``enabled`` for the (tenant, mode) flag row.
+
+        Raises :class:`LookupError` if the row is absent — every tenant
+        gets seeded ``(paper, live)`` rows on migration 0026, so a
+        missing row indicates an out-of-band tenant or a bug.
+        """
+        stmt = select(TenantTradingMode.enabled).where(
+            TenantTradingMode.tenant_id == tenant_id,
+            TenantTradingMode.mode == mode,
+        )
+        result = await self.session.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise LookupError(
+                f"tenant_trading_modes row missing for (tenant_id={tenant_id}, mode={mode}); "
+                "migration 0026 should have seeded it — investigate."
+            )
+        return bool(row)
+
+    async def set_trading_enabled(
+        self,
+        *,
+        tenant_id: UUID,
+        mode: str,
+        enabled: bool,
+        user_id: UUID | None,
+        reason: str | None,
+    ) -> TenantTradingMode:
+        """Flip the toggle for (tenant, mode) + stamp audit columns.
+
+        Raises :class:`LookupError` if the row is absent (same rationale
+        as :meth:`load_trading_enabled`).
+        """
+        stmt = select(TenantTradingMode).where(
+            TenantTradingMode.tenant_id == tenant_id,
+            TenantTradingMode.mode == mode,
+        )
+        result = await self.session.execute(stmt)
+        row = cast("TenantTradingMode | None", result.scalars().first())
+        if row is None:
+            raise LookupError(
+                f"tenant_trading_modes row missing for (tenant_id={tenant_id}, mode={mode}); "
+                "migration 0026 should have seeded it — investigate."
+            )
+        row.enabled = enabled
+        row.last_toggled_at = utc_now()
+        row.last_toggled_by_user_id = user_id
+        row.reason = reason
+        return row
+
+    async def mark_reconcile_pending(
+        self,
+        *,
+        tenant_id: UUID,
+        mode: str,
+    ) -> datetime:
+        """Stamp ``tenant_trading_modes.pending_reconcile_at = now()``.
+
+        Cross-process signal for the on-demand reconcile request: the
+        API endpoint calls this, the daemon-side ``poll_for_state_changes``
+        compares the column against an in-memory watermark. Returns the
+        timestamp written so the API can include it in the response /
+        audit log.
+        """
+        stmt = select(TenantTradingMode).where(
+            TenantTradingMode.tenant_id == tenant_id,
+            TenantTradingMode.mode == mode,
+        )
+        result = await self.session.execute(stmt)
+        row = cast("TenantTradingMode | None", result.scalars().first())
+        if row is None:
+            raise LookupError(
+                f"tenant_trading_modes row missing for (tenant_id={tenant_id}, mode={mode}); "
+                "migration 0026 should have seeded it — investigate."
+            )
+        now = utc_now()
+        row.pending_reconcile_at = now
+        return now
+
+    async def load_for_polling(
+        self,
+        *,
+        tenant_id: UUID,
+        mode: str,
+    ) -> TenantTradingMode | None:
+        """Return the full ``tenant_trading_modes`` row for poll-watermark compare.
+
+        Daemon-side ``poll_for_state_changes`` reads
+        ``last_toggled_at`` + ``pending_reconcile_at`` + ``enabled``
+        from this row every heartbeat tick to detect API-side state
+        changes. Returns ``None`` if the row is missing (caller can
+        skip the tick rather than crash on a transient seed-gap).
+        """
+        stmt = select(TenantTradingMode).where(
+            TenantTradingMode.tenant_id == tenant_id,
+            TenantTradingMode.mode == mode,
+        )
+        result = await self.session.execute(stmt)
+        return cast("TenantTradingMode | None", result.scalars().first())
+
+    async def write_heartbeat(
+        self,
+        *,
+        tenant_id: UUID,
+        mode: str,
+        ib_connected: bool,
+    ) -> None:
+        """Upsert the heartbeat row for (tenant, mode).
+
+        First call per (tenant, mode) INSERTs; subsequent calls UPDATE
+        ``last_heartbeat_at`` + ``ib_connected``. Idempotent — the
+        daemon's 10s-minimum gating lives at the daemon, not here.
+        """
+        stmt = select(DaemonHeartbeat).where(
+            DaemonHeartbeat.tenant_id == tenant_id,
+            DaemonHeartbeat.mode == mode,
+        )
+        result = await self.session.execute(stmt)
+        row = cast("DaemonHeartbeat | None", result.scalars().first())
+        now = utc_now()
+        if row is None:
+            self.session.add(
+                DaemonHeartbeat(
+                    tenant_id=tenant_id,
+                    mode=mode,
+                    last_heartbeat_at=now,
+                    ib_connected=ib_connected,
+                )
+            )
+            return
+        row.last_heartbeat_at = now
+        row.ib_connected = ib_connected
+
+    async def load_daemon_status_summary(
+        self,
+        tenant_id: UUID,
+    ) -> list[DaemonStatusRow]:
+        """Build the ``GET /api/v1/status`` payload for a tenant.
+
+        Returns one row per mode for which a ``tenant_trading_modes``
+        flag exists. Joins:
+
+        * ``tenant_trading_modes.enabled`` (always present per seed)
+        * ``daemon_heartbeats.last_heartbeat_at`` + ``ib_connected``
+          (NULL when daemon never wrote a heartbeat)
+        * ``fills.filled_at`` MAX via fills→orders→trades JOIN
+        * ``trade_proposals`` COUNT where ``state='pending_approval'``
+
+        ``ib_connected`` is reported as the raw row value here; the
+        API route layer (task 11) maps a stale heartbeat (>30s) to
+        ``ib_connected=false`` regardless of the persisted value.
+        """
+        flags_stmt = select(TenantTradingMode).where(TenantTradingMode.tenant_id == tenant_id)
+        flags_result = await self.session.execute(flags_stmt)
+        flag_rows = list(flags_result.scalars().all())
+
+        hb_stmt = select(DaemonHeartbeat).where(DaemonHeartbeat.tenant_id == tenant_id)
+        hb_result = await self.session.execute(hb_stmt)
+        heartbeats = {hb.mode: hb for hb in hb_result.scalars().all()}
+
+        rows: list[DaemonStatusRow] = []
+        for flag in flag_rows:
+            last_fill_stmt = (
+                select(func.max(Fill.filled_at))
+                .join(Order, Order.id == Fill.order_id)
+                .join(Trade, Trade.id == Order.trade_id)
+                .where(Trade.tenant_id == tenant_id)
+                .where(Trade.mode == flag.mode)
+            )
+            last_fill = (await self.session.execute(last_fill_stmt)).scalar_one_or_none()
+
+            pending_stmt = (
+                select(func.count())
+                .select_from(TradeProposal)
+                .where(TradeProposal.tenant_id == tenant_id)
+                .where(TradeProposal.mode == flag.mode)
+                .where(TradeProposal.state == "pending_approval")
+            )
+            pending_count = (await self.session.execute(pending_stmt)).scalar_one()
+
+            hb = heartbeats.get(flag.mode)
+            rows.append(
+                DaemonStatusRow(
+                    mode=flag.mode,
+                    enabled=bool(flag.enabled),
+                    ib_connected=bool(hb.ib_connected) if hb is not None else False,
+                    last_heartbeat_at=hb.last_heartbeat_at if hb is not None else None,
+                    last_fill_at=last_fill,
+                    pending_proposals_count=int(pending_count or 0),
+                )
+            )
+        return rows
+
+
 __all__ = [
+    "DaemonStatusRow",
     "EquitySnapshotRepository",
     "FillRepository",
     "OrderRepository",
     "StrategyConfigRepository",
     "TradeProposalRepository",
     "TradeRepository",
+    "TradingModeRepository",
 ]
 
 
 # Bind the model imports to module-level so static analysis sees them as
 # referenced (these are the type-binding parents for the empty-bodied
 # repositories above; mypy / ruff would flag them as unused otherwise).
-_ = (Fill, Order, Trade, TradeProposal, EquitySnapshot, UUID)
+_ = (Fill, Order, Trade, TradeProposal, EquitySnapshot, TenantTradingMode, DaemonHeartbeat, UUID)

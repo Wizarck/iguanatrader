@@ -267,6 +267,11 @@ class OrchestrationService:
         trailing_stop_sweep_service: Any | None = None,
         equity_snapshot_sweep_service: Any | None = None,
         stop_hit_sweep_service: Any | None = None,
+        daemon_mode: str | None = None,
+        daemon_tenant_id: Any | None = None,
+        trading_mode_repo: Any | None = None,
+        broker: Any | None = None,
+        daemon_lifecycle_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
     ) -> None:
@@ -303,8 +308,49 @@ class OrchestrationService:
             """Fallback no-op when market-data wiring is absent (test setups)."""
             return None
 
+        # Slice ``dual-daemon-mode-toggle-and-reconcile``: each propose
+        # tick reads the per-(tenant, mode) ``trading_enabled`` flag at
+        # the top and short-circuits when the operator has toggled the
+        # daemon off. ``trading_mode_gate_active`` is True only when ALL
+        # daemon-side params are wired — older test setups that don't
+        # pass them keep the unfiltered behaviour.
+        trading_mode_gate_active = (
+            daemon_mode is not None
+            and daemon_tenant_id is not None
+            and trading_mode_repo is not None
+        )
+        gated_mode: str = daemon_mode if daemon_mode is not None else ""
+        gated_tenant_id: Any = daemon_tenant_id
+        gated_mode_repo: Any = trading_mode_repo
+
         def _make_propose_fn(routine_name: str) -> Callable[[], Awaitable[None]]:
             async def _propose() -> None:
+                if trading_mode_gate_active:
+                    try:
+                        enabled = await gated_mode_repo.load_trading_enabled(
+                            gated_tenant_id, gated_mode
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "orchestration.propose.gate_check_failed",
+                            extra={
+                                "routine": routine_name,
+                                "mode": gated_mode,
+                                "error": str(exc),
+                            },
+                        )
+                        return
+                    if not enabled:
+                        logger.info(
+                            "orchestration.propose.skipped_disabled",
+                            extra={
+                                "routine": routine_name,
+                                "mode": gated_mode,
+                                "tenant_id": str(gated_tenant_id),
+                            },
+                        )
+                        return
+
                 for symbol in watchlist_symbols:
                     try:
                         configs = await sc_repo.list_enabled_for_symbol(symbol)
@@ -515,6 +561,71 @@ class OrchestrationService:
             )
             scheduler.add_job(equity_spec)
 
+        # Slice ``dual-daemon-mode-toggle-and-reconcile``: 9th job writes
+        # a heartbeat row every 10 seconds so ``GET /api/v1/status`` can
+        # render ``ib_connected`` + ``last_heartbeat_at`` for the chip.
+        # Fires unconditionally (even when ``trading_enabled=false``) so
+        # the operator can see "the daemon process is alive and just
+        # idle" vs "the daemon is dead." Skipped if daemon-side params
+        # are not wired (older test setups).
+        daemon_heartbeat_wired = (
+            daemon_mode is not None
+            and daemon_tenant_id is not None
+            and trading_mode_repo is not None
+            and broker is not None
+        )
+        if daemon_heartbeat_wired:
+            hb_mode: str = daemon_mode if daemon_mode is not None else ""
+            hb_tenant_id: Any = daemon_tenant_id
+            hb_repo: Any = trading_mode_repo
+            hb_broker: Any = broker
+            hb_lifecycle: Any = daemon_lifecycle_service
+
+            async def _heartbeat() -> None:
+                try:
+                    state = getattr(hb_broker, "state", None)
+                    state_value = getattr(state, "value", None) if state is not None else None
+                    ib_connected = state_value == "connected"
+                    await hb_repo.write_heartbeat(
+                        tenant_id=hb_tenant_id,
+                        mode=hb_mode,
+                        ib_connected=ib_connected,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "orchestration.daemon_heartbeat.failed",
+                        extra={
+                            "mode": hb_mode,
+                            "error": str(exc),
+                            "type": type(exc).__name__,
+                        },
+                    )
+
+                # Phase 3.5 cross-process poll — detect API-side toggle
+                # / reconcile requests + run drain or reconcile when
+                # newer than the in-memory watermarks. Best-effort: a
+                # failure here logs but does not break the heartbeat
+                # write loop above.
+                if hb_lifecycle is not None:
+                    try:
+                        await hb_lifecycle.poll_for_state_changes()
+                    except Exception as exc:
+                        logger.warning(
+                            "orchestration.daemon_heartbeat.poll_failed",
+                            extra={
+                                "mode": hb_mode,
+                                "error": str(exc),
+                                "type": type(exc).__name__,
+                            },
+                        )
+
+            heartbeat_spec = JobSpec(
+                name="daemon_heartbeat",
+                fn=_heartbeat,
+                cron_kwargs={"second": "*/10"},
+            )
+            scheduler.add_job(heartbeat_spec)
+
         logger.info(
             "orchestration.routines.bootstrapped",
             extra={
@@ -524,13 +635,16 @@ class OrchestrationService:
                     + (1 if trailing_stop_sweep_service is not None else 0)
                     + (1 if equity_snapshot_sweep_service is not None else 0)
                     + (1 if stop_hit_sweep_service is not None else 0)
+                    + (1 if daemon_heartbeat_wired else 0)
                 ),
                 "watchlist_count": len(watchlist_symbols),
                 "propose_loops_wired": wire_propose_loops,
+                "propose_gate_active": trading_mode_gate_active,
                 "market_data_sync_wired": ingestion_service is not None,
                 "trailing_stops_sweep_wired": trailing_stop_sweep_service is not None,
                 "equity_snapshot_sweep_wired": equity_snapshot_sweep_service is not None,
                 "stop_hit_sweep_wired": stop_hit_sweep_service is not None,
+                "daemon_heartbeat_wired": daemon_heartbeat_wired,
             },
         )
 
