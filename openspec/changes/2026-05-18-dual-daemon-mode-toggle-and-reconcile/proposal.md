@@ -27,9 +27,9 @@ Both daemons share the same DB volume (`iguanatrader_data`), the same `api` serv
 
 The live daemon **defaults to disabled** at first bring-up (the `tenant_trading_modes` flag is `live.enabled=false`). The container boots and idles — it reads the flag every loop tick and no-ops if `enabled=false`. Operator flips it via the UI when ready.
 
-### 2. New table: `tenant_trading_modes`
+### 2. New tables + proposal state column
 
-Migration `0020_tenant_trading_modes.py`:
+Migration `0026_tenant_trading_modes.py` (renumbered from `0020` — `0020`-`0025` were already taken post-spec):
 
 ```python
 op.create_table(
@@ -47,6 +47,10 @@ op.create_table(
 ```
 
 Both rows are seeded for every existing tenant by the migration: `(paper, enabled=true)`, `(live, enabled=false)`. Paper-by-default preserves current behaviour; live requires an explicit operator toggle.
+
+Migration `0027_daemon_heartbeats.py` creates the per-(tenant, mode) liveness row used by `/api/v1/status` + the chip polling (see §D6 in `design.md` for why a DB table beats in-process registry).
+
+Migration `0028_trade_proposal_state.py` adds 3 columns to `trade_proposals` so the drain semantic (§4) + the `pending_proposals_count` query (§3) can read lifecycle from the row instead of joining against `approval_decisions` events: `state TEXT NOT NULL DEFAULT 'pending_approval'` (enum: `pending_approval`/`approved`/`rejected`/`expired`), `rejection_reason TEXT NULL`, `rejected_at TIMESTAMPTZ NULL`. Existing rows backfill as `state='approved'` to keep history out of any first toggle-off drain. The 3 columns join `TradeProposal.__append_only_mutable_columns__` (same column-whitelist pattern that `Trade` already uses for its close-flow columns); the approval-decision handlers (`execute_on_approval_handler` + `proposal_rejected_handler` in `apps/api/src/iguanatrader/contexts/trading/service.py`) propagate the state on every bus event, collapsing `reason='approval_timeout'` → `state='expired'`.
 
 ### 3. New endpoints
 

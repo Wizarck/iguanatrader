@@ -424,6 +424,11 @@ class TradingService:
             )
             return
 
+        await proposal_repo.set_state(
+            proposal_id=event.proposal_id,
+            state="approved",
+        )
+
         trade_repo = TradeRepository()
         trade_id = uuid4()
         opened_at = utc_now()
@@ -743,12 +748,29 @@ class TradingService:
     # Cross-context — proposal rejected + halt
     # ------------------------------------------------------------------
     async def proposal_rejected_handler(self, event: ProposalRejected) -> None:
-        """Subscriber: log the rejection. T4 may add audit-log persistence."""
+        """Subscriber: persist state + log the rejection.
+
+        Slice ``dual-daemon-mode-toggle-and-reconcile``: propagate the
+        rejection to ``trade_proposals.state`` so ``pending_proposals_count``
+        + the drain logic can read the lifecycle from the row itself.
+        Maps the canonical ``approval_timeout`` sentinel (timeout
+        collapse) to ``state='expired'``; everything else (human
+        rejection, daemon-drained, broker errors, etc.) lands as
+        ``state='rejected'``.
+        """
+        proposal_repo = TradeProposalRepository()
+        target_state = "expired" if event.reason == "approval_timeout" else "rejected"
+        await proposal_repo.set_state(
+            proposal_id=event.proposal_id,
+            state=target_state,
+            rejection_reason=event.reason,
+        )
         log.info(
             "trading.proposal.rejected.received",
             proposal_id=str(event.proposal_id),
             reason=event.reason,
             tenant_id=str(event.tenant_id),
+            target_state=target_state,
         )
 
     async def halt_handler(self, event: Any) -> None:

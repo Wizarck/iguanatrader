@@ -4,10 +4,19 @@ Execute in order. Each task is a discrete, testable unit. Mark `[x]` as complete
 
 ## Phase 1 — DB + backend foundation
 
-- [ ] 1. **Migration `0020_tenant_trading_modes.py`** — create table per proposal §2. Seed all existing tenants with `(paper, enabled=true)` + `(live, enabled=false)`. Test forward + downgrade.
-- [ ] 2. **Migration `0021_daemon_heartbeats.py`** — create table `daemon_heartbeats(tenant_id, mode, last_heartbeat_at, ib_connected)` with `PRIMARY KEY (tenant_id, mode)`. No seed (rows created on first heartbeat write).
-- [ ] 3. **`apps/api/src/iguanatrader/contexts/trading/models.py`** — add `TenantTradingMode` + `DaemonHeartbeat` SQLAlchemy models matching migrations 0020/0021.
-- [ ] 4. **`apps/api/src/iguanatrader/contexts/trading/repository.py`** — add `TradingModeRepository` with methods: `load_trading_enabled(tenant_id, mode) -> bool`, `set_trading_enabled(tenant_id, mode, enabled, user_id, reason) -> TenantTradingMode`, `write_heartbeat(tenant_id, mode, ib_connected) -> None`, `load_daemon_status_summary(tenant_id) -> list[DaemonStatusOut]` (joins heartbeats + last fill + pending count).
+- [x] 1. **Migration `0026_tenant_trading_modes.py`** (renumbered from `0020` — `0020`-`0025` were already taken post-spec) — create table per proposal §2. Seed all existing tenants with `(paper, enabled=true)` + `(live, enabled=false)`. Test forward + downgrade.
+- [x] 2. **Migration `0027_daemon_heartbeats.py`** (renumbered from `0021`) — create table `daemon_heartbeats(tenant_id, mode, last_heartbeat_at, ib_connected)` with `PRIMARY KEY (tenant_id, mode)`. No seed (rows created on first heartbeat write).
+- [x] 3. **`apps/api/src/iguanatrader/contexts/trading/models.py`** — add `TenantTradingMode` + `DaemonHeartbeat` SQLAlchemy models matching migrations 0026/0027.
+- [x] 4. **`apps/api/src/iguanatrader/contexts/trading/repository.py`** — add `TradingModeRepository` with methods: `load_trading_enabled(tenant_id, mode) -> bool`, `set_trading_enabled(tenant_id, mode, enabled, user_id, reason) -> TenantTradingMode`, `write_heartbeat(tenant_id, mode, ib_connected) -> None`, `load_daemon_status_summary(tenant_id) -> list[DaemonStatusRow]` (joins heartbeats + last fill + pending count). Row dataclass `DaemonStatusRow` is the persistence-layer mirror of the Pydantic `DaemonStatusOut` DTO (task 15).
+
+## Phase 1.5 — TradeProposal state column (unblocker for Phase 2 drain + Task 4 pending count)
+
+Discovered during Task 4 that the spec's `pending_proposals_count` query + the Phase 2 drain semantic both depend on a `TradeProposal.state` column that the codebase did not have (rejection was tracked exclusively via `approval_decisions` events). Operator chose **Option B** (denormalise state onto the entity, matching the spec verbatim) over Option A (count via JOIN against `approval_decisions`).
+
+- [x] 1.5a. **Migration `0028_trade_proposal_state.py`** — add `state` (NOT NULL DEFAULT `'pending_approval'`) + `rejection_reason` (TEXT NULL) + `rejected_at` (TIMESTAMPTZ NULL) to `trade_proposals`. CHECK constraint `state IN ('pending_approval','approved','rejected','expired')`. Backfill existing rows with `state='approved'` (conservative — keeps legacy proposals out of any first-toggle-off drain).
+- [x] 1.5b. **`apps/api/src/iguanatrader/contexts/trading/models.py::TradeProposal`** — add the 3 columns + extend `__append_only_mutable_columns__` whitelist (same pattern `Trade` already uses for its close-flow columns) + CHECK constraint on `state` at the model layer.
+- [x] 1.5c. **`apps/api/src/iguanatrader/contexts/trading/repository.py::TradeProposalRepository.set_state`** — new method; transitions a proposal to `approved`/`rejected`/`expired` + stamps `rejected_at` on terminal states.
+- [x] 1.5d. **`apps/api/src/iguanatrader/contexts/trading/service.py`** — hook `set_state(..., 'approved')` into `execute_on_approval_handler` (after the proposal-load success branch); hook `set_state(..., 'expired' or 'rejected', reason)` into `proposal_rejected_handler` (collapsing `reason='approval_timeout'` to `expired`).
 
 ## Phase 2 — daemon drain + reconcile semantics
 
