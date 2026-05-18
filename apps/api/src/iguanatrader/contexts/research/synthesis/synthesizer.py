@@ -70,6 +70,78 @@ MAX_OUTPUT_TOKENS = 4000
 PROMPT_DIR = Path(__file__).parent / "prompts"
 
 
+#: Tolerance band for HOLD recommendations — target within +/- 15 %% of
+#: the current price is considered coherent.
+_HOLD_TOLERANCE = Decimal("0.15")
+
+#: Regex extractors for the **Action** and **Target price** lines emitted
+#: by the prompt. The brief format is bolded markdown lines; the values
+#: live after the colon. Both patterns tolerate extra whitespace and
+#: trailing prose (the prompt allows "10.00 (12-month horizon)" shape).
+_ACTION_RE = re.compile(r"\*\*Action\*\*\s*:\s*(BUY|HOLD|AVOID)", re.IGNORECASE)
+_TARGET_RE = re.compile(
+    r"\*\*Target\s+price\*\*\s*:[^0-9\-+]*([+\-]?\d[\d,]*(?:\.\d+)?)",
+)
+
+
+def _check_recommendation_coherence(
+    *,
+    symbol: str,
+    body_markdown: str,
+    feature_bundle: FeatureBundle,
+) -> bool | None:
+    """Validate the LLM's Action vs. Target price vs. current price.
+
+    Returns:
+        * True — coherent (Action matches the Target-vs-Price direction).
+        * False — incoherent (e.g. BUY with target < current price).
+          Caller should mark the brief partial.
+        * None — cannot validate (missing close_price, parse failure,
+          etc.). Caller leaves partial flag untouched.
+
+    Pure deterministic — no LLM call, no I/O. Designed so a partial-
+    flagged brief is reproducible by re-running the same input.
+    """
+    action_match = _ACTION_RE.search(body_markdown)
+    target_match = _TARGET_RE.search(body_markdown)
+    if action_match is None or target_match is None:
+        return None
+
+    action = action_match.group(1).upper()
+    try:
+        target = Decimal(target_match.group(1).replace(",", ""))
+    except Exception:
+        return None
+
+    close_pair = feature_bundle.values.get("close_price")
+    if not close_pair or close_pair[0] is None:
+        return None
+    close = close_pair[0]
+    if close == 0:
+        return None
+
+    ratio = (target - close) / abs(close)
+    if action == "BUY":
+        coherent = target >= close
+    elif action == "AVOID":
+        coherent = target <= close
+    else:  # HOLD
+        coherent = abs(ratio) <= _HOLD_TOLERANCE
+
+    if not coherent:
+        logger.warning(
+            "research.synth.recommendation_incoherent",
+            extra={
+                "symbol": symbol,
+                "action": action,
+                "target": str(target),
+                "close_price": str(close),
+                "deviation_pct": str(ratio * Decimal("100")),
+            },
+        )
+    return coherent
+
+
 @dataclass(frozen=True, slots=True)
 class SynthesizedBrief:
     """Synthesizer return — caller persists in a transaction."""
@@ -180,6 +252,24 @@ class Synthesizer:
             # `partial` triggers when an LLM-emitted JSON block flagged it,
             # OR when a required tier-A feature is missing.
             partial = partial_required_a_missing or self._is_partial_in_text(completion.text)
+
+            # Recommendation-coherence check (slice llm-brief-coherence).
+            # Parses Action + Target from the brief markdown, compares with
+            # close_price + analyst_target_price from the feature bundle.
+            # On incoherence (e.g. BUY with target below current price)
+            # logs a warning + emits partial=True so the UI surfaces the
+            # "low confidence" banner. The brief itself ships unmodified —
+            # operators reviewing the audit trail can see what the LLM
+            # produced and what the deterministic check flagged.
+            if (
+                _check_recommendation_coherence(
+                    symbol=symbol,
+                    body_markdown=body_markdown,
+                    feature_bundle=feature_bundle,
+                )
+                is False
+            ):
+                partial = True
 
             pillars_decimals = {
                 name: pillar.score for name, pillar in methodology_result.pillars.items()

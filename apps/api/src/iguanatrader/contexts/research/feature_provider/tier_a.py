@@ -158,6 +158,14 @@ class TierAFeatureProvider:
             for name in _MOMENTUM_FEATURES:
                 if returns_bundle.get(name) is not None:
                     citations[name] = anchor_price_fact.id
+            # Expose the latest close as a top-level feature so the
+            # synthesizer prompt + coherence checker can reference it
+            # without re-parsing the bars JSONB. Re-uses the same
+            # historical_prices_window fact as citation anchor.
+            close_value = returns_bundle.get("close_price")
+            values["close_price"] = (close_value, "A")
+            if close_value is not None:
+                citations["close_price"] = anchor_price_fact.id
 
         return FeatureBundle(values=values, fact_citations=citations)
 
@@ -283,7 +291,12 @@ class TierAFeatureProvider:
                         rel_str = _clip(_HALF + (ret_12m - spy_ret_12m) / Decimal("2"))
 
         return (
-            {"return_3m": ret_3m, "return_12m": ret_12m, "relative_strength": rel_str},
+            {
+                "return_3m": ret_3m,
+                "return_12m": ret_12m,
+                "relative_strength": rel_str,
+                "close_price": sym_now,
+            },
             sym_fact,
         )
 

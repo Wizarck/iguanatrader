@@ -28,7 +28,14 @@ Produce a research brief in **markdown** with the following structure:
      - **Action**: one word, exactly one of `BUY`, `HOLD`, or `AVOID`.
        - **Data-sufficiency override (highest precedence)**: if ANY tier-A required feature is missing in *Available features* (`None`), the action MUST be `HOLD` regardless of the composite score, and the prose must explicitly state that the rating is *low-confidence pending tier-A data*. Missing data is NOT a sell signal — it is an "insufficient information to decide" signal. A genuine AVOID requires negative evidence from populated features, not the absence of data.
        - Otherwise pick on the composite score: ≥0.65 → BUY, 0.40-0.64 → HOLD, <0.40 → AVOID.
-     - **Target price**: a single number (USD) with a 12-month horizon. Anchor on the analyst consensus target when cited; otherwise extrapolate from the current price + an expected return derived from the value + momentum pillars. Round to two decimals.
+     - **Target price**: a single number (USD) with a 12-month horizon. **Anchoring is hierarchical and MANDATORY**:
+       1. If `analyst_target_price` is present in *Available features* and is not `None`, the target MUST equal that value (rounded to two decimals). Do NOT invent a different number based on multiple-compression intuition — the consensus is the canonical anchor.
+       2. Otherwise, extrapolate from the latest `close_price` (or the price hero in the features block) plus an expected return derived from the value + momentum pillars. Justify the extrapolation in the *Value* section prose.
+       **Coherence rule (hard constraint)**: the target MUST be directionally consistent with **Action**:
+         * `BUY` → target ≥ current price (positive expected return)
+         * `HOLD` → target within ±15% of current price
+         * `AVOID` → target ≤ current price (negative expected return)
+       If the consensus anchor violates the coherence rule (e.g. consensus target below current price but composite score says BUY), downgrade **Action** to `HOLD` and explain the conflict in the first *Key risks* bullet. Never emit a BUY with a target below the current price — that is internally contradictory.
      - **Horizon**: always `12 months`.
      - **Key risks**: 1-3 short bullet phrases (`- risk one ...`) covering the highest-impact downside catalysts implied by the features (e.g. elevated P/B, eroding momentum). When the rating is low-confidence due to missing data, the FIRST risk bullet MUST flag the specific missing tier-A inputs.
    - The three pillar sections (`## Growth`, `## Value`, `## Momentum`) each get 2-4 sentences of analyst prose. Tie each pillar's prose back to the cited features.
