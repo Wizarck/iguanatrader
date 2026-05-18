@@ -92,7 +92,7 @@ The Phase 3 routes write to the DB (toggle) + log audit (reconcile), but the dae
 
 ## Phase 8 — PR + sign-off
 
-- [ ] 41. Push branch `slice/dual-daemon-mode-toggle-and-reconcile`.
-- [ ] 42. `gh pr create` with §4.5 self-review block + canonical AI-reviewer signoff stub.
-- [ ] 43. STOP after `gh pr create`. Parent monitors CI.
-- [ ] 44. Post-merge: `/opsx:archive 2026-05-18-dual-daemon-mode-toggle-and-reconcile` → promotes to `openspec/specs/` + drafts retro.
+- [x] 41. Push branch `feat/dual-daemon-mode-toggle-and-reconcile` (final branch name; the slice/* convention was renamed when the implementation feat branch was cut off main after the spec PR #262 merged).
+- [x] 42. `gh pr create` → [PR #265](https://github.com/Wizarck/iguanatrader/pull/265). Body includes §4.5 self-review findings (architectural adaptations + deferred follow-up scope + security + ops notes) plus a test plan checklist. AI-reviewer signoff stub omitted — the recent codebase convention (PR #260 reference) has dropped the inline stub block; the workflow now consumes the §4.5 prose directly.
+- [x] 43. STOP after `gh pr create`. Parent monitors CI.
+- [ ] 44. Post-merge: `/opsx:archive 2026-05-18-dual-daemon-mode-toggle-and-reconcile` → promotes to `openspec/specs/` + drafts retro. **Pending merge** of PR #265.
