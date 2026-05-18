@@ -934,4 +934,162 @@ async def _ingest_finnhub_async(
     typer.echo(f"OK — symbol={symbol} include={include} facts_inserted={inserted}")
 
 
+@ingest_app.command("fool-transcript")
+def ingest_fool_transcript(
+    symbol: str = typer.Argument(
+        ...,
+        help="Ticker symbol the transcript belongs to (e.g. NVDA).",
+    ),
+    url: str | None = typer.Option(
+        None,
+        "--url",
+        help=(
+            "Direct fool.com transcript URL. If supplied, --year/--month/--day/--slug "
+            "are ignored. Otherwise all four must be set."
+        ),
+    ),
+    year: int | None = typer.Option(None, "--year", help="Publication year (with --slug)."),
+    month: int | None = typer.Option(None, "--month", help="Publication month (with --slug)."),
+    day: int | None = typer.Option(None, "--day", help="Publication day (with --slug)."),
+    slug: str | None = typer.Option(
+        None,
+        "--slug",
+        help=(
+            "Dash-separated slug from the transcript URL (e.g. "
+            "`nvidia-corp-nvda-q1-2026-earnings-call-transcript`)."
+        ),
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Scrape a single Motley Fool earnings-call transcript.
+
+    Requires the opt-in env flag ``ENABLE_FOOL_SCRAPER=true``. The
+    adapter respects robots.txt and rate-limits to one request per
+    three seconds.
+
+    Two invocation modes:
+
+    \b
+    1. Direct URL:
+       iguanatrader research ingest fool-transcript NVDA \\
+         --url https://www.fool.com/earnings/call-transcripts/2026/05/15/<slug>/
+
+    \b
+    2. By date + slug:
+       iguanatrader research ingest fool-transcript NVDA \\
+         --year 2026 --month 5 --day 15 --slug nvidia-corp-nvda-q1-2026-...
+
+    The resulting draft carries ``fact_kind='fool.earnings_transcript'``
+    with ``value_text`` containing the parsed transcript body.
+    """
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info(
+        "cli.research.ingest.fool_transcript.invoked",
+        symbol=symbol,
+        url=url,
+        year=year,
+        slug=slug,
+    )
+
+    asyncio.run(
+        _ingest_fool_transcript_async(
+            symbol=symbol,
+            url=url,
+            year=year,
+            month=month,
+            day=day,
+            slug=slug,
+            tenant_slug=tenant,
+        )
+    )
+
+
+async def _ingest_fool_transcript_async(
+    *,
+    symbol: str,
+    url: str | None,
+    year: int | None,
+    month: int | None,
+    day: int | None,
+    slug: str | None,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of the ``ingest fool-transcript`` command."""
+    from dataclasses import replace as dc_replace
+
+    import sqlalchemy as sa
+
+    from iguanatrader.contexts.research.errors import ConfigError, SourceUnavailableError
+    from iguanatrader.contexts.research.models import SymbolUniverse
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.motley_fool import (
+        MotleyFoolTranscriptSource,
+    )
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            sym_row = (
+                await session.execute(
+                    sa.select(SymbolUniverse.id).where(SymbolUniverse.symbol == symbol)
+                )
+            ).first()
+            if sym_row is None:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r} not registered for this tenant. Run "
+                    f"`iguanatrader admin register-symbol {symbol} --tenant <slug>` first."
+                )
+                raise typer.Exit(code=1)
+            symbol_universe_id = sym_row[0]
+
+            try:
+                adapter = MotleyFoolTranscriptSource()
+            except ConfigError as exc:
+                typer.echo(f"ERROR: {exc.detail}")
+                raise typer.Exit(code=2) from None
+
+            try:
+                draft = await adapter.fetch_transcript_async(
+                    url=url,
+                    year=year,
+                    month=month,
+                    day=day,
+                    slug=slug,
+                    symbol=symbol,
+                )
+            except SourceUnavailableError as exc:
+                typer.echo(f"ERROR: {exc.detail}")
+                raise typer.Exit(code=3) from None
+            except ValueError as exc:
+                typer.echo(f"ERROR: {exc}")
+                raise typer.Exit(code=2) from None
+
+            if draft is None:
+                typer.echo("WARN: no recoverable body at that URL — nothing persisted.")
+                return
+
+            repo = ResearchRepository()
+            stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+            await repo.insert_fact(stamped)
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(f"OK — symbol={symbol} transcript persisted ({len(draft.value_text or '')} chars)")
+
+
 __all__ = ["app"]
