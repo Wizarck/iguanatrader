@@ -9,40 +9,26 @@ in isolation.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from iguanatrader.contexts.approval.auto_explain import (
     AutoExplainEnrichingDispatcher,
 )
+from iguanatrader.contexts.approval.channels.types import ApprovalRequestRow
 
 
-@dataclass
-class _FakeApprovalRequestRow:
-    """Stand-in for the production :class:`ApprovalRequestRow`.
-
-    Mutable (regular dataclass) so the wrapper can attach the
-    ``narrative`` attribute via ``object.__setattr__`` — mirrors what
-    the real frozen-row variant supports.
-    """
-
-    id: UUID
-    proposal_id: UUID
-    tenant_id: UUID
-    expires_at: datetime
-    delivered_to_channels: list[str] = field(default_factory=list)
-
-
-def _request() -> _FakeApprovalRequestRow:
-    return _FakeApprovalRequestRow(
+def _request() -> ApprovalRequestRow:
+    return ApprovalRequestRow(
         id=uuid4(),
-        proposal_id=uuid4(),
         tenant_id=uuid4(),
-        expires_at=datetime(2026, 5, 18, 23, 59, tzinfo=UTC),
+        proposal_id=uuid4(),
         delivered_to_channels=["telegram"],
+        timeout_seconds=900,
+        expires_at=datetime(2026, 5, 18, 23, 59, tzinfo=UTC),
+        created_at=datetime(2026, 5, 18, 23, 44, tzinfo=UTC),
     )
 
 
