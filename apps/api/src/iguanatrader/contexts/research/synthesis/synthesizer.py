@@ -303,6 +303,21 @@ class Synthesizer:
         re.DOTALL,
     )
 
+    # Strip stray ``partial=true`` / ``"partial": true`` lines the LLM
+    # emits to satisfy the prompt's "include partial=true if any tier-A
+    # feature is None" instruction. The synthesizer parses the flag via
+    # :meth:`_is_partial_in_text` BEFORE stripping, so the brief's
+    # `partial` field stays correct; the body just shouldn't leak the
+    # raw marker as visible prose.
+    _PARTIAL_MARKER_RE = re.compile(
+        r"^\s*(?:`?partial\s*=\s*true`?|\"partial\"\s*:\s*true,?)\s*$\n?",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+    @classmethod
+    def _strip_partial_marker(cls, body: str) -> str:
+        return cls._PARTIAL_MARKER_RE.sub("", body).strip()
+
     @classmethod
     def _parse_output(cls, text: str) -> tuple[str, list[AuditTrailEntry]]:
         """Extract markdown body + audit_trail_entries from LLM output.
@@ -317,10 +332,17 @@ class Synthesizer:
            failure, still strip the dangling block from the body so
            users don't see raw JSON.
         3. No fence at all — return the body untouched, empty entries.
+
+        After the audit-trail block is removed, the body is also scrubbed
+        of any stray ``partial=true`` markers the LLM emitted as prose
+        (per the prompt instruction). The ``partial`` flag is detected
+        upstream in :meth:`synthesize` via :meth:`_is_partial_in_text`,
+        so the brief response is not affected.
         """
         match = cls._AUDIT_TRAIL_RE.search(text)
         if match is not None:
-            return cls._consume_complete_block(text, match)
+            body, entries = cls._consume_complete_block(text, match)
+            return cls._strip_partial_marker(body), entries
 
         truncated = cls._AUDIT_TRAIL_TRUNCATED_RE.search(text)
         if truncated is not None:
@@ -330,9 +352,9 @@ class Synthesizer:
                 "research.synthesis.audit_trail_block_truncated",
                 extra={"recovered_entries": len(entries)},
             )
-            return body.strip(), entries
+            return cls._strip_partial_marker(body), entries
 
-        return text.strip(), []
+        return cls._strip_partial_marker(text), []
 
     @classmethod
     def _consume_complete_block(

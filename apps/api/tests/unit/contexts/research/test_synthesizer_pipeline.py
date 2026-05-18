@@ -133,3 +133,24 @@ def test_parse_output_extracts_audit_trail_block() -> None:
     assert "json" not in body_clean.lower()
     assert len(entries) == 1
     assert entries[0].metric == "forward_pe"
+
+
+def test_parse_output_strips_partial_true_prose_marker() -> None:
+    """Slice brief-ui-cleanup (2026-05-18): the prompt instructs the LLM
+    to emit ``partial=true`` somewhere in its response when tier-A is
+    missing. The synthesizer detects the flag via :meth:`_is_partial_in_text`
+    BEFORE the body is rendered, but the literal marker used to leak
+    through as visible prose (operator-facing garbage). The parser
+    must scrub it from the body."""
+    body = "partial=true\n\n" "## Recommendation\n\n**Action**: HOLD\n\n" "Some growth analysis.\n"
+    body_clean, _entries = Synthesizer._parse_output(body)
+    assert "partial=true" not in body_clean
+    assert "## Recommendation" in body_clean
+    assert "**Action**: HOLD" in body_clean
+
+
+def test_parse_output_strips_partial_true_with_audit_trail() -> None:
+    body = "## Thesis\n\nNarrative.\npartial=true\n\n" '```json\n{"audit_trail_entries": []}\n```\n'
+    body_clean, _entries = Synthesizer._parse_output(body)
+    assert "partial=true" not in body_clean
+    assert "Narrative." in body_clean

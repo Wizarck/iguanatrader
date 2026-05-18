@@ -74,23 +74,44 @@ def _summarise_fact_value(fact: ResearchFact) -> str:
     if fact.value_text is not None:
         return _clip(fact.value_text)
     if fact.value_jsonb is not None:
-        return _clip(_summarise_jsonb(fact.value_jsonb))
+        return _clip(_summarise_jsonb(fact.value_jsonb, fact_kind=fact.fact_kind))
     return ""
 
 
-def _summarise_jsonb(blob: Any) -> str:
+#: Per-fact-kind preferred scalar — when the multi-key payload contains
+#: this key, surface its value as the chip excerpt instead of falling
+#: back to "fact_kind only". Keeps chips concise yet meaningful for the
+#: known shapes the OpenBB sidecar emits.
+_FACT_KIND_PRIMARY_SCALAR: dict[str, tuple[str, ...]] = {
+    "fundamentals": ("forward_pe", "pe_ratio", "price_to_book"),
+    "analyst_ratings": ("analyst_target_price", "target_price"),
+    "esg_score": ("esg_total", "total_score"),
+}
+
+
+def _summarise_jsonb(blob: Any, *, fact_kind: str = "") -> str:
     """Compact ``value_jsonb`` into a short scan-friendly excerpt.
 
-    ``{"value": 164.5}`` → ``"164.5"``. Dicts with one key inline as just
-    the value; multi-key dicts list the keys; lists report length;
-    everything else is JSON-serialized.
+    Behaviour:
+
+    * ``{"value": X}`` (single-key) → ``str(X)``.
+    * Multi-key dict with a known primary scalar for the fact_kind →
+      ``"key=X"`` (e.g. ``forward_pe=32.74`` for fundamentals).
+    * Other multi-key dicts → empty string. The chip falls back to
+      ``fact_kind`` alone — meaningful, no garbage. Previous behaviour
+      (a stringified ``{a, b, c, d}`` keys-only dump) leaked schema
+      shape to the operator and read as broken UI.
+    * Lists → ``[N items]``.
+    * Scalars → ``str(value)``.
     """
     if isinstance(blob, dict):
         if len(blob) == 1:
             (only_value,) = blob.values()
             return str(only_value)
-        keys = ", ".join(str(k) for k in list(blob.keys())[:4])
-        return f"{{{keys}}}"
+        for key in _FACT_KIND_PRIMARY_SCALAR.get(fact_kind, ()):
+            if key in blob and blob[key] is not None:
+                return f"{key}={blob[key]}"
+        return ""
     if isinstance(blob, list):
         return f"[{len(blob)} items]"
     return json.dumps(blob, default=str)

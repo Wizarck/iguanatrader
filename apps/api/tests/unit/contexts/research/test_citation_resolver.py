@@ -82,6 +82,7 @@ class _FactStub:
     value_jsonb: Any | None = None
     unit: str | None = None
     currency: str | None = None
+    fact_kind: str = ""
 
 
 def test_summarise_prefers_numeric_with_currency() -> None:
@@ -116,14 +117,32 @@ def test_summarise_single_key_dict_inlines_value() -> None:
     assert _summarise_fact_value(fact) == "164.5"  # type: ignore[arg-type]
 
 
-def test_summarise_multi_key_dict_lists_keys() -> None:
+def test_summarise_fundamentals_surfaces_forward_pe() -> None:
+    # Multi-key dict + known fact_kind → return the primary scalar
+    # ("forward_pe=30.2") instead of the previous opaque keys dump.
     fact = _FactStub(
-        value_jsonb={"forward_pe": 30.2, "pb_ratio": 12.3, "market_cap": 4.2e12},
+        fact_kind="fundamentals",
+        value_jsonb={"forward_pe": 30.2, "pe_ratio": 28.4, "price_to_book": 12.3},
     )
-    out = _summarise_fact_value(fact)  # type: ignore[arg-type]
-    assert out.startswith("{")
-    assert "forward_pe" in out
-    assert "pb_ratio" in out
+    assert _summarise_fact_value(fact) == "forward_pe=30.2"  # type: ignore[arg-type]
+
+
+def test_summarise_analyst_ratings_surfaces_target() -> None:
+    fact = _FactStub(
+        fact_kind="analyst_ratings",
+        value_jsonb={"analyst_target_price": 164.5, "analyst_count": 25},
+    )
+    assert _summarise_fact_value(fact) == "analyst_target_price=164.5"  # type: ignore[arg-type]
+
+
+def test_summarise_unknown_multi_key_dict_returns_empty() -> None:
+    # An unfamiliar multi-key shape with no known primary scalar — chip
+    # falls back to fact_kind alone instead of leaking the keys list.
+    fact = _FactStub(
+        fact_kind="historical_prices_window",
+        value_jsonb={"symbol": "NVDA", "start_date": "2025-04-01", "bars": 250},
+    )
+    assert _summarise_fact_value(fact) == ""  # type: ignore[arg-type]
 
 
 def test_summarise_list_reports_length() -> None:

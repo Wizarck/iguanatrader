@@ -139,19 +139,29 @@
     cursor: not-allowed;
   }
   .btn-secondary {
+    display: inline-flex;
+    align-items: center;
     padding: 0.5rem 1rem;
-    background: transparent;
-    color: var(--ink);
-    border: 1px solid var(--mute);
+    background: var(--surface-2, rgba(255, 255, 255, 0.08));
+    color: var(--accent);
+    border: 1px solid var(--accent);
     border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     text-decoration: none;
     line-height: 1.4;
+    transition:
+      background 120ms ease,
+      color 120ms ease;
   }
   .btn-secondary:hover {
-    background: var(--surface-2, rgba(0, 0, 0, 0.06));
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  .btn-secondary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .error {
     color: var(--err-fg, #c00);
