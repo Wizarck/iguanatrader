@@ -30,8 +30,8 @@ from iguanatrader.contexts.research.models import (
 from iguanatrader.contexts.research.on_demand_ingestion import (
     OnDemandIngestionService,
 )
+from iguanatrader.contexts.research.ports import ResearchFactDraft
 from iguanatrader.contexts.research.repository import ResearchRepository
-from iguanatrader.contexts.research.sources.base import ResearchFactDraft
 from iguanatrader.persistence import (
     Tenant,
     engine_factory,

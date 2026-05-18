@@ -24,19 +24,37 @@ useful problem+json without committing a half-ingested fact set.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
-from datetime import timedelta
-from typing import TYPE_CHECKING
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from iguanatrader.shared.time import now as utc_now
 
 if TYPE_CHECKING:
+    from iguanatrader.contexts.research.ports import ResearchFactDraft
     from iguanatrader.contexts.research.repository import ResearchRepository
-    from iguanatrader.contexts.research.sources.openbb_sidecar import (
-        OpenBBSidecarSource,
-    )
+
+
+class OpenBBSourceLike(Protocol):
+    """Structural subset of :class:`OpenBBSidecarSource` we depend on.
+
+    Lets tests inject a scripted fake without inheriting from the real
+    adapter (which would drag in httpx / sidecar HTTP plumbing).
+    """
+
+    def fetch(
+        self, symbol: str, since: datetime | None
+    ) -> Iterable[ResearchFactDraft]: ...
+
+    def fetch_prices(
+        self,
+        symbol: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> Iterable[ResearchFactDraft]: ...
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +80,7 @@ class OnDemandIngestionService:
         self,
         *,
         repository: ResearchRepository,
-        openbb_source: OpenBBSidecarSource,
+        openbb_source: OpenBBSourceLike,
     ) -> None:
         self._repo = repository
         self._source = openbb_source
