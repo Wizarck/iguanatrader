@@ -326,26 +326,79 @@
     padding: 0.05rem 0.25rem;
     border-radius: 3px;
   }
-  .brief-body :global(.citation-chip) {
-    display: inline-block;
-    padding: 0 0.35rem;
-    margin: 0 0.1rem;
-    border-radius: 3px;
-    background: var(--surface-hover, rgba(0, 0, 0, 0.06));
-    color: var(--accent);
-    font-size: 0.85em;
+  .brief-body :global(.citation-sup) {
+    line-height: 0;
+    margin-left: 1px;
+  }
+  .brief-body :global(.citation-ref) {
     text-decoration: none;
-    border: 1px solid var(--mute);
-    line-height: 1.5;
+    color: var(--accent);
+    font-size: 0.7em;
+    font-weight: 600;
+    padding: 0 0.1em;
+    vertical-align: super;
   }
-  .brief-body :global(.citation-chip:hover) {
-    background: var(--accent);
-    color: var(--accent-fg, #fff);
+  .brief-body :global(.citation-ref:hover) {
+    text-decoration: underline;
   }
-  .brief-body :global(.citation-chip-broken) {
+  .brief-body :global(.citation-ref-broken) {
     color: var(--warn-fg, #960);
-    border-style: dashed;
     cursor: help;
+  }
+  .brief-body :global(.brief-references) {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--mute);
+  }
+  .brief-body :global(.brief-references h3) {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--mute);
+    margin: 0 0 0.5rem;
+  }
+  .brief-body :global(.references-list) {
+    margin: 0;
+    padding-left: 1.5rem;
+    font-size: 12px;
+    color: var(--mute);
+    line-height: 1.6;
+  }
+  .brief-body :global(.references-list li) {
+    margin: 0.15rem 0;
+  }
+  .brief-body :global(.references-list .ref-back) {
+    color: var(--accent);
+    text-decoration: none;
+    margin-right: 0.4rem;
+  }
+  .brief-body :global(.references-list .ref-back:hover) {
+    text-decoration: underline;
+  }
+  .brief-body :global(.references-list .ref-text) {
+    color: var(--ink);
+  }
+  .brief-body :global(.references-list .ref-meta) {
+    color: var(--mute);
+    margin-left: 0.4rem;
+  }
+  .brief-body :global(.references-list .ref-link) {
+    margin-left: 0.4rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .brief-body :global(.references-list .ref-link:hover) {
+    text-decoration: underline;
+  }
+  .brief-body :global(.references-list .ref-item-broken) {
+    color: var(--warn-fg, #960);
+  }
+  .brief-body :global(.references-list :target) {
+    background: var(--surface-hover, rgba(0, 0, 0, 0.08));
+    border-radius: 3px;
+    padding: 0 0.25rem;
   }
   .as-of-controls {
     display: flex;
