@@ -14,6 +14,10 @@
 .gemini/skills/
 .skills-sources/
 
+# Agent-spawned worktrees + scratch state (not project artifacts).
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
 # Node — pnpm is the canonical workspace manager (per slice 1). npm/yarn
 # competing lockfiles must NOT enter the repo.
 node_modules/
