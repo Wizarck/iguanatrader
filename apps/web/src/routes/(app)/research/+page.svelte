@@ -14,7 +14,7 @@
 
 <script lang="ts">
   import RecentSymbolsList from '$lib/components/RecentSymbolsList.svelte';
-  import SymbolSearchCard from '$lib/components/SymbolSearchCard.svelte';
+  import SymbolSearch from '$lib/components/research/SymbolSearch.svelte';
 
   const STORAGE_KEY = 'iguanatrader.research.recent';
 </script>
@@ -30,7 +30,7 @@
     Brand-new symbols auto-register on the first refresh and the system pulls
     fundamentals + analyst ratings + ESG + a 13-month price window inline.
   </p>
-  <SymbolSearchCard />
+  <SymbolSearch />
   <RecentSymbolsList storageKey={STORAGE_KEY} />
 </section>
 
