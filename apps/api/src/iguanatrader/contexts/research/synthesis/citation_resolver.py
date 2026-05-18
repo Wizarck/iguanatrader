@@ -89,28 +89,63 @@ _FACT_KIND_PRIMARY_SCALAR: dict[str, tuple[str, ...]] = {
 }
 
 
+def _fmt_number(value: Any) -> str:
+    """Format a numeric value for chip tooltip — 2 decimals, no
+    trailing-zero noise (``32.7`` not ``32.70``, ``32.74`` not
+    ``32.73839``). Non-numerics fall through to ``str()``.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if not (f == f and f not in (float("inf"), float("-inf"))):  # NaN/inf
+        return str(value)
+    return f"{f:.2f}".rstrip("0").rstrip(".")
+
+
+def _summarise_historical_prices(blob: dict[str, Any]) -> str:
+    """Extract the last close from a `historical_prices_window` payload."""
+    bars = blob.get("bars")
+    if not isinstance(bars, list) or not bars:
+        return ""
+    last = bars[-1]
+    if not isinstance(last, dict):
+        return ""
+    close = last.get("close")
+    if close is None:
+        return ""
+    date = last.get("date") or ""
+    formatted = _fmt_number(close)
+    return f"last={formatted}" + (f" @ {date}" if date else "")
+
+
 def _summarise_jsonb(blob: Any, *, fact_kind: str = "") -> str:
     """Compact ``value_jsonb`` into a short scan-friendly excerpt.
 
+    Used only for the chip tooltip — the chip text itself is the
+    pretty fact_kind label (e.g. ``prices``), not this excerpt.
+
     Behaviour:
 
+    * ``historical_prices_window`` → ``"last=424.10 @ 2026-05-15"``.
     * ``{"value": X}`` (single-key) → ``str(X)``.
     * Multi-key dict with a known primary scalar for the fact_kind →
       ``"key=X"`` (e.g. ``forward_pe=32.74`` for fundamentals).
-    * Other multi-key dicts → empty string. The chip falls back to
-      ``fact_kind`` alone — meaningful, no garbage. Previous behaviour
+    * Other multi-key dicts → empty string. Previous behaviour
       (a stringified ``{a, b, c, d}`` keys-only dump) leaked schema
       shape to the operator and read as broken UI.
     * Lists → ``[N items]``.
     * Scalars → ``str(value)``.
     """
     if isinstance(blob, dict):
+        if fact_kind == "historical_prices_window":
+            return _summarise_historical_prices(blob)
         if len(blob) == 1:
             (only_value,) = blob.values()
-            return str(only_value)
+            return _fmt_number(only_value)
         for key in _FACT_KIND_PRIMARY_SCALAR.get(fact_kind, ()):
             if key in blob and blob[key] is not None:
-                return f"{key}={blob[key]}"
+                return f"{key}={_fmt_number(blob[key])}"
         return ""
     if isinstance(blob, list):
         return f"[{len(blob)} items]"

@@ -202,29 +202,33 @@ describe('renderBriefBody — citation chip inlining', () => {
 describe('renderBriefBody — fact_kind + value_excerpt enrichment', () => {
   const FACT_A = '00000000-0000-0000-0000-00000000000a';
 
-  it('uses fact_kind · value_excerpt as the chip label when both present', () => {
+  it('chip body uses a friendly fact_kind label (not the snake_case raw)', () => {
+    // `historical_prices_window` and `analyst_ratings` map to short
+    // human labels so the chip reads as a citation marker rather than
+    // as schema leakage in the middle of prose.
     const html = renderBriefBody(
-      `analyst target per [fact:${FACT_A}]`,
+      `momentum per [fact:${FACT_A}]`,
       new Map([
         [
           FACT_A,
           {
             source_id: 'openbb-sidecar',
-            source_url: 'http://openbb_sidecar:8765/v1/equity/ratings/NVDA',
-            fact_kind: 'analyst_target_price',
-            value_excerpt: '164.5 USD'
+            source_url: 'http://openbb_sidecar:8765/v1/equity/prices/NVDA',
+            fact_kind: 'historical_prices_window',
+            value_excerpt: 'last=424.10 @ 2026-05-15'
           }
         ]
       ])
     );
-    // The chip text now describes the fact, not just its source.
-    expect(html).toContain('analyst_target_price · 164.5 USD');
-    // Source name moves to the tooltip so the reader can still trace
-    // provenance on hover.
-    expect(html).toMatch(/title="[^"]*openbb-sidecar[^"]*"/);
+    // Chip BODY is `prices` (raw fact_kind + value live only in tooltip).
+    expect(html).toMatch(/>prices<\/span>/);
+    expect(html).not.toMatch(/>historical_prices_window</);
+    expect(html).not.toMatch(/>[^<]*last=424\.10[^<]*</);
+    // Tooltip retains fact_kind + value for hover trace.
+    expect(html).toMatch(/title="[^"]*historical_prices_window:\s*last=424\.10[^"]*"/);
   });
 
-  it('falls back to fact_kind alone when value_excerpt empty', () => {
+  it('falls back to spaced-lowercase for unknown fact_kind', () => {
     const html = renderBriefBody(
       `see [fact:${FACT_A}]`,
       new Map([
@@ -232,19 +236,18 @@ describe('renderBriefBody — fact_kind + value_excerpt enrichment', () => {
           FACT_A,
           {
             source_id: 'openbb-sidecar',
-            source_url: 'http://openbb_sidecar:8765/v1/equity/fundamentals/NVDA',
-            fact_kind: 'fundamentals_snapshot',
+            source_url: 'http://openbb_sidecar:8765/v1/equity/x/NVDA',
+            fact_kind: 'some_unmapped_kind',
             value_excerpt: ''
           }
         ]
       ])
     );
-    // Chip body is just the fact_kind (the closing > marks the end of
-    // the opening tag, then the label, then the closing </span>).
-    expect(html).toMatch(/>fundamentals_snapshot<\/span>/);
+    // Underscores become spaces so the chip stops reading as snake_case.
+    expect(html).toMatch(/>some unmapped kind<\/span>/);
   });
 
-  it('keeps source_id label when neither fact_kind nor value_excerpt set', () => {
+  it('keeps source_id label when fact_kind is missing', () => {
     const html = renderBriefBody(
       `legacy [fact:${FACT_A}]`,
       new Map([[FACT_A, { source_id: 'manual-entry' }]])
@@ -261,18 +264,18 @@ describe('renderBriefBody — fact_kind + value_excerpt enrichment', () => {
           {
             source_id: 'edgar-r2',
             source_url: 'https://edgar.test/10q',
-            fact_kind: 'revenue_fy',
-            value_excerpt: '60.92B USD',
+            fact_kind: 'fundamentals',
+            value_excerpt: 'forward_pe=32.74',
             retrieval_method: 'api',
             retrieved_at: '2026-05-15T00:00:00Z'
           }
         ]
       ])
     );
-    expect(html).toMatch(/title="[^"]*revenue_fy:\s*60\.92B USD[^"]*"/);
+    expect(html).toMatch(/title="[^"]*fundamentals:\s*forward_pe=32\.74[^"]*"/);
     // Anchor stays (publicly reachable URL).
     expect(html).toMatch(/<a [^>]*class="citation-chip"[^>]*>/);
-    // Chip body uses the new label format.
-    expect(html).toContain('revenue_fy · 60.92B USD');
+    // Chip body uses the friendly label, not the raw excerpt.
+    expect(html).toMatch(/>fundamentals<\/a>/);
   });
 });
