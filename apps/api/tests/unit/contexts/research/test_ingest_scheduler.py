@@ -71,7 +71,7 @@ class _FakeRecorder(IngestRunRecorder):
         self.finishes: list[dict[str, Any]] = []
         self._next_id = uuid4
 
-    async def record_start(  # type: ignore[override]
+    async def record_start(
         self,
         *,
         tenant_id: UUID,
@@ -93,7 +93,7 @@ class _FakeRecorder(IngestRunRecorder):
         )
         return run_id
 
-    async def record_finish(  # type: ignore[override]
+    async def record_finish(
         self,
         *,
         run_id: UUID,
@@ -195,7 +195,7 @@ def test_one_spec_per_source_per_row() -> None:
     )
     # 2 symbols × 2 sources → 4 specs.
     assert len(specs) == 4
-    symbols = sorted({s.symbol for s in specs})
+    symbols = sorted({s.symbol for s in specs if s.symbol is not None})
     assert symbols == ["AMD", "NVDA"]
 
 
