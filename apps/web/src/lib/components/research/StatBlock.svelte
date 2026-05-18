@@ -56,14 +56,19 @@
     return `${sign}${value.toFixed(digits)}%`;
   }
 
-  function fmtCompact(value: number | null): string {
+  function fmtCompact(value: number | null, currencyPrefix = ''): string {
     if (value === null || value === undefined) return '—';
     const abs = Math.abs(value);
-    if (abs >= 1e12) return `${(value / 1e12).toFixed(2)}T`;
-    if (abs >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
-    if (abs >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
-    if (abs >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
-    return value.toFixed(0);
+    if (abs >= 1e12) return `${currencyPrefix}${(value / 1e12).toFixed(2)}T`;
+    if (abs >= 1e9) return `${currencyPrefix}${(value / 1e9).toFixed(2)}B`;
+    if (abs >= 1e6) return `${currencyPrefix}${(value / 1e6).toFixed(2)}M`;
+    if (abs >= 1e3) return `${currencyPrefix}${(value / 1e3).toFixed(1)}K`;
+    return `${currencyPrefix}${value.toFixed(0)}`;
+  }
+
+  function fmtPrice(value: number | null): string {
+    if (value === null || value === undefined) return '—';
+    return `$${value.toFixed(2)}`;
   }
 
   function signClass(value: number | null): string {
@@ -75,33 +80,28 @@
 </script>
 
 <section class="stat-block" aria-label="Snapshot KPIs">
-  <div class="row">
-    <div class="block">
-      <h3>Price</h3>
-      <dl>
-        <div>
-          <dt>Last</dt>
-          <dd>{fmt(stats.last_price)}</dd>
-        </div>
-        <div>
-          <dt>Day chg</dt>
-          <dd class={signClass(stats.day_change_pct)}>{fmtPct(stats.day_change_pct)}</dd>
-        </div>
-        <div>
-          <dt>52w range</dt>
-          <dd>{fmt(stats.low_52w)} — {fmt(stats.high_52w)}</dd>
-        </div>
-        <div>
-          <dt>Pos in 52w</dt>
-          <dd>{fmt(stats.position_in_52w_pct, { digits: 0, suffix: '%' })}</dd>
-        </div>
-        <div>
-          <dt>Avg vol 20d</dt>
-          <dd>{fmtCompact(stats.avg_volume_20d)}</dd>
-        </div>
-      </dl>
+  <!-- Hero: last price + day chg as the visual anchor. Range and avg
+       volume sit beneath in smaller meta. -->
+  <div class="hero">
+    <div class="hero-price">
+      <span class="hero-value">{fmtPrice(stats.last_price)}</span>
+      <span class="hero-delta {signClass(stats.day_change_pct)}"
+        >{fmtPct(stats.day_change_pct, 2)} today</span
+      >
     </div>
+    <div class="hero-meta">
+      <span
+        >52w&nbsp;<strong>{fmtPrice(stats.low_52w)}</strong> –
+        <strong>{fmtPrice(stats.high_52w)}</strong></span
+      >
+      <span>
+        Pos&nbsp;<strong>{fmt(stats.position_in_52w_pct, { digits: 0, suffix: '%' })}</strong>
+      </span>
+      <span>Avg vol 20d&nbsp;<strong>{fmtCompact(stats.avg_volume_20d)}</strong></span>
+    </div>
+  </div>
 
+  <div class="row">
     <div class="block">
       <h3>Risk</h3>
       <dl>
@@ -133,7 +133,7 @@
         </div>
         <div>
           <dt>Market cap</dt>
-          <dd>{fmtCompact(stats.market_cap)}</dd>
+          <dd>{fmtCompact(stats.market_cap, '$')}</dd>
         </div>
       </dl>
     </div>
@@ -181,7 +181,7 @@
       <dl>
         <div>
           <dt>Mean target</dt>
-          <dd>{fmt(stats.analyst_target_price, { digits: 2 })}</dd>
+          <dd>{fmtPrice(stats.analyst_target_price)}</dd>
         </div>
         <div>
           <dt>Analysts</dt>
@@ -207,8 +207,57 @@
     background: var(--surface);
     border: 1px solid var(--mute);
     border-radius: 6px;
-    padding: 16px 20px;
+    padding: 20px 24px;
     margin-bottom: 16px;
+  }
+  .hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--mute);
+  }
+  .hero-price {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .hero-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .hero-delta {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-delta.positive {
+    color: var(--success, #2da44e);
+  }
+  .hero-delta.negative {
+    color: var(--destructive, #cf222e);
+  }
+  .hero-delta.neutral {
+    color: var(--mute);
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 18px;
+    font-size: 12px;
+    color: var(--mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-meta strong {
+    color: var(--ink);
+    font-weight: 600;
   }
   .row {
     display: grid;

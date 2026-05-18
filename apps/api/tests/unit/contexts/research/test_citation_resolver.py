@@ -160,3 +160,31 @@ def test_summarise_empty_when_no_value() -> None:
 def test_summarise_numeric_wins_over_jsonb() -> None:
     fact = _FactStub(value_numeric=Decimal("42"), value_jsonb={"x": 1})
     assert _summarise_fact_value(fact) == "42"  # type: ignore[arg-type]
+
+
+def test_summarise_rounds_jsonb_primary_scalar_to_two_decimals() -> None:
+    # 32.73839 → 32.74; trailing zeros stripped (`32.7` not `32.70`).
+    fact = _FactStub(
+        fact_kind="fundamentals",
+        value_jsonb={"forward_pe": 32.73839, "pe_ratio": 28.0, "price_to_book": 12.3},
+    )
+    assert _summarise_fact_value(fact) == "forward_pe=32.74"  # type: ignore[arg-type]
+
+
+def test_summarise_historical_prices_extracts_last_close() -> None:
+    fact = _FactStub(
+        fact_kind="historical_prices_window",
+        value_jsonb={
+            "symbol": "AMD",
+            "bars": [
+                {"date": "2026-05-14", "close": 420.0},
+                {"date": "2026-05-15", "close": 424.10},
+            ],
+        },
+    )
+    assert _summarise_fact_value(fact) == "last=424.1 @ 2026-05-15"  # type: ignore[arg-type]
+
+
+def test_summarise_historical_prices_empty_bars_returns_empty() -> None:
+    fact = _FactStub(fact_kind="historical_prices_window", value_jsonb={"bars": []})
+    assert _summarise_fact_value(fact) == ""  # type: ignore[arg-type]

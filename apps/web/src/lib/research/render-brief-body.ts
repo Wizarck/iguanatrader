@@ -82,17 +82,37 @@ function buildTooltip(factId: string, fact: FactProvenance | undefined): string 
   return parts.length > 0 ? parts.join(' · ') : `[fact:${factId.slice(0, 8)}]`;
 }
 
+// Friendly display labels for fact_kind. The raw snake_case
+// (`historical_prices_window`, `analyst_ratings`) reads as schema-leak
+// in inline prose. The chip is a citation marker, not a value display
+// — the actual number is in the surrounding sentence; the tooltip
+// carries the rich provenance.
+const FACT_KIND_DISPLAY: Record<string, string> = {
+  historical_prices_window: 'prices',
+  analyst_ratings: 'analysts',
+  fundamentals: 'fundamentals',
+  news_sentiment: 'news',
+  esg_score: 'ESG',
+  eps_growth_yoy: 'EPS growth',
+  revenue_growth_yoy: 'revenue growth',
+  earnings_surprises: 'earnings',
+  options_skew: 'options'
+};
+
+function prettyFactKind(kind: string): string {
+  if (FACT_KIND_DISPLAY[kind]) return FACT_KIND_DISPLAY[kind];
+  // Fallback: turn `some_snake_kind` → `some snake kind`.
+  return kind.replace(/_/g, ' ');
+}
+
 function buildChipLabel(factId: string, fact: FactProvenance | undefined): string {
   if (!fact) return `[fact:${factId.slice(0, 8)}]`;
-  // Prefer the fact's actual content over its source name. A chip that
-  // reads "analyst_target_price · 164.5" beats one that reads
-  // "openbb-sidecar" with no context.
-  if (fact.fact_kind && fact.value_excerpt) {
-    return `${fact.fact_kind} · ${fact.value_excerpt}`;
-  }
-  if (fact.fact_kind) return fact.fact_kind;
-  if (fact.value_excerpt) return fact.value_excerpt;
-  return fact.source_id ?? `[fact:${factId.slice(0, 8)}]`;
+  // Keep the chip TEXT short — it's a citation marker living inside
+  // prose that already shows the numeric value. The rich detail
+  // (fact_kind + value + source + retrieved_at) lives in the tooltip.
+  if (fact.fact_kind) return prettyFactKind(fact.fact_kind);
+  if (fact.source_id) return fact.source_id;
+  return `[fact:${factId.slice(0, 8)}]`;
 }
 
 // Hostnames that resolve only inside the docker-compose / k8s network.
