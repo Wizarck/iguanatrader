@@ -73,6 +73,14 @@ services:
       - IGUANATRADER_SMTP_FROM_ADDRESS=${IGUANATRADER_SMTP_FROM_ADDRESS:-iguanatrader@palafitofood.com}
       - IGUANATRADER_SMTP_FROM_NAME=${IGUANATRADER_SMTP_FROM_NAME:-iguanatrader}
       - IGUANATRADER_SMTP_USE_TLS=${IGUANATRADER_SMTP_USE_TLS:-true}
+      # MCP server (Hermes / external LLM consumers). Empty token disables
+      # the /api/v1/mcp/* routes (503). Token lives in
+      # ``.secrets/{paper,live}.env.enc`` under ``IGUANATRADER_MCP_TOKEN``;
+      # tenant slug must match the bootstrapped tenant from step 2 of the
+      # MVP bring-up. Operator exports both before ``docker compose up``;
+      # slice ``sops-decrypt-at-boot`` will replace the manual export.
+      - IGUANATRADER_MCP_TOKEN=${IGUANATRADER_MCP_TOKEN:-}
+      - IGUANATRADER_MCP_TENANT_SLUG=${IGUANATRADER_MCP_TENANT_SLUG:-}
       # Telegram bot (optional — empty disables that channel).
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       # Hermes/WhatsApp (optional — empty disables that channel).

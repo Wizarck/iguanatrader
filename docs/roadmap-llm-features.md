@@ -130,9 +130,21 @@ When a `ProposalCreated` event fires and the proposal's `confidence_score > thre
 
 ## B — iguanatrader-mcp server (exposed to Hermes)
 
-**Status**: proposed
+**Status**: in-progress (scaffolding + action tools shipped; JSON-RPC framing + Hermes registration pending — see [B1](#b1--mcp-json-rpc-framing--hermes-registration) below).
 **Prereq**: A2 (so risk-review fields exist for the MCP to read)
 **Estimated**: ~600 LOC, no new image
+
+### Shipped (as of 2026-05-18)
+
+- Read-only resources at `/api/v1/mcp/{trades,briefs,portfolio}` (PR #197 et al).
+- Action tools `explain` / `risk` / `journal` / `synthesize` at `/api/v1/mcp/tools/{name}` (PR #255).
+- Tool catalogue at `GET /api/v1/mcp/tools`.
+- Token gen + SOPS storage (PR #260: `IGUANATRADER_MCP_TOKEN` in `paper.env.enc` + `live.env.enc`, wired through `docker-compose.mvp.yml`).
+- Frontend `/mcp-tools` page showing catalogue + Hermes config snippet.
+
+### Pending
+
+`IGUANATRADER_MCP_TENANT_SLUG` is still empty in SOPS — operator must populate it to match the bootstrapped tenant before the routes leave 503. Hermes-side registration in `eligia-core/mcp-servers.yaml` not yet wired.
 
 ### What
 
@@ -170,6 +182,28 @@ Explicit out-of-scope for v1:
 - `eligia-core/mcp-servers.yaml`: add `iguanatrader` entry pointing to internal Docker URL + bearer token (SOPS-encrypted).
 - `eligia-core/secrets/secrets.env`: add `IGUANATRADER_MCP_TOKEN=<random hex>` SOPS-encrypted.
 - Hermes config reload to pick up the new MCP.
+
+---
+
+## B1 — MCP JSON-RPC framing + Hermes registration
+
+**Status**: proposed
+**Prereq**: B (scaffolding shipped) + a Hermes consumer that needs canonical MCP semantics.
+**Estimated**: ~300 LOC; depends on upstream lib choice.
+
+### Why a follow-up
+
+The B routes ship as REST-shaped POSTs (`/api/v1/mcp/tools/{name}` body = input JSON, response = output JSON). That is sufficient for a hand-rolled Hermes adapter but is **not** spec-compliant MCP — Anthropic's MCP wire protocol uses JSON-RPC 2.0 over stdio or SSE. Until the JSON-RPC framing lands, off-the-shelf MCP clients (Claude Desktop, Cursor MCP, Inspector) cannot consume iguanatrader.
+
+### Decisions to lock
+
+- **Lib**: `fastmcp` (FastAPI-native) vs `mcp` (official Python SDK). `fastmcp` lets us keep the existing FastAPI process; `mcp` SDK is canonical but biases towards stdio transport.
+- **Transport**: SSE (over the same compose-network bearer-token envelope) vs Streamable HTTP. SSE is simpler for a single long-lived consumer like Hermes; Streamable HTTP is the newer recommendation.
+- **Backwards compatibility**: keep the existing REST routes alive during the transition, or hard-cut to JSON-RPC. Soft transition is safer for the `/mcp-tools` page which currently consumes the REST catalogue.
+
+### Out of scope
+
+- Multi-tenant MCP — `IGUANATRADER_MCP_TENANT_SLUG` stays an env-derived single-tenant resolver. Multi-tenant would need per-token tenant resolution.
 
 ---
 

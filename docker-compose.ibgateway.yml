@@ -31,7 +31,12 @@
 
 services:
   ib-gateway:
-    image: gnzsnz/ib-gateway:stable
+    # Pinned by digest (audit-mitigation 2026-05-18). Refresh quarterly:
+    #   docker pull gnzsnz/ib-gateway:stable \
+    #     && docker inspect --format '{{index .RepoDigests 0}}' gnzsnz/ib-gateway:stable
+    # Audit verdict: SAFE — IbcAlpha/IBC bundled, MIT, 4+ years, no advisories.
+    # See docs/runbooks/ibkr-gateway-bringup.md §Security.
+    image: gnzsnz/ib-gateway:stable@sha256:a9a771b0d61ad8b57e0c7f9919b7d5396a1bbc4c3c576bb5f5848aa149d1ffaa
     restart: unless-stopped
     environment:
       - TWS_USERID=${TWS_USERID}
