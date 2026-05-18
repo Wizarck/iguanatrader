@@ -14,9 +14,10 @@ in-process bus + scheduler:
   :class:`TradeClosed`; writes a post-mortem narrative via
   :class:`TradeJournalWriter` + persists on ``trades.journal_narrative``.
 * **I7 IngestSchedulerService** — registers the ingest cron routines on
-  the shared APScheduler. Source-factory map starts empty; a follow-up
-  slice adds the per-adapter factories. The scheduler itself is wired
-  now so subsequent factory additions are a one-line registration.
+  the shared APScheduler. The full 13-adapter source-factory map is
+  built by ``cli/_ingest_factories.py`` (sec_edgar, fred, openbb,
+  ibkr, finnhub, motley-fool, edgartools, plus the six previously-
+  orphan adapters bea/bls/gdelt/openfda/vdem/wgi_world_bank).
 
 Best-effort across the board: any handler exception is logged via
 structlog and swallowed; the bus + downstream flows are NEVER blocked
@@ -213,6 +214,8 @@ def wire_llm_handlers(
     trade_repo: TradeRepository,
     proposal_repo: TradeProposalRepository,
     session_factory: Any,
+    ingest_sources: dict[str, Any] | None = None,
+    ingest_watchlist: Iterable[Any] | None = None,
     ingest_persist_drafts: Any | None = None,
 ) -> ChannelDispatcher:
     """Subscribe A1/A2/A3 handlers + bootstrap I7 scheduler.
@@ -221,12 +224,12 @@ def wire_llm_handlers(
     wrapper) which the caller should pass to :class:`ApprovalService`
     in place of the inner dispatcher.
 
-    ``ingest_persist_drafts`` is the bridge from I7 ``ResearchFactDraft``
-    iterables to the research repository's insert path. When None, the
-    scheduler is constructed but no source factories are registered —
-    a deliberate hand-off point: the per-adapter factory map is wired
-    in a follow-up slice once the ingest-source secrets surface is
-    finalised. The bus subscriptions still fire today.
+    ``ingest_sources`` / ``ingest_watchlist`` / ``ingest_persist_drafts``
+    are the three inputs the I7 :class:`IngestSchedulerService` needs to
+    register real cron jobs. When ANY of them is None the scheduler is
+    constructed but no jobs are registered (back-compat for tests that
+    don't exercise the ingest path). The production daemon
+    (``cli/trading.py``) builds all three via ``_ingest_factories``.
     """
     journal_writer = TradeJournalWriter(llm_client)
     explainer = ProposalExplainerService(llm_client)
@@ -252,21 +255,34 @@ def wire_llm_handlers(
 
     # I7 — ingest scheduler. Recorder uses the session factory for
     # write-the-row-and-commit semantics independent of the daemon's
-    # long-lived session. Sources dict starts empty; the follow-up
-    # slice wires the per-adapter factories.
+    # long-lived session. The full factory map + watchlist snapshot
+    # come from ``cli/_ingest_factories.py`` in production; tests can
+    # leave them None to skip registration.
     recorder = IngestRunRecorder(session_provider=session_factory)
     ingest_scheduler = IngestSchedulerService(recorder=recorder)
-    if ingest_persist_drafts is not None:
-        ingest_scheduler.bootstrap_ingest_routines(
+    if (
+        ingest_persist_drafts is not None
+        and ingest_sources is not None
+        and ingest_watchlist is not None
+    ):
+        specs = ingest_scheduler.bootstrap_ingest_routines(
             scheduler=scheduler,
-            watchlist=_load_watchlist_for_bootstrap(),
-            sources={},
+            watchlist=ingest_watchlist,
+            sources=ingest_sources,
             persist_drafts=ingest_persist_drafts,
         )
-    logger.info(
-        "composition.wire_llm_handlers.i7_scheduler_constructed",
-        extra={"sources_count": 0},
-    )
+        logger.info(
+            "composition.wire_llm_handlers.i7_scheduler_constructed",
+            extra={
+                "sources_count": len(ingest_sources),
+                "jobs_registered": len(specs),
+            },
+        )
+    else:
+        logger.info(
+            "composition.wire_llm_handlers.i7_scheduler_skipped",
+            extra={"reason": "no ingest sources/watchlist/persist callable provided"},
+        )
 
     # A1 — wrap the channel dispatcher with narrative enrichment.
     narrative_provider = build_explainer_narrative_provider(
@@ -279,18 +295,6 @@ def wire_llm_handlers(
     )
     logger.info("composition.wire_llm_handlers.a1_dispatcher_wrapped")
     return wrapped
-
-
-def _load_watchlist_for_bootstrap() -> Iterable[Any]:
-    """Placeholder watchlist loader — returns an empty iterable today.
-
-    Real implementation belongs in the follow-up slice that wires the
-    per-adapter source factories; it'll query
-    :class:`WatchlistConfigRepository` for enabled rows with a
-    ``brief_refresh_schedule`` in {daily, weekly} OR a non-null
-    ``brief_refresh_cron`` override.
-    """
-    return ()
 
 
 __all__ = [
