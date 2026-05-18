@@ -34,9 +34,7 @@ def _bars(closes: list[float], *, volumes: list[float] | None = None) -> list[di
     ]
 
 
-def _payload(
-    closes: list[float], *, volumes: list[float] | None = None
-) -> dict[str, object]:
+def _payload(closes: list[float], *, volumes: list[float] | None = None) -> dict[str, object]:
     return {"bars": _bars(closes, volumes=volumes), "symbol": "TEST"}
 
 
