@@ -137,6 +137,13 @@ class TradeProposal(Base):
     quantity: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
     entry_price_indicative: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
     stop_price: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
+    # Slice ``exit-classification-stop-hit-sweep`` (migration 0025) —
+    # LLM-emitted 12-month take-profit. NULL when the prompt did not
+    # commit to a target (low-confidence HOLD paths) or for legacy
+    # pre-slice rows. The stop-hit sweep skips target evaluation when
+    # NULL and only fires ``CloseTradeRequested(reason="target")``
+    # when set + breached.
+    target_price: Mapped[Any | None] = mapped_column(Numeric(18, 8), nullable=True)
     confidence_score: Mapped[Any | None] = mapped_column(Numeric(5, 4), nullable=True)
     reasoning: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     research_brief_id: Mapped[UUID | None] = mapped_column(

@@ -266,6 +266,7 @@ class OrchestrationService:
         ingestion_service: Any | None = None,
         trailing_stop_sweep_service: Any | None = None,
         equity_snapshot_sweep_service: Any | None = None,
+        stop_hit_sweep_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
     ) -> None:
@@ -438,6 +439,45 @@ class OrchestrationService:
             )
             scheduler.add_job(sweep_spec)
 
+        # Slice exit-classification-stop-hit-sweep: 8th job watches
+        # every open trade for stop-price + target-price breaches every
+        # minute during US market hours and emits
+        # CloseTradeRequested when a level is hit. Closes the auto-
+        # close loop that K1's stoploss_guard depends on. Skipped when
+        # the service is not wired (test setups + scheduler-only mode).
+        if stop_hit_sweep_service is not None:
+            stop_hit_service: Any = stop_hit_sweep_service
+
+            async def _sweep_stop_hits() -> None:
+                try:
+                    result = await stop_hit_service.sweep()
+                    logger.info(
+                        "orchestration.stop_hit_sweep.complete",
+                        extra={
+                            "trades_evaluated": result.trades_evaluated,
+                            "stop_hits_emitted": result.stop_hits_emitted,
+                            "target_hits_emitted": result.target_hits_emitted,
+                            "trades_skipped_no_bars": result.trades_skipped_no_bars,
+                            "duration_ms": result.duration_ms,
+                        },
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "orchestration.stop_hit_sweep.failed",
+                        extra={"error": str(exc), "type": type(exc).__name__},
+                    )
+
+            stop_hit_spec = JobSpec(
+                name="stop_hit_sweep",
+                fn=_sweep_stop_hits,
+                cron_kwargs={
+                    "hour": "9-16",
+                    "minute": "*",  # every minute during US market hours
+                    "day_of_week": "mon-fri",
+                },
+            )
+            scheduler.add_job(stop_hit_spec)
+
         # Slice equity-snapshot-daemon: 7th job captures account equity
         # for every tenant every 15 min during US market hours. Drives
         # the rolling drawdown window K1's max-drawdown protection reads
@@ -483,12 +523,14 @@ class OrchestrationService:
                     + (1 if ingestion_service is not None else 0)
                     + (1 if trailing_stop_sweep_service is not None else 0)
                     + (1 if equity_snapshot_sweep_service is not None else 0)
+                    + (1 if stop_hit_sweep_service is not None else 0)
                 ),
                 "watchlist_count": len(watchlist_symbols),
                 "propose_loops_wired": wire_propose_loops,
                 "market_data_sync_wired": ingestion_service is not None,
                 "trailing_stops_sweep_wired": trailing_stop_sweep_service is not None,
                 "equity_snapshot_sweep_wired": equity_snapshot_sweep_service is not None,
+                "stop_hit_sweep_wired": stop_hit_sweep_service is not None,
             },
         )
 

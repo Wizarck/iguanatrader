@@ -319,11 +319,23 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             bus=bus,
         )
 
+        # Slice exit-classification-stop-hit-sweep: 1-min cron that
+        # watches every open trade for stop_price / target_price
+        # breaches and publishes CloseTradeRequested. Closes the
+        # auto-close loop that K1's stoploss_guard depends on.
+        from iguanatrader.contexts.risk.stop_hit_sweep import StopHitSweepService
+
+        stop_hit_sweep_service = StopHitSweepService(
+            session=session,
+            market_data_port=market_data_port,
+            bus=bus,
+        )
+
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
         # Side-effect: registers cron JobSpecs on the scheduler (4 propose
         # routines + 5th market_data_sync routine wired by T4-followup
-        # + equity_snapshot_sweep wired here).
+        # + equity_snapshot_sweep + stop_hit_sweep wired here).
         await orchestration_service.bootstrap_routines(
             scheduler=scheduler,
             trading_service=trading_service,
@@ -332,6 +344,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             strategy_config_repo=strategy_config_repo,
             ingestion_service=ingestion_service,
             equity_snapshot_sweep_service=equity_snapshot_sweep_service,
+            stop_hit_sweep_service=stop_hit_sweep_service,
         )
 
         # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close
