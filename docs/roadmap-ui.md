@@ -210,7 +210,7 @@ Polls `/api/v1/status` every 5s while tab visible; pauses on `document.hidden`.
 
 ## U-next-2 — trade state Order timeline + variant fix
 
-**Status**: proposed
+**Status**: in-progress 2026-05-18 (slice `u-next-2-trade-timeline` — variant fix + `GET /trades/{id}/orders` + timeline UI)
 **Where**: [apps/web/src/routes/(app)/trades/[id]/+page.svelte](../apps/web/src/routes/(app)/trades/[id]/+page.svelte) + [apps/web/src/lib/trades/variants.ts](../apps/web/src/lib/trades/variants.ts).
 **Estimated**: ~150 LOC.
 

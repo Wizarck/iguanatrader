@@ -34,6 +34,8 @@ from iguanatrader.api.dtos.trades import (
     CloseTradeIn,
     FillListOut,
     FillOut,
+    OrderListOut,
+    OrderOut,
     TradeJournalOut,
     TradeListOut,
     TradeOut,
@@ -46,6 +48,7 @@ from iguanatrader.contexts.trading.events import CloseTradeRequested
 from iguanatrader.contexts.trading.journaling import TradeJournalWriter
 from iguanatrader.contexts.trading.repository import (
     FillRepository,
+    OrderRepository,
     TradeRepository,
 )
 from iguanatrader.persistence import User
@@ -108,6 +111,33 @@ async def list_trade_fills(
     rows = await repo.list_for_trade(trade_id)
     return FillListOut(
         items=[FillOut.model_validate(r) for r in rows],
+        total=len(rows),
+        next_cursor=None,
+    )
+
+
+@router.get("/{trade_id}/orders", response_model=OrderListOut)
+async def list_trade_orders(
+    trade_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> OrderListOut:
+    """List orders (entry + stop + target + exit) for a given trade.
+
+    Slice ``u-next-2-trade-timeline``. The trade-detail page renders an
+    Order timeline so operators can see whether the stop-loss + target
+    have been accepted broker-side — today the only visible state is
+    the trade-level ``state`` column, which collapses the four order
+    rows into a single label. An empty list means the entry order has
+    not yet been submitted (rare — usually only the brief window between
+    ``ProposalApproved`` and ``broker.place_order`` returning).
+    """
+    log.info("api.trades.orders", trade_id=str(trade_id))
+    session_var.set(db)
+    repo = OrderRepository()
+    rows = await repo.list_for_trade(trade_id)
+    return OrderListOut(
+        items=[OrderOut.model_validate(r) for r in rows],
         total=len(rows),
         next_cursor=None,
     )

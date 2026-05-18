@@ -73,3 +73,9 @@ export type FillListOut = {
   next_cursor: string | null;
   total: number | null;
 };
+
+export type OrderListOut = {
+  items: OrderOut[];
+  next_cursor: string | null;
+  total: number | null;
+};

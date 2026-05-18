@@ -1,8 +1,13 @@
 <script lang="ts">
   import Badge from '$lib/components/Badge.svelte';
   import DataTable, { type DataTableColumn } from '$lib/components/DataTable.svelte';
-  import type { FillOut } from '$lib/trades/types';
-  import { sideVariant, stateVariant } from '$lib/trades/variants';
+  import type { FillOut, OrderOut } from '$lib/trades/types';
+  import {
+    orderRoleLabel,
+    orderStateVariant,
+    sideVariant,
+    stateVariant
+  } from '$lib/trades/variants';
 
   import type { PageData } from './$types';
 
@@ -170,6 +175,52 @@
         {/if}
       </section>
     {/if}
+
+    <section class="orders" data-testid="orders-timeline">
+      <h2>Order timeline</h2>
+      {#if data.orders.length === 0}
+        <p class="orders-empty" data-testid="orders-empty">Sin orders aún.</p>
+      {:else}
+        <ol class="timeline">
+          {#each data.orders as order (order.id)}
+            <li class="timeline-row" data-testid="order-row" data-order-state={order.state}>
+              <div class="timeline-head">
+                <span class="role">
+                  {orderRoleLabel(order.side, order.order_type, data.trade.side)}
+                </span>
+                <Badge label={order.state} variant={orderStateVariant(order.state)} />
+              </div>
+              <dl class="timeline-grid">
+                <dt>Type</dt>
+                <dd>{order.order_type}</dd>
+                <dt>Side</dt>
+                <dd>{order.side}</dd>
+                <dt>Qty</dt>
+                <dd>{order.quantity}</dd>
+                {#if order.limit_price}
+                  <dt>Limit</dt>
+                  <dd>{order.limit_price}</dd>
+                {/if}
+                {#if order.stop_price}
+                  <dt>Stop</dt>
+                  <dd>{order.stop_price}</dd>
+                {/if}
+                {#if order.broker_order_id}
+                  <dt>Broker ID</dt>
+                  <dd><code>{order.broker_order_id}</code></dd>
+                {/if}
+                <dt>Submitted</dt>
+                <dd>{order.submitted_at ?? '—'}</dd>
+                <dt>Acknowledged</dt>
+                <dd>{order.acknowledged_at ?? '—'}</dd>
+                <dt>Closed</dt>
+                <dd>{order.closed_at ?? '—'}</dd>
+              </dl>
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    </section>
 
     <h2 class="fills-heading">Fills</h2>
     {#if data.fills.length === 0}
@@ -350,5 +401,65 @@
     line-height: 1.55;
     margin: 0 0 12px;
     color: var(--ink);
+  }
+  .orders {
+    margin: 24px 0;
+    max-width: 720px;
+  }
+  .orders h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    color: var(--ink);
+  }
+  .orders-empty {
+    margin: 0;
+    color: var(--mute);
+    font-size: 14px;
+    font-style: italic;
+  }
+  .timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 12px;
+  }
+  .timeline-row {
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    background: var(--surface);
+    padding: 14px 18px;
+  }
+  .timeline-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .timeline-head .role {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .timeline-grid {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 4px 14px;
+    margin: 0;
+    font-size: 13px;
+  }
+  .timeline-grid dt {
+    color: var(--mute);
+    font-weight: 500;
+  }
+  .timeline-grid dd {
+    margin: 0;
+    color: var(--ink);
+  }
+  .timeline-grid code {
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 12px;
   }
 </style>
