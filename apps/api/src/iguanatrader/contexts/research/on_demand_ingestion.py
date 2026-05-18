@@ -199,10 +199,27 @@ class OnDemandIngestionService:
         symbol_universe_id: UUID,
         symbol: str,
     ) -> bool:
-        """Stamp + insert one draft; return True iff the row persisted."""
+        """Stamp + insert one draft; return True iff the row persisted.
+
+        Wraps each insert in a ``session.begin_nested()`` SAVEPOINT so a
+        UNIQUE-constraint violation (most commonly the partial unique
+        index on ``(tenant_id, dedupe_key)``) rolls back just that one
+        row instead of poisoning the entire ingestion batch. The
+        ``refresh-always-reingests`` slice exposes the gap that the
+        previous catch-and-log pattern hid: when ``newly_registered``
+        was False the path was never exercised, so the duplicate-row
+        handling was untested.
+        """
+        from iguanatrader.shared.contextvars import session_var
+
         stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+        session = session_var.get()
         try:
-            await self._repo.insert_fact(stamped)
+            if session is not None:
+                async with session.begin_nested():
+                    await self._repo.insert_fact(stamped)
+            else:  # pragma: no cover — tests inject explicit sessions
+                await self._repo.insert_fact(stamped)
         except Exception as exc:
             logger.warning(
                 "research.on_demand_ingestion.insert_failed",

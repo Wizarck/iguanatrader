@@ -339,3 +339,72 @@ async def test_ingest_swallows_edgar_outage_and_keeps_openbb_drafts(
     assert outcome.facts_inserted == 1
     assert outcome.edgar_facts_inserted == 0
     assert edgar_fake.calls and edgar_fake.calls[0][0] == "AMD"
+
+
+def _draft_with_dedupe(fact_kind: str, dedupe_key: str) -> ResearchFactDraft:
+    """Same as :func:`_draft` but with an explicit ``dedupe_key`` so the
+    partial-unique-index check (migration 0008) is exercised."""
+    now = datetime(2026, 5, 18, tzinfo=UTC)
+    payload = {"value": 1.0, "as_of_date": now.isoformat()}
+    payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return ResearchFactDraft(
+        source_id="openbb-sidecar",
+        fact_kind=fact_kind,
+        effective_from=now,
+        recorded_from=now,
+        source_url=f"http://openbb_sidecar:8765/v1/equity/{fact_kind}/NVDA",
+        retrieval_method="api",
+        retrieved_at=now,
+        value_jsonb=payload,
+        dedupe_key=dedupe_key,
+    ).with_payload(payload_bytes)
+
+
+@pytest.mark.asyncio
+async def test_ingest_skips_duplicate_dedupe_key_and_keeps_batch_alive(
+    sf: async_sessionmaker[AsyncSession],
+) -> None:
+    """Slice ``research-refresh-always-reingest`` guarantee: when a
+    duplicate ``dedupe_key`` collides with the partial unique index,
+    the SAVEPOINT around that insert rolls back ONLY that row — the
+    rest of the batch still lands.
+
+    Regression-guard: without the savepoint, the first IntegrityError
+    poisons the outer transaction and every subsequent insert fails
+    with ``PendingRollbackError`` even though the draft was unique.
+    The on-demand path appeared to work whenever ``newly_registered``
+    gated it, because new symbols had no pre-existing dedupe_keys; the
+    drop-the-gate behaviour change in this slice forced the issue.
+    """
+    tid = uuid4()
+    sym_uid = uuid4()
+    await _seed_tenant_and_universe(sf, tenant_id=tid, symbol_universe_id=sym_uid)
+
+    # Two drafts share the same dedupe_key (the collision), three more
+    # are unique. We expect the second to be skipped, the others to
+    # persist.
+    collide_key = "openbb-sidecar:fundamentals:2026-05"
+    fake = _FakeOpenBBSource(
+        fetch_drafts=[
+            _draft_with_dedupe("fundamentals", collide_key),
+            _draft_with_dedupe("fundamentals", collide_key),  # duplicate
+            _draft_with_dedupe("analyst_ratings", "openbb-sidecar:analyst:2026-05"),
+            _draft_with_dedupe("esg_score", "openbb-sidecar:esg:2026-05"),
+        ],
+        prices_drafts=[],
+    )
+
+    async with with_tenant_context(tid), sf() as session:
+        session_var.set(session)
+        repo = ResearchRepository()
+        service = OnDemandIngestionService(repository=repo, openbb_source=fake)
+        outcome = await service.ingest(symbol="NVDA", symbol_universe_id=sym_uid)
+        await session.commit()
+
+        rows = (await session.execute(sa.select(ResearchFact))).scalars().all()
+
+    # 4 attempted, 3 persisted (one duplicate squashed).
+    assert outcome.endpoints_attempted == 4
+    assert outcome.facts_inserted == 3
+    persisted_kinds = sorted(r.fact_kind for r in rows)
+    assert persisted_kinds == ["analyst_ratings", "esg_score", "fundamentals"]

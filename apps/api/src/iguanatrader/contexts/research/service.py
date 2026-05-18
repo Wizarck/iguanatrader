@@ -101,15 +101,15 @@ class BriefService:
     ) -> BriefRefreshOutcome:
         """Run synthesis + persist a new brief version.
 
-        Slice research-ad-hoc-mode reorders the pipeline so the
-        symbol's universe row is resolved (or auto-created) BEFORE
-        feature provider fetch — otherwise a brand-new symbol's
-        provider query would always return empty regardless of
-        whether inline ingestion ran. Order:
+        Slice ``research-refresh-always-reingest`` evolved the pipeline:
 
         1. Resolve / auto-register symbol_universe + watchlist_config.
-        2. If a new symbol was just registered AND an ingestion service
-           is wired, fetch facts from OpenBB sidecar inline.
+        2. ALWAYS fetch facts from configured ingestion sources (no
+           longer gated on ``newly_registered``). Idempotent at the
+           ``dedupe_key`` partial unique index — duplicate inserts are
+           silently rolled back via SAVEPOINT in
+           :meth:`OnDemandIngestionService._persist`, so re-running is
+           safe and cheap.
         3. Feature provider reads from research_facts.
         4. Methodology scoring + LLM synthesis + persist.
         """
@@ -119,10 +119,19 @@ class BriefService:
                 f"expected one of {sorted(METHODOLOGY_REGISTRY)}"
             )
 
-        symbol_universe_id, watchlist_config_id, newly_registered = (
-            await self._resolve_or_register_fks(symbol)
-        )
-        if newly_registered and self._ingestion is not None:
+        symbol_universe_id, watchlist_config_id, _ = await self._resolve_or_register_fks(symbol)
+        # Slice ``research-refresh-always-reingest``: previously this
+        # path only fired when ``newly_registered`` was True, so any
+        # symbol whose first ingestion was partial (EDGAR outage,
+        # missing tier-A revenue tag, sidecar timeout) stayed partial
+        # forever — subsequent refresh requests skipped ingestion
+        # entirely. Per-fact idempotency at ``dedupe_key`` (partial
+        # unique index from migration 0008 + SAVEPOINT-per-insert in
+        # ``OnDemandIngestionService._persist``) makes re-runs safe and
+        # cheap: existing rows are silently skipped, only fresh facts
+        # land. Cost: an extra sidecar/EDGAR round-trip per refresh,
+        # bounded by the rate limiters in the adapter ladder.
+        if self._ingestion is not None:
             try:
                 await self._ingestion.ingest(
                     symbol=symbol,
