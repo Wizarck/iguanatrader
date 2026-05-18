@@ -242,6 +242,39 @@ class TradeProposalRepository(BaseRepository):
             proposal.rejected_at = utc_now()
         return proposal
 
+    async def set_risk_assessment(
+        self,
+        *,
+        proposal_id: UUID,
+        risk_score: int,
+        risk_flags: list[str],
+        risk_rationale: str,
+        risk_model: str,
+    ) -> TradeProposal | None:
+        """Persist an :class:`ProposalRiskAssessment` onto the proposal row.
+
+        Called by the slice ``a2-risk-review-persist`` persister adapter
+        on every above-threshold :class:`ProposalCreated`. Stamps
+        ``risk_generated_at`` from the wall clock so multiple sequential
+        assessments on the same proposal (regeneration path, future MCP
+        force-re-review) keep a coherent timestamp without the caller
+        having to plumb one through. Returns ``None`` when the proposal
+        does not exist — caller treats that as a benign skip (the
+        proposal may have been deleted in the gap between bus dispatch
+        and persister invocation).
+        """
+        proposal = await self.get_by_id(proposal_id)
+        if proposal is None:
+            return None
+        from iguanatrader.shared.time import now as utc_now
+
+        proposal.risk_score = risk_score
+        proposal.risk_flags = list(risk_flags)
+        proposal.risk_rationale = risk_rationale
+        proposal.risk_generated_at = utc_now()
+        proposal.risk_model = risk_model
+        return proposal
+
 
 class TradeRepository(BaseRepository):
     """Persistence operations for :class:`Trade` (slice T4)."""
