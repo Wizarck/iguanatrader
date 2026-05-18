@@ -15,6 +15,10 @@
 </script>
 
 <script lang="ts">
+  import AuditTrailViewer, {
+    type AuditTrailEntry,
+    type AuditTrailViewerFactRow
+  } from '$lib/components/research/AuditTrailViewer.svelte';
   import BriefHeader from '$lib/components/research/BriefHeader.svelte';
   import FactTimeline, {
     type FactTimelineRow
@@ -156,6 +160,31 @@
   let renderedHtml = $derived(renderBriefBody(body, factById));
   let auditTrailVersion = $derived((currentBrief?.version as number | undefined) ?? null);
 
+  // Slice U2 — inline audit-trail viewer.
+  //
+  // The brief response already carries the audit_trail array from
+  // PR #194's synthesis pipeline. Surface it as a collapsible block
+  // beneath the prose so operators can inspect the FR70 derivation
+  // chain without leaving the page. The dedicated `/audit-trail/<v>`
+  // page remains for deep-link sharing.
+  let auditEntries = $derived(
+    (currentBrief?.audit_trail as AuditTrailEntry[] | undefined) ?? []
+  );
+
+  // Shape-convert the citation-chip `factById` map into the row type
+  // the viewer expects (subset of the same provenance fields).
+  let auditFactById = $derived.by(() => {
+    const out = new Map<string, AuditTrailViewerFactRow>();
+    for (const [id, fact] of factById.entries()) {
+      out.set(id, {
+        id,
+        source_id: fact.source_id,
+        fact_kind: fact.fact_kind
+      });
+    }
+    return out;
+  });
+
   async function refresh() {
     refreshing = true;
     refreshError = null;
@@ -216,10 +245,23 @@
       {@html renderedHtml}
     </article>
 
+    {#if auditEntries.length > 0}
+      <details class="audit-inline" aria-label="Audit trail (inline)">
+        <summary>
+          <span class="summary-title">Audit trail</span>
+          <span class="summary-meta"
+            >{auditEntries.length} metric{auditEntries.length === 1 ? '' : 's'} ·
+            click to expand</span
+          >
+        </summary>
+        <AuditTrailViewer entries={auditEntries} factById={auditFactById} />
+      </details>
+    {/if}
+
     {#if auditTrailVersion !== null}
       <p class="audit-link">
         <a href="/research/{data.symbol}/audit-trail/{auditTrailVersion}"
-          >View audit trail (FR70 derivation chain) →</a
+          >Open the dedicated audit-trail page (deep-link friendly) →</a
         >
       </p>
     {/if}
@@ -435,5 +477,40 @@
   }
   .audit-link a:hover {
     text-decoration: underline;
+  }
+  .audit-inline {
+    margin: 1rem 0 0.25rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--mute);
+    border-radius: 4px;
+  }
+  .audit-inline > summary {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    list-style: none;
+    font-size: 13px;
+  }
+  .audit-inline > summary::-webkit-details-marker {
+    display: none;
+  }
+  .audit-inline > summary::before {
+    content: '▸';
+    color: var(--mute);
+    width: 1ch;
+  }
+  .audit-inline[open] > summary::before {
+    content: '▾';
+  }
+  .audit-inline .summary-title {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .audit-inline .summary-meta {
+    color: var(--mute);
+    font-size: 12px;
   }
 </style>
