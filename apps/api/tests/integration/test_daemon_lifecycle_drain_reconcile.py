@@ -136,32 +136,31 @@ async def _seed_pending_proposal(
     mode: str = "paper",
 ) -> UUID:
     """Insert a TradeProposal in ``state='pending_approval'`` for drain test."""
-    async with sf() as s:
-        async with with_tenant_context(tenant_id):
-            # Resolve the strategy_config_id seeded by _seed_tenant.
-            from sqlalchemy import select
+    async with sf() as s, with_tenant_context(tenant_id):
+        # Resolve the strategy_config_id seeded by _seed_tenant.
+        from sqlalchemy import select
 
-            sc = (
-                await s.execute(select(StrategyConfig.id).where(StrategyConfig.symbol == symbol))
-            ).scalar_one()
-            pid = uuid4()
-            s.add(
-                TradeProposal(
-                    id=pid,
-                    tenant_id=tenant_id,
-                    strategy_config_id=sc,
-                    symbol=symbol,
-                    side="buy",
-                    quantity=Decimal("10"),
-                    entry_price_indicative=Decimal("100"),
-                    stop_price=Decimal("95"),
-                    reasoning={"signal": "breakout"},
-                    mode=mode,
-                    correlation_id=uuid4(),
-                    state="pending_approval",
-                )
+        sc = (
+            await s.execute(select(StrategyConfig.id).where(StrategyConfig.symbol == symbol))
+        ).scalar_one()
+        pid = uuid4()
+        s.add(
+            TradeProposal(
+                id=pid,
+                tenant_id=tenant_id,
+                strategy_config_id=sc,
+                symbol=symbol,
+                side="buy",
+                quantity=Decimal("10"),
+                entry_price_indicative=Decimal("100"),
+                stop_price=Decimal("95"),
+                reasoning={"signal": "breakout"},
+                mode=mode,
+                correlation_id=uuid4(),
+                state="pending_approval",
             )
-            await s.commit()
+        )
+        await s.commit()
     return pid
 
 
@@ -174,23 +173,22 @@ async def _seed_open_trade(
     mode: str = "paper",
 ) -> UUID:
     """Insert a Trade in ``state='open'`` for reconcile test."""
-    async with sf() as s:
-        async with with_tenant_context(tenant_id):
-            tid = uuid4()
-            s.add(
-                Trade(
-                    id=tid,
-                    tenant_id=tenant_id,
-                    proposal_id=proposal_id,
-                    symbol=symbol,
-                    side="buy",
-                    quantity=Decimal("10"),
-                    mode=mode,
-                    state="open",
-                    opened_at=datetime.now(UTC),
-                )
+    async with sf() as s, with_tenant_context(tenant_id):
+        tid = uuid4()
+        s.add(
+            Trade(
+                id=tid,
+                tenant_id=tenant_id,
+                proposal_id=proposal_id,
+                symbol=symbol,
+                side="buy",
+                quantity=Decimal("10"),
+                mode=mode,
+                state="open",
+                opened_at=datetime.now(UTC),
             )
-            await s.commit()
+        )
+        await s.commit()
     return tid
 
 
@@ -279,36 +277,34 @@ async def test_drain_rejects_pending_proposals(
     pid1 = await _seed_pending_proposal(session_maker, tenant_id=tid)
     pid2 = await _seed_pending_proposal(session_maker, tenant_id=tid)
 
-    async with session_maker() as s:
-        async with with_tenant_context(tid):
-            session_var.set(s)
-            service = DaemonLifecycleService(
-                mode="paper",
-                tenant_id=tid,
-                bus=MessageBus(),
-                trading_service=_FakeTradingService(),  # type: ignore[arg-type]
-                trading_mode_repo=TradingModeRepository(),
-                broker=_FakeBroker(tenant_id=tid, positions=[]),  # type: ignore[arg-type]
-                equity_repo=EquitySnapshotRepository(),
-                trade_repo=TradeRepository(),
-            )
-            first = await service._drain_pending_proposals(reason="daemon_drained")
-            await s.commit()
-            second = await service._drain_pending_proposals(reason="daemon_drained")
-            await s.commit()
+    async with session_maker() as s, with_tenant_context(tid):
+        session_var.set(s)
+        service = DaemonLifecycleService(
+            mode="paper",
+            tenant_id=tid,
+            bus=MessageBus(),
+            trading_service=_FakeTradingService(),  # type: ignore[arg-type]
+            trading_mode_repo=TradingModeRepository(),
+            broker=_FakeBroker(tenant_id=tid, positions=[]),  # type: ignore[arg-type]
+            equity_repo=EquitySnapshotRepository(),
+            trade_repo=TradeRepository(),
+        )
+        first = await service._drain_pending_proposals(reason="daemon_drained")
+        await s.commit()
+        second = await service._drain_pending_proposals(reason="daemon_drained")
+        await s.commit()
 
     assert first == 2
     assert second == 0
 
-    async with session_maker() as s:
-        async with with_tenant_context(tid):
-            from sqlalchemy import select
+    async with session_maker() as s, with_tenant_context(tid):
+        from sqlalchemy import select
 
-            rows = (
-                (await s.execute(select(TradeProposal).where(TradeProposal.id.in_([pid1, pid2]))))
-                .scalars()
-                .all()
-            )
+        rows = (
+            (await s.execute(select(TradeProposal).where(TradeProposal.id.in_([pid1, pid2]))))
+            .scalars()
+            .all()
+        )
 
     assert {r.state for r in rows} == {"rejected"}
     assert {r.rejection_reason for r in rows} == {"daemon_drained"}
@@ -344,27 +340,25 @@ async def test_reconcile_positions_in_sync_is_noop(
         ],
     )
 
-    async with session_maker() as s:
-        async with with_tenant_context(tid):
-            session_var.set(s)
-            service = DaemonLifecycleService(
-                mode="paper",
-                tenant_id=tid,
-                bus=MessageBus(),
-                trading_service=_FakeTradingService(),  # type: ignore[arg-type]
-                trading_mode_repo=TradingModeRepository(),
-                broker=broker,  # type: ignore[arg-type]
-                equity_repo=EquitySnapshotRepository(),
-                trade_repo=TradeRepository(),
-            )
-            await service._reconcile_positions(correlation_id=uuid4())
-            await s.commit()
+    async with session_maker() as s, with_tenant_context(tid):
+        session_var.set(s)
+        service = DaemonLifecycleService(
+            mode="paper",
+            tenant_id=tid,
+            bus=MessageBus(),
+            trading_service=_FakeTradingService(),  # type: ignore[arg-type]
+            trading_mode_repo=TradingModeRepository(),
+            broker=broker,  # type: ignore[arg-type]
+            equity_repo=EquitySnapshotRepository(),
+            trade_repo=TradeRepository(),
+        )
+        await service._reconcile_positions(correlation_id=uuid4())
+        await s.commit()
 
-    async with session_maker() as s:
-        async with with_tenant_context(tid):
-            from sqlalchemy import select
+    async with session_maker() as s, with_tenant_context(tid):
+        from sqlalchemy import select
 
-            row = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
+        row = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
     assert row.state == "open"
     assert row.exit_reason is None
     assert row.closed_at is None
@@ -384,27 +378,25 @@ async def test_reconcile_closes_orphan_local_trade(
     # the daemon was down.
     broker = _FakeBroker(tenant_id=tid, positions=[])
 
-    async with session_maker() as s:
-        async with with_tenant_context(tid):
-            session_var.set(s)
-            service = DaemonLifecycleService(
-                mode="paper",
-                tenant_id=tid,
-                bus=MessageBus(),
-                trading_service=_FakeTradingService(),  # type: ignore[arg-type]
-                trading_mode_repo=TradingModeRepository(),
-                broker=broker,  # type: ignore[arg-type]
-                equity_repo=EquitySnapshotRepository(),
-                trade_repo=TradeRepository(),
-            )
-            await service._reconcile_positions(correlation_id=uuid4())
-            await s.commit()
+    async with session_maker() as s, with_tenant_context(tid):
+        session_var.set(s)
+        service = DaemonLifecycleService(
+            mode="paper",
+            tenant_id=tid,
+            bus=MessageBus(),
+            trading_service=_FakeTradingService(),  # type: ignore[arg-type]
+            trading_mode_repo=TradingModeRepository(),
+            broker=broker,  # type: ignore[arg-type]
+            equity_repo=EquitySnapshotRepository(),
+            trade_repo=TradeRepository(),
+        )
+        await service._reconcile_positions(correlation_id=uuid4())
+        await s.commit()
 
-    async with session_maker() as s:
-        async with with_tenant_context(tid):
-            from sqlalchemy import select
+    async with session_maker() as s, with_tenant_context(tid):
+        from sqlalchemy import select
 
-            row = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
+        row = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
     assert row.state == "closed"
     assert row.exit_reason == "ibkr_reconcile"
     assert row.closed_at is not None
