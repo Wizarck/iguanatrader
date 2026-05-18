@@ -140,7 +140,7 @@ services:
       dockerfile: apps/api/Dockerfile
       target: runtime
     restart: unless-stopped
-    command: ["python", "-m", "iguanatrader", "trading", "run", "--mode=paper"]
+    command: ["iguanatrader", "trading", "run", "--mode=paper"]
     environment:
       - IGUANATRADER_PROFILE=mvp
       - IGUANA_DATABASE_URL=sqlite+aiosqlite:////data/iguanatrader.db
