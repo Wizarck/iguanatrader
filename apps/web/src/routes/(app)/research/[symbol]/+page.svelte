@@ -23,7 +23,12 @@
   import FactTimeline, {
     type FactTimelineRow
   } from '$lib/components/research/FactTimeline.svelte';
+  import RecommendationCard from '$lib/components/research/RecommendationCard.svelte';
   import StatBlock, { type BriefStats } from '$lib/components/research/StatBlock.svelte';
+  import {
+    parseRecommendation,
+    stripRecommendationSection
+  } from '$lib/research/parse-recommendation';
   import { readRecent, recordRecent, writeRecent } from '$lib/research/recent';
   import { renderBriefBody, type FactProvenance } from '$lib/research/render-brief-body';
 
@@ -157,7 +162,22 @@
       (currentBrief?.thesis_text as string | undefined) ??
       ''
   );
-  let renderedHtml = $derived(renderBriefBody(body, factById));
+
+  // Slice U3 — promote `## Recommendation` to a destacated card above
+  // the pillar prose. The original markdown is stripped of the
+  // section before rendering so the card and the prose don't
+  // duplicate. Falls back to the full body when parsing produces
+  // nothing useful (e.g. older briefs without the structured section).
+  let recommendation = $derived(parseRecommendation(body));
+  let hasRecommendation = $derived(
+    recommendation.action !== null ||
+      recommendation.targetPrice !== null ||
+      recommendation.risks.length > 0
+  );
+  let bodyForRender = $derived(
+    hasRecommendation ? stripRecommendationSection(body) : body
+  );
+  let renderedHtml = $derived(renderBriefBody(bodyForRender, factById));
   let auditTrailVersion = $derived((currentBrief?.version as number | undefined) ?? null);
 
   // Slice U2 — inline audit-trail viewer.
@@ -234,6 +254,10 @@
 
     {#if currentBrief.partial}
       <div role="status" class="warn">Partial brief — required tier-A features missing.</div>
+    {/if}
+
+    {#if hasRecommendation}
+      <RecommendationCard {recommendation} />
     {/if}
 
     {#if stats}
