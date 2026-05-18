@@ -141,6 +141,9 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         from iguanatrader.contexts.orchestration.service import OrchestrationService
         from iguanatrader.contexts.risk.repository import RiskRepository
         from iguanatrader.contexts.risk.service import RiskService
+        from iguanatrader.contexts.trading.equity_snapshot_sweep import (
+            EquitySnapshotSweepService,
+        )
         from iguanatrader.contexts.trading.market_data.db import DBMarketDataAdapter
         from iguanatrader.contexts.trading.market_data.ibkr_ingestor import (
             IbAsyncMarketDataIngestor,
@@ -152,6 +155,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             MarketDataIngestionService,
         )
         from iguanatrader.contexts.trading.repository import (
+            EquitySnapshotRepository,
             StrategyConfigRepository,
         )
         from iguanatrader.contexts.trading.service import TradingService
@@ -274,10 +278,21 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         )
         hindsight_retain.register_subscriptions(bus)
 
+        # Slice equity-snapshot-daemon: 15-min cron that drives the
+        # rolling drawdown window K1 reads. Without this the snapshot
+        # row only lands on trade close, leaving max-drawdown
+        # protection silently inert between fills.
+        equity_snapshot_sweep_service = EquitySnapshotSweepService(
+            broker=broker,
+            equity_repo=EquitySnapshotRepository(),
+            bus=bus,
+        )
+
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
         # Side-effect: registers cron JobSpecs on the scheduler (4 propose
-        # routines + 5th market_data_sync routine wired by T4-followup).
+        # routines + 5th market_data_sync routine wired by T4-followup
+        # + equity_snapshot_sweep wired here).
         await orchestration_service.bootstrap_routines(
             scheduler=scheduler,
             trading_service=trading_service,
@@ -285,6 +300,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             market_data_port=market_data_port,
             strategy_config_repo=strategy_config_repo,
             ingestion_service=ingestion_service,
+            equity_snapshot_sweep_service=equity_snapshot_sweep_service,
         )
 
         # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close
