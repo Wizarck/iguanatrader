@@ -62,7 +62,7 @@ export const actions: Actions = {
     const requestId = String(formData.get('request_id') ?? '').trim();
 
     if (!requestId || !isValidRequestId(requestId)) {
-      return fail(400, { formError: 'request_id inválido.' });
+      return fail(400, { formError: 'Invalid request_id.' });
     }
 
     const sessionCookie = cookies.get(COOKIE_NAME);
@@ -79,14 +79,14 @@ export const actions: Actions = {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(502, { formError: `Backend inaccesible: ${message}` });
+      return fail(502, { formError: `Backend unreachable: ${message}` });
     }
 
     if (response.status >= 200 && response.status < 300) {
       throw redirect(303, '/approvals');
     }
 
-    let detail = `Error ${response.status} al aprobar.`;
+    let detail = `Error ${response.status} approving request.`;
     try {
       const body = (await response.json()) as { detail?: string };
       if (typeof body.detail === 'string') detail = body.detail;
@@ -106,7 +106,7 @@ export const actions: Actions = {
         : null;
 
     if (!requestId || !isValidRequestId(requestId)) {
-      return fail(400, { formError: 'request_id inválido.' });
+      return fail(400, { formError: 'Invalid request_id.' });
     }
 
     const sessionCookie = cookies.get(COOKIE_NAME);
@@ -123,14 +123,14 @@ export const actions: Actions = {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(502, { formError: `Backend inaccesible: ${message}` });
+      return fail(502, { formError: `Backend unreachable: ${message}` });
     }
 
     if (response.status >= 200 && response.status < 300) {
       throw redirect(303, '/approvals');
     }
 
-    let detail = `Error ${response.status} al rechazar.`;
+    let detail = `Error ${response.status} rejecting request.`;
     try {
       const body = (await response.json()) as { detail?: string };
       if (typeof body.detail === 'string') detail = body.detail;

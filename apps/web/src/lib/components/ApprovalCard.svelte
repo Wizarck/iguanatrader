@@ -117,7 +117,7 @@
         data-testid="approve-{approval.id}"
         disabled={expired}
       >
-        Aprobar
+        Approve
       </button>
     </form>
 
@@ -129,19 +129,19 @@
         onclick={toggleReject}
         disabled={expired}
       >
-        Rechazar
+        Reject
       </button>
     {:else}
       <form method="POST" action="?/reject" use:enhance class="card__reject-form">
         <input type="hidden" name="request_id" value={approval.id} />
         <Textarea
           name="reason"
-          label="Motivo del rechazo (opcional)"
+          label="Reason for rejection (optional)"
           bind:value={rejectReason}
           rows={3}
           monospace={false}
-          placeholder="Ej: riesgo demasiado alto para la sesión actual."
-          helpText="Opcional — el backend acepta enviar el rechazo sin motivo."
+          placeholder="E.g. risk too high for the current session."
+          helpText="Optional — the backend accepts a rejection without a reason."
         />
         <div class="card__reject-actions">
           <button
@@ -149,7 +149,7 @@
             class="btn btn--danger"
             data-testid="reject-confirm-{approval.id}"
           >
-            Confirmar rechazo
+            Confirm rejection
           </button>
           <button
             type="button"
@@ -157,7 +157,7 @@
             data-testid="reject-cancel-{approval.id}"
             onclick={toggleReject}
           >
-            Cancelar
+            Cancel
           </button>
         </div>
       </form>

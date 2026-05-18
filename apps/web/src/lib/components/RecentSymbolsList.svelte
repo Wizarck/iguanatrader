@@ -24,7 +24,7 @@
     label?: string;
   };
 
-  let { storageKey, max = DEFAULT_MAX_RECENT, label = 'Búsquedas recientes' }: Props = $props();
+  let { storageKey, max = DEFAULT_MAX_RECENT, label = 'Recent searches' }: Props = $props();
 
   // Read once on mount. The store is single-writer (the detail page);
   // re-reading on every render isn't necessary for MVP.
@@ -35,8 +35,8 @@
   <h2 class="recent-title">{label}</h2>
   {#if symbols.length === 0}
     <EmptyState
-      title="Sin búsquedas recientes"
-      body="Empieza buscando un symbol arriba para que aparezca aquí."
+      title="No recent searches"
+      body="Start by searching for a symbol above and it will appear here."
     />
   {:else}
     <ul class="pills">

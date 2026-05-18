@@ -29,9 +29,9 @@
     label: string;
     capKey: keyof CapsDTO;
   }> = [
-    { key: 'daily_loss', label: 'Pérdida diaria', capKey: 'daily_loss_pct' },
-    { key: 'weekly_loss', label: 'Pérdida semanal', capKey: 'weekly_loss_pct' },
-    { key: 'max_drawdown', label: 'Drawdown máx.', capKey: 'max_drawdown_pct' }
+    { key: 'daily_loss', label: 'Daily loss', capKey: 'daily_loss_pct' },
+    { key: 'weekly_loss', label: 'Weekly loss', capKey: 'weekly_loss_pct' },
+    { key: 'max_drawdown', label: 'Max drawdown', capKey: 'max_drawdown_pct' }
   ];
 
   function computeRatio(value: string | undefined, capPct: string): number {

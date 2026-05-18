@@ -28,23 +28,23 @@
   const trend = $derived(deriveTrend(values));
   const ariaLabel = $derived(
     snapshots.length === 0
-      ? 'Sin datos de equity'
+      ? 'No equity data'
       : snapshots.length === 1
-        ? `Equity plano en ${firstEquity} ${currency}`
-        : `Equity ${trend} entre ${firstEquity} y ${lastEquity} ${currency} (${snapshots.length} puntos)`
+        ? `Equity flat at ${firstEquity} ${currency}`
+        : `Equity ${trend} between ${firstEquity} and ${lastEquity} ${currency} (${snapshots.length} points)`
   );
 
   function deriveTrend(xs: number[]): string {
-    if (xs.length < 2) return 'plano';
+    if (xs.length < 2) return 'flat';
     const delta = xs[xs.length - 1] - xs[0];
-    if (delta > 0) return 'al alza';
-    if (delta < 0) return 'a la baja';
-    return 'plano';
+    if (delta > 0) return 'rising';
+    if (delta < 0) return 'falling';
+    return 'flat';
   }
 </script>
 
 {#if snapshots.length === 0}
-  <p class="sparkline-empty" data-testid="sparkline-empty">Sin datos aún</p>
+  <p class="sparkline-empty" data-testid="sparkline-empty">No data yet</p>
 {:else}
   <svg
     class="sparkline"

@@ -55,9 +55,9 @@
     </div>
   {:else if data.trades.length === 0}
     <EmptyState
-      title="No trades aún"
-      body="Arranca el daemon para empezar a generar trades: `iguanatrader trading run --mode paper`."
-      hint="Consulta docs/mvp-deploy.md para el detalle del flujo de despliegue."
+      title="No trades yet"
+      body="Start the daemon to begin generating trades: `iguanatrader trading run --mode paper`."
+      hint="See docs/mvp-deploy.md for the full deployment flow."
     />
   {:else}
     <DataTable

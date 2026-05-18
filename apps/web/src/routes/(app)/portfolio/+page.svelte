@@ -65,9 +65,9 @@
     </div>
   {:else if isAllEmpty}
     <EmptyState
-      title="No portfolio activity aún"
-      body="Arranca el daemon: `iguanatrader trading run --mode paper`."
-      hint="Consulta docs/mvp-deploy.md para el detalle del flujo de despliegue."
+      title="No portfolio activity yet"
+      body="Start the daemon: `iguanatrader trading run --mode paper`."
+      hint="See docs/mvp-deploy.md for the full deployment flow."
     />
   {:else if data.summary}
     <div class="overview">

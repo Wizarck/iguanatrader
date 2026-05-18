@@ -55,7 +55,7 @@
 
     <h2 class="fills-heading">Fills</h2>
     {#if data.fills.length === 0}
-      <p class="fills-empty" data-testid="fills-empty">Sin fills aún.</p>
+      <p class="fills-empty" data-testid="fills-empty">No fills yet.</p>
     {:else}
       <DataTable
         rows={data.fills}

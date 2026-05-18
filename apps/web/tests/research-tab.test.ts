@@ -140,9 +140,11 @@ describe('detail-page $effect contract — read → recordRecent → write', () 
       runEffect(s);
     }
     const stored = readRecent(STORAGE_KEY);
-    expect(stored).toHaveLength(8);
+    // Slice U4: DEFAULT_MAX_RECENT lowered from 8 → 5.
+    expect(stored).toHaveLength(5);
     expect(stored[0]).toBe('III');
     expect(stored).not.toContain('AAA'); // oldest dropped
+    expect(stored).not.toContain('DDD'); // also dropped (now beyond the cap)
   });
 
   it('survives corrupted prior storage by treating it as empty', () => {

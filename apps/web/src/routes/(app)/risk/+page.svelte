@@ -53,31 +53,31 @@
     </div>
   {:else if data.risk && isAllEmpty}
     <EmptyState
-      title="Sin actividad de riesgo aún"
-      body="El estado se inicializará cuando arranque el daemon."
-      hint="Arranca el daemon: `iguanatrader trading run --mode paper`."
+      title="No risk activity yet"
+      body="State will initialize once the daemon starts."
+      hint="Start the daemon: `iguanatrader trading run --mode paper`."
     />
   {:else if data.risk}
     <h2>Caps</h2>
     <RiskCapsCard caps={data.risk.caps} />
 
-    <h2>Utilización</h2>
+    <h2>Utilisation</h2>
     <RiskUtilisationCard utilisation={data.risk.utilisation} caps={data.risk.caps} />
 
-    <h2>Estado</h2>
+    <h2>State</h2>
     <dl class="state-card" data-testid="risk-state-card">
       <div class="cell">
         <dt>Capital</dt>
         <dd data-testid="state-capital">{formatMoney(data.risk.state.capital, 'USD')}</dd>
       </div>
       <div class="cell">
-        <dt>Posiciones abiertas</dt>
+        <dt>Open positions</dt>
         <dd data-testid="state-open-positions">
           {data.risk.state.open_positions_count} / {data.risk.caps.max_open_positions}
         </dd>
       </div>
       <div class="cell">
-        <dt>Última actualización</dt>
+        <dt>Last update</dt>
         <dd data-testid="state-fetched-at">{data.risk.fetched_at}</dd>
       </div>
     </dl>
