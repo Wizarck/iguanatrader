@@ -52,22 +52,25 @@ _LIVE_REASON_MIN_CHARS = 20
 class InvalidDaemonModeError(IguanaError):
     """Raised when ``{mode}`` is not ``'paper'`` or ``'live'``."""
 
-    status_code = 400
-    code = "invalid-daemon-mode"
+    type_uri = "urn:iguanatrader:error:invalid-daemon-mode"
+    default_title = "Invalid daemon mode"
+    default_status = 400
 
 
 class LiveTogglePayloadInvalidError(IguanaError):
     """Raised when a live-mode toggle is missing the required password / reason."""
 
-    status_code = 422
-    code = "live-toggle-payload-invalid"
+    type_uri = "urn:iguanatrader:error:live-toggle-payload-invalid"
+    default_title = "Live-toggle payload invalid"
+    default_status = 422
 
 
 class PasswordMismatchError(IguanaError):
     """Raised when ``password_reconfirm`` does not match the operator's hash."""
 
-    status_code = 403
-    code = "password-mismatch"
+    type_uri = "urn:iguanatrader:error:password-mismatch"
+    default_title = "Password mismatch"
+    default_status = 403
 
 
 def _validate_mode(mode: str) -> str:
