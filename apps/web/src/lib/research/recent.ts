@@ -16,7 +16,14 @@
  * compatible.
  */
 
-export const DEFAULT_MAX_RECENT = 8;
+/**
+ * Recent-symbols cap (slice U4). Lowered from 8 → 5 because the
+ * autocomplete dropdown (slice U1) is now the primary discovery
+ * surface — the recent chips are a "shortcut to the last few" rather
+ * than a substitute for a watchlist. 5 fits in a single visual row
+ * on most viewports without wrapping.
+ */
+export const DEFAULT_MAX_RECENT = 5;
 
 /** Symbol input pattern — matches strategies-config-ui (IBKR convention). */
 export const SYMBOL_PATTERN = /^[A-Z0-9]{1,16}$/;
