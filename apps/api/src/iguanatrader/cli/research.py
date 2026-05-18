@@ -1092,4 +1092,157 @@ async def _ingest_fool_transcript_async(
     typer.echo(f"OK — symbol={symbol} transcript persisted ({len(draft.value_text or '')} chars)")
 
 
+@ingest_app.command("edgar-narrative")
+def ingest_edgar_narrative(
+    ticker: str = typer.Argument(
+        ...,
+        help="Ticker (or numeric CIK) the 10-K narrative belongs to (e.g. NVDA).",
+    ),
+    symbol: str | None = typer.Option(
+        None,
+        "--symbol",
+        help="Symbol to stamp on the persisted facts. Defaults to TICKER.",
+    ),
+    accession_number: str | None = typer.Option(
+        None,
+        "--accession-number",
+        help="Specific 10-K accession to backfill. Defaults to latest 10-K.",
+    ),
+    include: str = typer.Option(
+        "all",
+        "--include",
+        help=(
+            "Comma-separated sections: mdna, risk_factors, all. Default all. "
+            "Missing sections in the filing degrade silently."
+        ),
+    ),
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Tenant slug; defaults to the first tenant when single-tenant.",
+    ),
+) -> None:
+    """Pull 10-K Item 7 (MD&A) + Item 1A (Risk Factors) prose via edgartools.
+
+    Requires the optional ``edgartools`` dep —
+    ``pip install iguanatrader[edgar-narrative]``. The adapter raises
+    a clear ConfigError when the lib is missing rather than failing
+    with a raw ImportError stack.
+
+    Usage::
+
+        iguanatrader research ingest edgar-narrative NVDA
+        iguanatrader research ingest edgar-narrative NVDA --include mdna
+        iguanatrader research ingest edgar-narrative NVDA \\
+          --accession-number 0001045810-26-000123
+    """
+    import structlog
+
+    log = structlog.get_logger("iguanatrader.cli.research.ingest")
+    log.info(
+        "cli.research.ingest.edgar_narrative.invoked",
+        ticker=ticker,
+        accession_number=accession_number,
+        include=include,
+    )
+
+    asyncio.run(
+        _ingest_edgar_narrative_async(
+            ticker=ticker,
+            symbol=symbol or ticker,
+            accession_number=accession_number,
+            include=include,
+            tenant_slug=tenant,
+        )
+    )
+
+
+async def _ingest_edgar_narrative_async(
+    *,
+    ticker: str,
+    symbol: str,
+    accession_number: str | None,
+    include: str,
+    tenant_slug: str | None,
+) -> None:
+    """Async body of ``ingest edgar-narrative``."""
+    from dataclasses import replace as dc_replace
+
+    import sqlalchemy as sa
+
+    from iguanatrader.contexts.research.errors import (
+        ConfigError,
+        SourceUnavailableError,
+    )
+    from iguanatrader.contexts.research.models import SymbolUniverse
+    from iguanatrader.contexts.research.repository import ResearchRepository
+    from iguanatrader.contexts.research.sources.edgartools_narrative import (
+        EdgartoolsSource,
+    )
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    include_lc = include.strip().lower()
+    if include_lc in ("all", ""):
+        include_set: list[str] | None = None
+    else:
+        include_set = [tok.strip() for tok in include_lc.split(",") if tok.strip()]
+
+    tenant_id = await _resolve_tenant_id(tenant_slug)
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+
+            sym_row = (
+                await session.execute(
+                    sa.select(SymbolUniverse.id).where(SymbolUniverse.symbol == symbol)
+                )
+            ).first()
+            if sym_row is None:
+                typer.echo(
+                    f"ERROR: symbol {symbol!r} not registered for this tenant. Run "
+                    f"`iguanatrader admin register-symbol {symbol} --tenant <slug>` first."
+                )
+                raise typer.Exit(code=1)
+            symbol_universe_id = sym_row[0]
+
+            try:
+                adapter = EdgartoolsSource()
+            except ConfigError as exc:
+                typer.echo(f"ERROR: {exc.detail}")
+                raise typer.Exit(code=2) from None
+
+            try:
+                drafts = await adapter.fetch_narrative_async(
+                    ticker_or_cik=ticker,
+                    symbol=symbol,
+                    accession_number=accession_number,
+                    include=include_set,
+                )
+            except SourceUnavailableError as exc:
+                typer.echo(f"ERROR: {exc.detail}")
+                raise typer.Exit(code=3) from None
+            except ValueError as exc:
+                typer.echo(f"ERROR: {exc}")
+                raise typer.Exit(code=2) from None
+
+            repo = ResearchRepository()
+            inserted = 0
+            for draft in drafts:
+                stamped = dc_replace(draft, symbol_universe_id=symbol_universe_id)
+                await repo.insert_fact(stamped)
+                inserted += 1
+
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(
+        f"OK — symbol={symbol} ticker={ticker} include={include} sections_inserted={inserted}"
+    )
+
+
 __all__ = ["app"]
