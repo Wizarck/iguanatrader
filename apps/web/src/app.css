@@ -1,9 +1,14 @@
 /*
- * Global stylesheet — slice W1 (`dashboard-svelte-skeleton`).
+ * Global stylesheet — slice W1 + slice U6 light-theme extension.
  *
  * OKLCH design tokens locked in `docs/ux/components.md` §0.3 +
- * `docs/ux/DESIGN.md` §1. Dark-only at MVP (light variant CSS vars
- * deferred — see design D10 + gotcha #34).
+ * `docs/ux/DESIGN.md` §1. Two palettes:
+ *
+ *   * `:root`, `:root[data-theme='dark']` — dark surfaces (default,
+ *     mirrors prior MVP behaviour).
+ *   * `:root[data-theme='light']` — light surfaces. Accents +
+ *     semantic hues stay legible against the lighter ground; chroma
+ *     is reduced slightly so badges don't vibrate.
  *
  * Tailwind 4.x: import via `@import 'tailwindcss';` (no config file —
  * the Vite plugin in `vite.config.ts` does the rest).
@@ -11,42 +16,8 @@
 
 @import 'tailwindcss';
 
-/*
- * MVP-scope: light-variant vars are deferred (design D10 / gotcha #74),
- * so apply the dark palette regardless of `data-theme`. Without this,
- * a browser that reports `prefers-color-scheme: light` makes the store
- * set `data-theme="light"`, which leaves every CSS var undefined and
- * renders the page as illegible default colours.
- */
-:root,
-:root[data-theme='dark'],
-:root[data-theme='light'] {
-  /* Surfaces */
-  --bg: oklch(18% 0.02 250);
-  --surface: oklch(22% 0.02 250);
-  --surface-2: oklch(26% 0.02 250);
-
-  /* Text */
-  --ink: oklch(95% 0.005 250);
-  --mute: oklch(70% 0.012 250);
-
-  /* Borders + lines */
-  --border: oklch(32% 0.02 250);
-
-  /* Accents */
-  --accent: oklch(72% 0.14 195);
-  --accent-fg: oklch(15% 0.02 250);
-  --accent-hover: oklch(76% 0.14 195);
-
-  /* Semantic */
-  --success: oklch(72% 0.16 145);
-  --destructive: oklch(64% 0.2 25);
-  --warn-bg: oklch(78% 0.14 80);
-  --info: oklch(72% 0.14 230);
-
-  /* Focus */
-  --focus-ring: oklch(72% 0.14 195 / 0.45);
-
+/* Shared tokens (palette-independent). */
+:root {
   /* Radii */
   --r-1: 4px;
   --r-2: 8px;
@@ -58,10 +29,64 @@
   --font-mono: 'JetBrains Mono Variable', 'SF Mono', Consolas, monospace;
 }
 
+/* Dark palette — default. */
+:root,
+:root[data-theme='dark'] {
+  --bg: oklch(18% 0.02 250);
+  --surface: oklch(22% 0.02 250);
+  --surface-2: oklch(26% 0.02 250);
+  --surface-hover: oklch(28% 0.02 250);
+
+  --ink: oklch(95% 0.005 250);
+  --mute: oklch(70% 0.012 250);
+
+  --border: oklch(32% 0.02 250);
+
+  --accent: oklch(72% 0.14 195);
+  --accent-fg: oklch(15% 0.02 250);
+  --accent-hover: oklch(76% 0.14 195);
+
+  --success: oklch(72% 0.16 145);
+  --destructive: oklch(64% 0.2 25);
+  --warn-fg: oklch(78% 0.14 80);
+  --warn-bg: oklch(78% 0.14 80 / 0.14);
+  --info: oklch(72% 0.14 230);
+
+  --focus-ring: oklch(72% 0.14 195 / 0.45);
+
+  color-scheme: dark;
+}
+
+/* Light palette (slice U6). */
+:root[data-theme='light'] {
+  --bg: oklch(98% 0.005 250);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(96% 0.005 250);
+  --surface-hover: oklch(92% 0.008 250);
+
+  --ink: oklch(22% 0.02 250);
+  --mute: oklch(48% 0.012 250);
+
+  --border: oklch(86% 0.01 250);
+
+  --accent: oklch(50% 0.14 230);
+  --accent-fg: oklch(98% 0.005 250);
+  --accent-hover: oklch(46% 0.14 230);
+
+  --success: oklch(48% 0.16 145);
+  --destructive: oklch(50% 0.2 25);
+  --warn-fg: oklch(48% 0.14 80);
+  --warn-bg: oklch(90% 0.07 80 / 0.5);
+  --info: oklch(48% 0.14 230);
+
+  --focus-ring: oklch(50% 0.14 230 / 0.4);
+
+  color-scheme: light;
+}
+
 html {
   background: var(--bg);
   color: var(--ink);
-  color-scheme: dark;
 }
 
 body {
