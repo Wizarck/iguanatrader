@@ -19,6 +19,7 @@ the request transaction; ``session_var.set(db)`` binds the session for
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from datetime import UTC, datetime
 from uuid import UUID
@@ -457,8 +458,8 @@ async def get_brief_stats(
         fundamentals_payload=(fundamentals_fact.value_jsonb if fundamentals_fact else None),
         analyst_payload=(analyst_fact.value_jsonb if analyst_fact else None),
     )
-    # Pydantic accepts the dataclass dict via model construction.
-    return BriefStatsResponse(**stats.__dict__)
+    # `BriefStats` is a frozen+slots dataclass — no __dict__, so go via asdict.
+    return BriefStatsResponse(**dataclasses.asdict(stats))
 
 
 __all__ = [
