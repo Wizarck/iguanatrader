@@ -15,6 +15,7 @@
    * The chip reads from the singleton daemon-status store; the layout
    * mounts the store + the two chips.
    */
+  import DaemonToggleModal from '$lib/components/DaemonToggleModal.svelte';
   import { daemonStatusStore } from '$lib/stores/daemon-status.svelte';
   import type { DaemonMode } from '$lib/status/types';
 
@@ -23,6 +24,7 @@
   };
 
   let { mode }: Props = $props();
+  let modalOpen = $state(false);
 
   const row = $derived(daemonStatusStore.status?.daemons.find((d) => d.mode === mode) ?? null);
   const active = $derived(!!row && row.enabled && row.ib_connected);
@@ -50,9 +52,7 @@
   });
 
   function onclick(): void {
-    // Toggle modal lands in a follow-up; for now log the click so the
-    // operator can verify the chip is interactive.
-    console.info('daemon-chip.click', { mode, active, enabled: row?.enabled });
+    modalOpen = true;
   }
 </script>
 
@@ -70,6 +70,8 @@
   <span class="chip__label">{mode.toUpperCase()}</span>
   <span class="chip__state">{stateLabel}</span>
 </button>
+
+<DaemonToggleModal {mode} open={modalOpen} onClose={() => (modalOpen = false)} />
 
 <style>
   .chip {
