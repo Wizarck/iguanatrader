@@ -718,9 +718,66 @@ class ResearchAuditTrail(Base):
     )
 
 
+class IngestRun(Base):
+    """Per-invocation record of a research-source ingestion (slice I7).
+
+    The scheduler (or a manual CLI invocation) creates one row at the
+    start of each ingest, updates it on completion, and surfaces the
+    history to operators via ``GET /api/v1/admin/ingest-runs``.
+
+    Per-tenant scoped — the listener auto-stamps ``tenant_id``. A
+    failing run still persists with ``status='error'`` + the
+    ``error_detail`` so the operator can see the failure surface
+    without scraping logs.
+    """
+
+    __tablename__ = "ingest_runs"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    source_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("research_sources.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    symbol_universe_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("symbol_universe.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    symbol: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invoked_by: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    facts_inserted: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_ingest_runs_tenant_id_started_at", "tenant_id", "started_at"),
+        Index("ix_ingest_runs_source_id_started_at", "source_id", "started_at"),
+        CheckConstraint(
+            "status IN ('started','ok','error','cancelled')",
+            name="ingest_runs_status_allowed",
+        ),
+    )
+
+
 __all__ = [
     "AnalystRating",
     "CorporateEvent",
+    "IngestRun",
     "ResearchAuditTrail",
     "ResearchBrief",
     "ResearchFact",
