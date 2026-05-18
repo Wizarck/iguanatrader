@@ -201,10 +201,40 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         )
 
         approval_repository = ApprovalRepository()
+        inner_channel_dispatcher = build_channel_dispatcher_from_env(
+            repository=approval_repository,
+        )
+
+        # Slice ``llm-features-composition-wiring``: wrap the channel
+        # dispatcher with auto-explain (A1) + subscribe auto-risk-review
+        # (A2) + auto-journal (A3) + construct the I7 ingest scheduler.
+        # See ``cli/llm_handler_wiring.py`` for the per-handler
+        # production adapter shape. Best-effort across the board — a
+        # missing ANTHROPIC_API_KEY surfaces as the wrapper's
+        # swallowed-exception path so the bus still flows.
+        from iguanatrader.cli.llm_handler_wiring import wire_llm_handlers
+        from iguanatrader.contexts.research.synthesis.anthropic_client import (
+            build_anthropic_llm_client_from_env,
+        )
+        from iguanatrader.contexts.trading.repository import (
+            TradeProposalRepository,
+            TradeRepository,
+        )
+
+        wrapped_channel_dispatcher = wire_llm_handlers(
+            bus=bus,
+            scheduler=scheduler,
+            llm_client=build_anthropic_llm_client_from_env(),
+            inner_dispatcher=inner_channel_dispatcher,
+            trade_repo=TradeRepository(),
+            proposal_repo=TradeProposalRepository(),
+            session_factory=sessionmaker,
+        )
+
         approval_service = ApprovalService(
             repository=approval_repository,
             message_bus=bus,
-            channel_dispatcher=build_channel_dispatcher_from_env(repository=approval_repository),
+            channel_dispatcher=wrapped_channel_dispatcher,
         )
         approval_service.register_subscriptions(bus)
 
