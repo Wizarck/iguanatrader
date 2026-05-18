@@ -86,18 +86,9 @@ describe('recordRecent', () => {
     ]);
   });
 
-  it('caps the list at max (default 8)', () => {
-    const list = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-    expect(recordRecent(list, 'I')).toEqual([
-      'I',
-      'A',
-      'B',
-      'C',
-      'D',
-      'E',
-      'F',
-      'G'
-    ]);
+  it('caps the list at max (default 5)', () => {
+    const list = ['A', 'B', 'C', 'D', 'E'];
+    expect(recordRecent(list, 'F')).toEqual(['F', 'A', 'B', 'C', 'D']);
   });
 
   it('honours a custom max', () => {
@@ -111,8 +102,26 @@ describe('recordRecent', () => {
     expect(out).not.toBe(list); // cloned
   });
 
-  it('uses DEFAULT_MAX_RECENT === 8', () => {
-    expect(DEFAULT_MAX_RECENT).toBe(8);
+  it('uses DEFAULT_MAX_RECENT === 5', () => {
+    expect(DEFAULT_MAX_RECENT).toBe(5);
+  });
+
+  it('MRU reorder: re-visiting an existing symbol bumps it to the front (slice U4)', () => {
+    // Pin the contract behind a dedicated test so a future refactor
+    // that accidentally turns dedupe into "leave in place" surfaces here.
+    expect(recordRecent(['SPY', 'AAPL', 'TSLA'], 'AAPL')).toEqual([
+      'AAPL',
+      'SPY',
+      'TSLA'
+    ]);
+    // Re-visiting the head is a no-op in ordering (still at the front).
+    expect(recordRecent(['AAPL', 'SPY', 'TSLA'], 'AAPL')).toEqual([
+      'AAPL',
+      'SPY',
+      'TSLA'
+    ]);
+    // Case-insensitive: re-visiting a lowercase variant normalises to UC.
+    expect(recordRecent(['SPY', 'AAPL'], 'spy')).toEqual(['SPY', 'AAPL']);
   });
 });
 
