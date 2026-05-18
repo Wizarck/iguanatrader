@@ -671,9 +671,7 @@ class TradingModeRepository(BaseRepository):
         API route layer (task 11) maps a stale heartbeat (>30s) to
         ``ib_connected=false`` regardless of the persisted value.
         """
-        flags_stmt = select(TenantTradingMode).where(
-            TenantTradingMode.tenant_id == tenant_id
-        )
+        flags_stmt = select(TenantTradingMode).where(TenantTradingMode.tenant_id == tenant_id)
         flags_result = await self.session.execute(flags_stmt)
         flag_rows = list(flags_result.scalars().all())
 
