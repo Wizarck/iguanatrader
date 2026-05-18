@@ -1,78 +1,106 @@
-# iguanatrader — IB Gateway sidecar overlay (slice ibkr-gateway-sidecar).
+# iguanatrader — IB Gateway sidecar overlay (slice ibkr-gateway-sidecar +
+# dual-daemon-mode-toggle-and-reconcile).
 #
-# Layers on top of `docker-compose.mvp.yml` to add an IB Gateway service
-# that the api container connects to over the compose network. Designed
-# for the VPS live-ready path; not needed for local dev (broker calls in
-# tests use the in-process fake).
+# Layers on top of `docker-compose.mvp.yml` to add TWO IB Gateway
+# services (paper + live) that the matching `trading_daemon_*`
+# container connects to over the compose network. Each daemon owns its
+# own gateway sidecar so a 2FA prompt on the live side does not stall
+# the paper-side connection (and vice versa).
 #
-# Default profile is PAPER (TRADING_MODE=paper, port 4002). Switch to
-# live by overriding `TRADING_MODE=live` + `TWS_PORT=4001` in the env
-# file. Slice ``sops-decrypt-at-boot`` will wire `TWS_USERID` +
-# `TWS_PASSWORD` from `.secrets/{paper,live}.env.enc`; for the manual
-# bring-up below the operator exports them in their shell.
+# Defaults map paper→port 4002 / VNC 5900 + live→port 4001 / VNC 5901
+# matching the IBKR convention. The image is digest-pinned (audit-
+# mitigation 2026-05-18; refresh quarterly per
+# docs/runbooks/ibkr-gateway-bringup.md §Security).
 #
-# Bring-up (paper):
+# Bring-up (both gateways):
 #
 #   1. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \\
 #        -f docker-compose.postgres.yml -f docker-compose.ibgateway.yml build`
 #   2. Set required env (see `docs/runbooks/ibkr-gateway-bringup.md`):
-#        export TWS_USERID=...
+#        export TWS_USERID=...                # paper
 #        export TWS_PASSWORD=...
-#        export TRADING_MODE=paper
-#        export TWS_PORT=4002
-#        export VNC_SERVER_PASSWORD=$(python -c "import secrets; print(secrets.token_urlsafe(12))")
+#        export TWS_USERID_LIVE=...           # live (populate when ready)
+#        export TWS_PASSWORD_LIVE=...
+#        export VNC_SERVER_PASSWORD_PAPER=$(python -c "import secrets; print(secrets.token_urlsafe(12))")
+#        export VNC_SERVER_PASSWORD_LIVE=$(python -c "import secrets; print(secrets.token_urlsafe(12))")
 #   3. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \\
 #        -f docker-compose.postgres.yml -f docker-compose.ibgateway.yml up -d`
 #
-# The image (`gnzsnz/ib-gateway:stable`) bundles IBC (IBController) for
-# auto-login + handles the IBKR weekly restart window internally. See
-# `docs/runbooks/ibkr-gateway-bringup.md` for the end-to-end procedure
-# + 2FA / VNC tunnel notes.
+# The live daemon defaults to ``enabled=false`` (migration 0026 seed):
+# the ib-gateway-live container boots + idles harmlessly until the
+# operator toggles via the /settings UI. Once toggled, the daemon's
+# bus subscriber runs reconcile + resumes signal generation.
+
+x-ib-gateway-base: &ib-gateway-base
+  # Pinned by digest (audit-mitigation 2026-05-18). Refresh quarterly:
+  #   docker pull gnzsnz/ib-gateway:stable \
+  #     && docker inspect --format '{{index .RepoDigests 0}}' gnzsnz/ib-gateway:stable
+  # Audit verdict: SAFE — IbcAlpha/IBC bundled, MIT, 4+ years, no advisories.
+  # See docs/runbooks/ibkr-gateway-bringup.md §Security.
+  image: gnzsnz/ib-gateway:stable@sha256:a9a771b0d61ad8b57e0c7f9919b7d5396a1bbc4c3c576bb5f5848aa149d1ffaa
+  restart: unless-stopped
+
 
 services:
-  ib-gateway:
-    # Pinned by digest (audit-mitigation 2026-05-18). Refresh quarterly:
-    #   docker pull gnzsnz/ib-gateway:stable \
-    #     && docker inspect --format '{{index .RepoDigests 0}}' gnzsnz/ib-gateway:stable
-    # Audit verdict: SAFE — IbcAlpha/IBC bundled, MIT, 4+ years, no advisories.
-    # See docs/runbooks/ibkr-gateway-bringup.md §Security.
-    image: gnzsnz/ib-gateway:stable@sha256:a9a771b0d61ad8b57e0c7f9919b7d5396a1bbc4c3c576bb5f5848aa149d1ffaa
-    restart: unless-stopped
+  ib-gateway-paper:
+    <<: *ib-gateway-base
     environment:
       - TWS_USERID=${TWS_USERID}
       - TWS_PASSWORD=${TWS_PASSWORD}
-      - TRADING_MODE=${TRADING_MODE:-paper}
-      - READ_ONLY_API=${READ_ONLY_API:-no}
-      - VNC_SERVER_PASSWORD=${VNC_SERVER_PASSWORD}
+      - TRADING_MODE=paper
+      - READ_ONLY_API=${READ_ONLY_API_PAPER:-no}
+      - VNC_SERVER_PASSWORD=${VNC_SERVER_PASSWORD_PAPER:-${VNC_SERVER_PASSWORD:-}}
       - TZ=${TZ:-UTC}
-      # 2FA timeout (gnzsnz default 60s; raise so manual VNC confirm
-      # has time on the rare day IBKR challenges a paper login).
       - TWO_FA_TIMEOUT_ACTION=${TWO_FA_TIMEOUT_ACTION:-restart}
-    # NO host port bind for 4001/4002 — the api container reaches it
-    # over the compose network DNS name `ib-gateway`. VNC port 5900 is
-    # bound to LOCALHOST ONLY; SSH tunnel from operator host to use it.
+    # NO host port bind for 4002 — daemons reach it over compose-network
+    # DNS as `ib-gateway-paper`. VNC port localhost-only; SSH-tunnel
+    # from operator host (port 5900 on host → 5900 on container).
     ports:
       - "127.0.0.1:5900:5900"
-    # Healthcheck: TCP probe on the active API port. nc is bundled in
-    # the gnzsnz base image.
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${TWS_PORT:-4002} || exit 1"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 4002 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 90s
 
-  api:
+  ib-gateway-live:
+    <<: *ib-gateway-base
     environment:
-      # Reach IB Gateway over the compose network.
-      - IBKR_HOST=ib-gateway
-      - TWS_PORT=${TWS_PORT:-4002}
-      # Username + password fall through from the host env (same env
-      # vars that gnzsnz/ib-gateway also reads — they are SOPS-managed
-      # once slice ``sops-decrypt-at-boot`` ships).
-      - IBKR_USERNAME=${TWS_USERID}
-      - IBKR_PASSWORD=${TWS_PASSWORD}
-      - IB_CLIENT_ID=${IB_CLIENT_ID:-1}
+      - TWS_USERID=${TWS_USERID_LIVE:-${TWS_USERID:-}}
+      - TWS_PASSWORD=${TWS_PASSWORD_LIVE:-${TWS_PASSWORD:-}}
+      - TRADING_MODE=live
+      - READ_ONLY_API=${READ_ONLY_API_LIVE:-no}
+      - VNC_SERVER_PASSWORD=${VNC_SERVER_PASSWORD_LIVE:-${VNC_SERVER_PASSWORD:-}}
+      - TZ=${TZ:-UTC}
+      - TWO_FA_TIMEOUT_ACTION=${TWO_FA_TIMEOUT_ACTION:-restart}
+    ports:
+      - "127.0.0.1:5901:5900"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 4001 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # Daemon depends_on is REDEFINED here (not merged) — Compose overlay
+  # semantics: each top-level key replaces the base value, so we must
+  # restate the api + openbb_sidecar dependencies alongside the new
+  # ib-gateway-* health gate.
+  trading_daemon_paper:
     depends_on:
-      ib-gateway:
+      api:
+        condition: service_started
+      openbb_sidecar:
+        condition: service_started
+      ib-gateway-paper:
+        condition: service_healthy
+
+  trading_daemon_live:
+    depends_on:
+      api:
+        condition: service_started
+      openbb_sidecar:
+        condition: service_started
+      ib-gateway-live:
         condition: service_healthy
