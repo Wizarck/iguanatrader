@@ -1,5 +1,5 @@
 """DaemonLifecycleService — drain + reconcile coordinator (slice
-``dual-daemon-mode-toggle-and-reconcile``).
+``dual-daemon-mode-toggle-and-reconcile`` + ``dual-daemon-followups``).
 
 The single ``trading_daemon`` process becomes mode-aware: each daemon
 runs with its own ``mode`` (paper or live) and listens for bus events
@@ -16,10 +16,15 @@ Bus subscriptions registered by :meth:`register_subscriptions`:
   delegate to :meth:`reconcile_with_ibkr`.
 
 :meth:`reconcile_with_ibkr` is the on-demand + on-boot reconcile entry
-point. First cut: fills + equity snapshot. Position-side reconcile
-(closing local trades absent from IBKR's book with
-``exit_reason='ibkr_reconcile'``) is deferred to Phase-2.5 follow-up —
-needs ``BrokerPort.list_positions()`` + a fake-adapter test fixture.
+point. Three steps:
+
+1. Fills catch-up — delegate to existing :meth:`TradingService.startup_reconcile`.
+2. Equity snapshot — fresh row tagged ``snapshot_kind='event'``.
+3. Position diff (slice ``dual-daemon-followups`` Phase-2.5) — close
+   any local open trade whose ``symbol`` is absent from
+   :meth:`BrokerPort.list_positions`. The close uses
+   ``exit_reason='ibkr_reconcile'`` (migration 0030 extended the CHECK
+   constraint to accept the new sentinel).
 
 Each daemon process holds one instance scoped to its ``(tenant_id,
 mode)`` pair. Both subscriptions filter on ``event.mode == self._mode``
@@ -47,6 +52,7 @@ if TYPE_CHECKING:
     from iguanatrader.contexts.trading.ports import BrokerPort
     from iguanatrader.contexts.trading.repository import (
         EquitySnapshotRepository,
+        TradeRepository,
         TradingModeRepository,
     )
     from iguanatrader.contexts.trading.service import TradingService
@@ -68,6 +74,7 @@ class DaemonLifecycleService:
         trading_mode_repo: TradingModeRepository,
         broker: BrokerPort,
         equity_repo: EquitySnapshotRepository,
+        trade_repo: TradeRepository | None = None,
     ) -> None:
         if mode not in ("paper", "live"):
             raise ValueError(f"mode must be 'paper' or 'live', got {mode!r}")
@@ -78,6 +85,12 @@ class DaemonLifecycleService:
         self._trading_mode_repo = trading_mode_repo
         self._broker = broker
         self._equity_repo = equity_repo
+        # ``trade_repo`` is optional for backwards-compat with callers
+        # that wired the service before Phase-2.5 added position
+        # reconcile. The reconcile step gracefully no-ops when None so
+        # tests built against the original constructor signature still
+        # construct the service.
+        self._trade_repo = trade_repo
         # Phase 3.5 cross-process poll watermarks. Initialised on the
         # first ``poll_for_state_changes`` call to the current column
         # values so historical state does not retroactively fire drain
@@ -287,23 +300,88 @@ class DaemonLifecycleService:
                 correlation_id=str(corr),
             )
 
-        # 3. Position-side reconcile — DEFERRED (Phase-2.5). The
-        # ``provenance='ibkr_reconcile'`` close path needs a new
-        # ``BrokerPort.list_positions()`` method + a fake-adapter
-        # fixture for tests + an extension to the ``exit_reason`` CHECK
-        # constraint to allow the new sentinel. Tracked as task 2.5.x
-        # in tasks.md.
-        log.info(
-            "daemon_lifecycle.reconcile.positions_skipped",
-            reason="phase_2_5_deferred",
-            correlation_id=str(corr),
-        )
+        # 3. Position-side reconcile — slice ``dual-daemon-followups``
+        # Phase-2.5. Pulls the full IBKR position list, compares the
+        # symbol set to the daemon's local open-trade view, and closes
+        # any local row whose symbol is absent broker-side. Uses
+        # ``exit_reason='ibkr_reconcile'`` (migration 0030 added the
+        # sentinel to ``ck_trades_exit_reason_allowed``).
+        try:
+            await self._reconcile_positions(correlation_id=corr)
+        except Exception as exc:
+            log.warning(
+                "daemon_lifecycle.reconcile.positions_failed",
+                error=str(exc),
+                correlation_id=str(corr),
+            )
 
         log.info(
             "daemon_lifecycle.reconcile.completed",
             mode=self._mode,
             tenant_id=str(self._tenant_id),
             correlation_id=str(corr),
+        )
+
+    async def _reconcile_positions(self, *, correlation_id: UUID) -> None:
+        """Close local open trades that IBKR no longer holds.
+
+        Compares :meth:`BrokerPort.list_positions` (the broker's
+        authoritative open-position book) against the daemon's local
+        ``trades`` rows in ``state IN ('open', 'closing')``. Any local
+        row whose ``symbol`` does NOT appear in the broker set is
+        considered orphaned and closed via the slice
+        ``ibkr_reconcile`` exit-reason path.
+
+        Idempotency: a second reconcile in the same correlation finds
+        the trades already in ``state='closed'`` and skips them. We
+        rely on the slice-3 append-only listener's whitelist to permit
+        the UPDATE on ``state`` / ``exit_reason`` / ``closed_at`` —
+        same whitelist the close-flow service uses for stop/target.
+
+        No-op when ``self._trade_repo`` is None (backwards-compat for
+        tests that constructed the service without Phase-2.5 wiring).
+        """
+        if self._trade_repo is None:
+            log.info(
+                "daemon_lifecycle.reconcile.positions_skipped",
+                reason="trade_repo_unwired",
+                correlation_id=str(correlation_id),
+            )
+            return
+
+        broker_positions = await self._broker.list_positions()
+        broker_symbols = {pos.symbol for pos in broker_positions if pos.quantity != 0}
+
+        local_open = await self._trade_repo.list_open_for_tenant()
+        # Filter to this daemon's mode — the same TradeRepository is
+        # shared by both paper + live daemons in a multi-process
+        # deployment; per-mode session isolation is provided by the
+        # session_var binding, but a defensive filter keeps the diff
+        # honest if a future call site changes session scoping.
+        orphans = [t for t in local_open if t.mode == self._mode and t.symbol not in broker_symbols]
+
+        if not orphans:
+            log.info(
+                "daemon_lifecycle.reconcile.positions_in_sync",
+                mode=self._mode,
+                correlation_id=str(correlation_id),
+                local_open_count=len(local_open),
+                broker_symbol_count=len(broker_symbols),
+            )
+            return
+
+        closed_at = utc_now()
+        for trade in orphans:
+            trade.state = "closed"
+            trade.exit_reason = "ibkr_reconcile"
+            trade.closed_at = closed_at
+
+        log.info(
+            "daemon_lifecycle.reconcile.positions_closed",
+            mode=self._mode,
+            correlation_id=str(correlation_id),
+            closed_count=len(orphans),
+            closed_symbols=[t.symbol for t in orphans],
         )
 
 

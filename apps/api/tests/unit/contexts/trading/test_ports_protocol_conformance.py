@@ -63,6 +63,9 @@ class _StubBroker:
             currency="USD",
         )
 
+    async def list_positions(self) -> list[Position]:
+        return []
+
     async def get_account_equity(self) -> EquitySnapshotValue:
         return EquitySnapshotValue(
             tenant_id=uuid4(),

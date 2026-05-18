@@ -164,6 +164,9 @@ class _FakeBroker:
     async def get_position(self, symbol: str) -> Any:
         return None
 
+    async def list_positions(self) -> list[Any]:
+        return []
+
     async def get_account_equity(self) -> Any:
         return None
 

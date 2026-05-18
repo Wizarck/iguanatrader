@@ -86,6 +86,9 @@ class _FakeBroker:
     async def get_position(self, symbol: str) -> Position:
         raise NotImplementedError
 
+    async def list_positions(self) -> list[Position]:
+        return []
+
     async def get_account_equity(self) -> EquitySnapshotValue:
         raise NotImplementedError
 
