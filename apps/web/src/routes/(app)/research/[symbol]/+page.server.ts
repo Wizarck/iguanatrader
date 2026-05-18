@@ -14,10 +14,11 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, fetch }) => {
   const symbol = params.symbol.toUpperCase();
-  // Parallel fetches — both endpoints are slim.
-  const [briefRes, factsRes] = await Promise.all([
+  // Parallel fetches — all three endpoints are slim.
+  const [briefRes, factsRes, statsRes] = await Promise.all([
     fetch(`/api/v1/research/briefs/${encodeURIComponent(symbol)}`),
-    fetch(`/api/v1/research/facts/${encodeURIComponent(symbol)}`)
+    fetch(`/api/v1/research/facts/${encodeURIComponent(symbol)}`),
+    fetch(`/api/v1/research/stats/${encodeURIComponent(symbol)}`)
   ]);
 
   // 404 / 501: surface as "no brief yet" rather than blowing up the page.
@@ -35,9 +36,18 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
     throw error(factsRes.status, `Failed to load facts: ${factsRes.statusText}`);
   }
 
+  // Stats are best-effort — even unregistered symbols get a payload of
+  // nulls instead of a 404, but on a transient backend hiccup we let
+  // the page render without the StatBlock rather than throwing.
+  let stats: unknown = null;
+  if (statsRes.ok) {
+    stats = await statsRes.json();
+  }
+
   return {
     symbol,
     brief,
-    facts
+    facts,
+    stats
   };
 };

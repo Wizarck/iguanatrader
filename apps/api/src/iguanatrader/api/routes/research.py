@@ -32,6 +32,7 @@ from iguanatrader.api.dtos.research import (
     AuditTrailEntry,
     BriefRefreshRequest,
     BriefResponse,
+    BriefStatsResponse,
     CitationDetail,
     FactResponse,
     ResolvedCitationDetail,
@@ -409,6 +410,55 @@ async def refresh_brief(
         for r in resolved
     ]
     return _project_brief(outcome.brief, resolved_citations=resolved_dtos)
+
+
+@router.get("/stats/{symbol}", response_model=BriefStatsResponse)
+async def get_brief_stats(
+    symbol: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BriefStatsResponse:
+    """Snapshot KPIs derived from the latest ingested facts (slice research-stat-block).
+
+    Reads the four ``value_jsonb`` payloads that feed the stat block —
+    ``historical_prices_window`` for the symbol AND for the SPY
+    benchmark, plus the latest ``fundamentals`` + ``analyst_ratings``
+    snapshots — and runs them through :func:`compute_stats`. Missing
+    upstream sources yield ``None`` fields; the route never 404s on
+    a registered symbol with no facts.
+    """
+    from iguanatrader.contexts.research.stats import BENCHMARK_SYMBOL, compute_stats
+
+    log.info("api.research.stats.get", symbol=symbol)
+    session_var.set(db)
+    repo = ResearchRepository()
+
+    prices_fact = await repo.latest_fact_by_kinds(
+        symbol=symbol,
+        fact_kinds=["historical_prices_window"],
+    )
+    bench_fact = await repo.latest_fact_by_kinds(
+        symbol=BENCHMARK_SYMBOL,
+        fact_kinds=["historical_prices_window"],
+    )
+    fundamentals_fact = await repo.latest_fact_by_kinds(
+        symbol=symbol,
+        fact_kinds=["fundamentals"],
+    )
+    analyst_fact = await repo.latest_fact_by_kinds(
+        symbol=symbol,
+        fact_kinds=["analyst_ratings"],
+    )
+
+    stats = compute_stats(
+        symbol=symbol,
+        prices_payload=(prices_fact.value_jsonb if prices_fact else None),
+        benchmark_payload=(bench_fact.value_jsonb if bench_fact else None),
+        fundamentals_payload=(fundamentals_fact.value_jsonb if fundamentals_fact else None),
+        analyst_payload=(analyst_fact.value_jsonb if analyst_fact else None),
+    )
+    # Pydantic accepts the dataclass dict via model construction.
+    return BriefStatsResponse(**stats.__dict__)
 
 
 __all__ = [
