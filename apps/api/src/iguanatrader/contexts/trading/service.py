@@ -49,6 +49,7 @@ from iguanatrader.contexts.trading.events import (
     ProposalCreated,
     ProposalRejected,
     ProposalRiskEvaluated,
+    TradeClosed,
 )
 from iguanatrader.contexts.trading.models import (
     EquitySnapshot,
@@ -667,11 +668,31 @@ class TradingService:
                 fill_repo=fill_repo,
                 order_repo=order_repo,
             )
+            closed_at = utc_now()
             await trade_repo.update_state(
                 trade.id,
                 state="closed",
-                closed_at=utc_now(),
+                closed_at=closed_at,
                 realised_pnl=realised_pnl,
+            )
+
+            # Slice A3 — publish TradeClosed for the auto-journal
+            # subscriber (and any future analytics consumers). Fire-and-
+            # forget: a handler failure (LLM timeout, budget exceeded,
+            # Hindsight retain network error) MUST NOT roll back this
+            # close. Bus delivery itself is best-effort per the shared
+            # messagebus contract.
+            await self._bus.publish(
+                TradeClosed(
+                    tenant_id=trade.tenant_id,
+                    trade_id=trade.id,
+                    symbol=trade.symbol,
+                    side=trade.side,
+                    quantity=trade.quantity,
+                    realised_pnl=realised_pnl,
+                    exit_reason=str(trade.exit_reason or "manual"),
+                    closed_at=closed_at,
+                )
             )
 
         await self._bus.publish(

@@ -36,6 +36,7 @@ events are the documented inter-context wire format per
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, ClassVar
 from uuid import UUID
@@ -256,6 +257,40 @@ class CloseTradeRequested(Event):
             self.idempotency_key = str(self.trade_id)
 
 
+@dataclass(kw_only=True)
+class TradeClosed(Event):
+    """Emitted post-fill reconciliation when a trade transitions from
+    ``state="closing"`` to ``state="closed"`` (slice A3).
+
+    Subscribers include :class:`AutoJournalOnCloseHandler` which
+    triggers the LLM-generated post-mortem journal narrative. The
+    event is fire-and-forget — handler failures (LLM timeout, budget
+    exceeded, Hindsight retain network error) MUST NOT roll back the
+    close. Best-effort semantics are documented per-handler.
+
+    ``realised_pnl`` is denormalised onto the event so subscribers that
+    feed dashboards / Hindsight metadata don't need a round-trip to
+    the trade row.
+    """
+
+    event_name: ClassVar[str] = "trading.trade.closed"
+
+    tenant_id: UUID
+    trade_id: UUID
+    symbol: str
+    side: str  # 'buy' | 'sell' (entry side; long vs short)
+    quantity: Decimal
+    realised_pnl: Decimal
+    exit_reason: str  # 'stop' | 'target' | 'manual' | 'expiry'
+    closed_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            # One TradeClosed event per trade — re-deliveries against
+            # the same trade_id should be deduped at the bus layer.
+            self.idempotency_key = f"trade-closed:{self.trade_id}"
+
+
 __all__ = [
     "ApprovalRequested",
     "CloseTradeRequested",
@@ -267,4 +302,5 @@ __all__ = [
     "ProposalCreated",
     "ProposalRejected",
     "ProposalRiskEvaluated",
+    "TradeClosed",
 ]
