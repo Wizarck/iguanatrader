@@ -37,6 +37,18 @@ class FeatureFlagsOut(BaseModel):
         ),
     )
 
+    risk_review_confidence_threshold: str | None = Field(
+        default=None,
+        examples=["0.80"],
+        description=(
+            "Confidence-score threshold above which "
+            "``AutoRiskReviewOnCreateHandler`` runs a Sonnet risk assessment "
+            "(slice A2). String-encoded Decimal in ``[0, 1]``. NULL → use "
+            'the canonical 0.80 default. Setting it to ``"1.00"`` '
+            "disables auto-risk-review without removing the subscriber."
+        ),
+    )
+
 
 class FeatureFlagsIn(BaseModel):
     """Write shape for ``PUT /settings/feature-flags`` (slice R6 + A0).
@@ -58,6 +70,16 @@ class FeatureFlagsIn(BaseModel):
     # precision on round-trip. ``None`` = "don't change"; an explicit
     # empty string ``""`` clears the cap (returns to the $50 default).
     llm_budget_usd: str | None = Field(default=None, examples=["100.00", ""])
+
+    # Slice A2 — admin surface for editing the confidence threshold that
+    # gates auto-risk-review. ``None`` = "don't change"; ``""`` clears
+    # the override and falls back to the canonical 0.80 default.
+    # ``"1.00"`` effectively disables auto-risk-review (no proposal can
+    # exceed the threshold).
+    risk_review_confidence_threshold: str | None = Field(
+        default=None,
+        examples=["0.85", "1.00", ""],
+    )
 
 
 __all__ = ["FeatureFlagsIn", "FeatureFlagsOut"]

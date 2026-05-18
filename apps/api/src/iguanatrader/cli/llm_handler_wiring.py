@@ -150,6 +150,72 @@ class TradeProposalLoaderAdapter:
         return prop
 
 
+def build_risk_assessment_persister(
+    *,
+    proposal_repo: TradeProposalRepository,
+) -> Any:
+    """Return a :data:`RiskAssessmentPersister` that UPDATEs the proposal row.
+
+    Slice ``a2-risk-review-persist`` closes the gap left by the original
+    A2 wiring (no-op persister stub). The five risk_* columns now exist on
+    ``trade_proposals`` (migration 0031) and the append-only listener
+    permits them via the column whitelist. The persister translates the
+    service-layer :class:`ProposalRiskAssessment` field names to the
+    repository's ``set_risk_assessment`` keyword arguments; ``flags`` →
+    ``risk_flags`` because the assessment dataclass dropped the ``risk_``
+    prefix for readability while the column kept it for namespacing.
+    """
+
+    async def _persist(assessment: Any) -> None:
+        pid = UUID(str(assessment.proposal_id))
+        await proposal_repo.set_risk_assessment(
+            proposal_id=pid,
+            risk_score=int(assessment.risk_score),
+            risk_flags=list(assessment.flags),
+            risk_rationale=str(assessment.rationale or ""),
+            risk_model=str(assessment.model),
+        )
+
+    return _persist
+
+
+def build_risk_review_threshold_loader() -> Any:
+    """Return a :data:`ThresholdLoader` that reads
+    ``tenants.feature_flags["risk_review_confidence_threshold"]``.
+
+    Slice ``a2-risk-review-persist`` — exposes the per-tenant override
+    surface added in :class:`FeatureFlagsIn`. Loader returns ``None``
+    when the tenant has not configured a value so the handler falls
+    back to :data:`DEFAULT_CONFIDENCE_THRESHOLD`. A malformed value
+    (bad cast) degrades silently to ``None`` so a misconfigured tenant
+    does not break the bus delivery.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    from sqlalchemy import select
+
+    from iguanatrader.persistence.models import Tenant
+    from iguanatrader.shared.contextvars import session_var
+
+    async def _load(tenant_id: Any) -> Decimal | None:
+        session = session_var.get()
+        if session is None:
+            return None
+        result = await session.execute(select(Tenant).where(Tenant.id == tenant_id))
+        tenant = result.scalar_one_or_none()
+        if tenant is None or not tenant.feature_flags:
+            return None
+        raw = tenant.feature_flags.get("risk_review_confidence_threshold")
+        if raw is None:
+            return None
+        try:
+            return Decimal(str(raw))
+        except (InvalidOperation, ValueError):
+            return None
+
+    return _load
+
+
 # ---------------------------------------------------------------------------
 # A1 — NarrativeProvider factory
 # ---------------------------------------------------------------------------
@@ -262,10 +328,24 @@ def wire_llm_handlers(
     )
 
     # A2 — auto-risk-review subscriber on ProposalCreated.
+    #
+    # Slice ``a2-risk-review-persist``: migration 0031 added the five
+    # ``risk_*`` columns to ``trade_proposals`` and the append-only
+    # listener now permits the UPDATE. The persister adapter writes the
+    # assessment back so the A1 dispatcher (which reads the same row)
+    # can embed risk in its Hermes payload. Pre-slice the persister was
+    # a no-op stub; the assessment was logged but never reachable from
+    # downstream consumers. The threshold loader reads the per-tenant
+    # ``risk_review_confidence_threshold`` feature-flag so operators can
+    # raise or lower the gate without redeploy.
     proposal_loader = TradeProposalLoaderAdapter(proposal_repo=proposal_repo)
+    risk_persister = build_risk_assessment_persister(proposal_repo=proposal_repo)
+    risk_threshold_loader = build_risk_review_threshold_loader()
     risk_handler = AutoRiskReviewOnCreateHandler(
         assessor=risk_assessor,
         loader=proposal_loader,
+        persister=risk_persister,
+        threshold_loader=risk_threshold_loader,
     )
     bus.subscribe(ProposalCreated, risk_handler)
     logger.info("composition.wire_llm_handlers.a2_risk_subscribed")
@@ -318,5 +398,7 @@ __all__ = [
     "TradeJournalPersistAdapter",
     "TradeProposalLoaderAdapter",
     "build_explainer_narrative_provider",
+    "build_risk_assessment_persister",
+    "build_risk_review_threshold_loader",
     "wire_llm_handlers",
 ]

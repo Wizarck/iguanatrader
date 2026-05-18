@@ -41,9 +41,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-#: Default confidence threshold. Tenants opt-in to more aggressive review
-#: by lowering this via the feature-flags UI (slice A2-followup).
+#: Default confidence threshold. Tenants override via
+#: ``tenants.feature_flags["risk_review_confidence_threshold"]`` (slice
+#: A2-persist exposes the per-tenant edit surface in
+#: ``/settings/feature-flags``); ``"1.00"`` effectively disables the
+#: auto-review without removing the subscriber.
 DEFAULT_CONFIDENCE_THRESHOLD: Decimal = Decimal("0.80")
+
+
+#: Loader returning the per-tenant threshold override. Returns ``None``
+#: when the tenant has not set one — caller falls back to
+#: :data:`DEFAULT_CONFIDENCE_THRESHOLD`. The composition root binds a
+#: concrete loader that reads ``tenants.feature_flags`` via the
+#: session_var-scoped DB; tests inject a synchronous fake.
+ThresholdLoader = Callable[[Any], Awaitable["Decimal | None"]]
 
 
 class RiskAssessorLike(Protocol):
@@ -132,6 +143,7 @@ class AutoRiskReviewOnCreateHandler:
         loader: ProposalLoaderLike,
         persister: RiskAssessmentPersister | None = None,
         threshold: Decimal = DEFAULT_CONFIDENCE_THRESHOLD,
+        threshold_loader: ThresholdLoader | None = None,
         recent_trades_summary: str = "",
         open_positions_count: int = 0,
     ) -> None:
@@ -139,11 +151,37 @@ class AutoRiskReviewOnCreateHandler:
         self._loader = loader
         self._persister = persister or _noop_persister
         self._threshold = threshold
+        # Per-tenant runtime override (slice A2-persist). When None the
+        # constructor-time ``threshold`` is used unchanged.
+        self._threshold_loader = threshold_loader
         # Composition root can rebind these per-call via a future
         # extension if needed; the v1 contract uses the construction-
         # time values for every assessment.
         self._recent_trades_summary = recent_trades_summary
         self._open_positions_count = open_positions_count
+
+    async def _effective_threshold(self, tenant_id: Any) -> Decimal:
+        """Resolve the threshold for ``tenant_id``.
+
+        Prefers the per-tenant feature-flag override loaded via
+        :attr:`_threshold_loader`; falls back to the constructor-time
+        value when no loader is wired or the loader returns ``None``.
+        Loader exceptions degrade silently to the default.
+        """
+        if self._threshold_loader is None:
+            return self._threshold
+        try:
+            override = await self._threshold_loader(tenant_id)
+        except Exception as exc:
+            logger.warning(
+                "research.auto_risk_review.threshold_load_failed",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+            return self._threshold
+        return override if override is not None else self._threshold
 
     async def __call__(self, event: ProposalCreated) -> None:
         try:
@@ -159,7 +197,8 @@ class AutoRiskReviewOnCreateHandler:
             return
 
         confidence = proposal.confidence_score
-        if confidence is None or confidence < self._threshold:
+        threshold = await self._effective_threshold(event.tenant_id)
+        if confidence is None or confidence < threshold:
             # Sub-threshold → silent skip. No LLM call; no log spam.
             return
 
@@ -206,4 +245,5 @@ __all__ = [
     "ProposalLoaderLike",
     "RiskAssessmentPersister",
     "RiskAssessorLike",
+    "ThresholdLoader",
 ]

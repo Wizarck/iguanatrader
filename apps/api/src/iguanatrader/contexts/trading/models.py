@@ -129,6 +129,11 @@ class TradeProposal(Base):
             "state",
             "rejection_reason",
             "rejected_at",
+            "risk_score",
+            "risk_flags",
+            "risk_rationale",
+            "risk_generated_at",
+            "risk_model",
         }
     )
 
@@ -195,6 +200,14 @@ class TradeProposal(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    risk_flags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    risk_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    risk_model: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Trade(Base):
@@ -538,6 +551,10 @@ TradeProposal.__table_args__ = (
     CheckConstraint(
         "state IN ('pending_approval','approved','rejected','expired')",
         name="ck_trade_proposals_state_allowed",
+    ),
+    CheckConstraint(
+        "risk_score IS NULL OR (risk_score BETWEEN 0 AND 100)",
+        name="ck_trade_proposals_risk_score_range",
     ),
 )
 Trade.__table_args__ = (

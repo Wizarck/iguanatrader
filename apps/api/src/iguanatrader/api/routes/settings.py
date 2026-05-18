@@ -34,8 +34,17 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 class InvalidBudgetCapError(IguanaError):
     """Raised when ``llm_budget_usd`` PUT payload fails parse/validate."""
 
-    status_code = 400
-    code = "invalid-budget-cap"
+    type_uri = "urn:iguanatrader:error:invalid-budget-cap"
+    default_title = "Invalid Budget Cap"
+    default_status = 400
+
+
+class InvalidRiskThresholdError(IguanaError):
+    """Raised when ``risk_review_confidence_threshold`` PUT payload fails parse/validate."""
+
+    type_uri = "urn:iguanatrader:error:invalid-risk-threshold"
+    default_title = "Invalid Risk Threshold"
+    default_status = 400
 
 
 @router.get("/feature-flags", response_model=FeatureFlagsOut)
@@ -50,9 +59,13 @@ async def get_feature_flags(
         raise NotFoundError(detail=f"Tenant {user.tenant_id} not found.")
     flags = dict(tenant.feature_flags or {})
     raw_budget = flags.get("llm_budget_usd")
+    raw_threshold = flags.get("risk_review_confidence_threshold")
     return FeatureFlagsOut(
         hindsight_recall_enabled=bool(flags.get("hindsight_recall_enabled", False)),
         llm_budget_usd=str(raw_budget) if raw_budget is not None else None,
+        risk_review_confidence_threshold=(
+            str(raw_threshold) if raw_threshold is not None else None
+        ),
     )
 
 
@@ -96,12 +109,39 @@ async def put_feature_flags(
                 raise InvalidBudgetCapError(detail="llm_budget_usd cannot be negative.")
             current["llm_budget_usd"] = str(value)
 
+    if payload.risk_review_confidence_threshold is not None:
+        raw_t = payload.risk_review_confidence_threshold.strip()
+        if raw_t == "":
+            current.pop("risk_review_confidence_threshold", None)
+        else:
+            try:
+                threshold = Decimal(raw_t)
+            except (InvalidOperation, ValueError) as exc:
+                raise InvalidRiskThresholdError(
+                    detail=(
+                        "risk_review_confidence_threshold must parse as a "
+                        f"decimal; got {raw_t!r}."
+                    )
+                ) from exc
+            if threshold < Decimal("0") or threshold > Decimal("1"):
+                raise InvalidRiskThresholdError(
+                    detail=(
+                        "risk_review_confidence_threshold must be in [0, 1]; " f"got {raw_t!r}."
+                    )
+                )
+            current["risk_review_confidence_threshold"] = str(threshold)
+
     tenant.feature_flags = current
     await db.commit()
 
     return FeatureFlagsOut(
         hindsight_recall_enabled=bool(current.get("hindsight_recall_enabled", False)),
         llm_budget_usd=(str(current["llm_budget_usd"]) if "llm_budget_usd" in current else None),
+        risk_review_confidence_threshold=(
+            str(current["risk_review_confidence_threshold"])
+            if "risk_review_confidence_threshold" in current
+            else None
+        ),
     )
 
 
