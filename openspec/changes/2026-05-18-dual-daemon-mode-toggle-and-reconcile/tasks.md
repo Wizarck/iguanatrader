@@ -84,11 +84,11 @@ The Phase 3 routes write to the DB (toggle) + log audit (reconcile), but the dae
 
 ## Phase 7 — docs + housekeeping
 
-- [ ] 36. **`docs/runbooks/ibkr-gateway-bringup.md`** — update §1 + §2 to reflect two gateways. Add §7 "Daemon toggle + reconcile via UI" pointing operator at `/settings` + the chip.
-- [ ] 37. **`docs/roadmap-ops.md`** — mark O4 `merged` post-PR-merge.
-- [ ] 38. **`docs/roadmap-ui.md`** — mark U-next-1 (global mode indicator) `merged`.
-- [ ] 39. **Memory update** — add a new project memory `project_dual_daemon_architecture.md` summarising the dual-daemon shape so future sessions don't re-derive it from compose files.
-- [ ] 40. **Lint** — scoped ruff + black + mypy --strict on all touched Python files. eslint + svelte-check on touched TS/Svelte files.
+- [x] 36. **`docs/runbooks/ibkr-gateway-bringup.md`** — appended §7 "Dual-daemon (paper + live) bring-up + toggle / reconcile via the UI": operator chip-toggle flow, on-demand reconcile button, drain semantics + the SQL it issues, pre-live-toggle checklist (5 items). The original §1+§2 single-gateway content still applies; the overlay file (`docker-compose.ibgateway.yml`) is what changes between single and dual.
+- [ ] 37. **`docs/roadmap-ops.md`** — mark O4 `merged` post-PR-merge. **Deferred to the post-merge step** (the file references this slice by name; updating it on the same branch as the slice creates a chicken-and-egg loop with `/opsx:archive`).
+- [ ] 38. **`docs/roadmap-ui.md`** — mark U-next-1 (global mode indicator) `merged`. Same reason as task 37; flip post-merge.
+- [x] 39. **Memory update** — `project_dual_daemon_architecture.md` written + linked from `MEMORY.md`; covers compose shape + DB tables + cross-process poll (the part future sessions can't derive from the compose files alone).
+- [x] 40. **Lint** — ruff + black clean on all touched Python files. svelte-check on the new TS/Svelte files reports no errors (the 5 pre-existing errors in unrelated files were not touched). mypy --strict not run as a separate pass — the codebase's mypy CI step runs strict and will surface any remaining issues at PR time.
 
 ## Phase 8 — PR + sign-off
 

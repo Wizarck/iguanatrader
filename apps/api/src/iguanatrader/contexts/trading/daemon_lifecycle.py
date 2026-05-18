@@ -29,7 +29,7 @@ so the paper daemon ignores live events and vice versa.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import structlog
@@ -259,7 +259,7 @@ class DaemonLifecycleService:
         # the daemon missed since the last persisted fill).
         try:
             await self._trading_service.startup_reconcile()
-        except Exception as exc:  # noqa: BLE001 — best-effort; log + continue
+        except Exception as exc:
             log.warning(
                 "daemon_lifecycle.reconcile.fills_failed",
                 error=str(exc),
@@ -283,7 +283,7 @@ class DaemonLifecycleService:
                 snapshot_kind="event",
             )
             await self._equity_repo.add(snapshot)
-        except Exception as exc:  # noqa: BLE001 — best-effort; log + continue
+        except Exception as exc:
             log.warning(
                 "daemon_lifecycle.reconcile.equity_failed",
                 error=str(exc),
