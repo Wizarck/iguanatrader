@@ -217,6 +217,7 @@ def wire_llm_handlers(
     ingest_sources: dict[str, Any] | None = None,
     ingest_watchlist: Iterable[Any] | None = None,
     ingest_persist_drafts: Any | None = None,
+    hindsight_client: Any | None = None,
 ) -> ChannelDispatcher:
     """Subscribe A1/A2/A3 handlers + bootstrap I7 scheduler.
 
@@ -236,13 +237,29 @@ def wire_llm_handlers(
     risk_assessor = ProposalRiskAssessor(llm_client)
 
     # A3 — auto-journal subscriber on TradeClosed.
+    #
+    # ``hindsight_client`` closes the Hindsight feedback loop: when an
+    # operator passes the production :class:`HindsightPort` (typically
+    # built by ``build_hindsight_adapter_from_env``), the journal
+    # narrative is retained to the recall bank in addition to being
+    # persisted on the trade row. Pre-slice this argument was None and
+    # the handler fell back to ``_NoopHindsightClient`` — narrative
+    # never made it to Hindsight, the recall side had nothing to draw
+    # from. Tests + dev environments without a Hindsight server can
+    # still pass None to keep the noop semantics.
     journal_adapter = TradeJournalPersistAdapter(
         writer=journal_writer,
         trade_repo=trade_repo,
     )
-    journal_handler = AutoJournalOnCloseHandler(journal_writer=journal_adapter)
+    journal_handler = AutoJournalOnCloseHandler(
+        journal_writer=journal_adapter,
+        hindsight_client=hindsight_client,
+    )
     bus.subscribe(TradeClosed, journal_handler)
-    logger.info("composition.wire_llm_handlers.a3_journal_subscribed")
+    logger.info(
+        "composition.wire_llm_handlers.a3_journal_subscribed",
+        extra={"hindsight_wired": hindsight_client is not None},
+    )
 
     # A2 — auto-risk-review subscriber on ProposalCreated.
     proposal_loader = TradeProposalLoaderAdapter(proposal_repo=proposal_repo)
