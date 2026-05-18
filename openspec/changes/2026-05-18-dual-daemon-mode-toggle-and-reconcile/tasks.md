@@ -20,12 +20,23 @@ Discovered during Task 4 that the spec's `pending_proposals_count` query + the P
 
 ## Phase 2 — daemon drain + reconcile semantics
 
-- [ ] 5. **`apps/api/src/iguanatrader/cli/trading.py::TradingDaemon`** — add main-loop guard per proposal §4. Read `trading_enabled` at top of every tick; if false, run `_handle_drain_if_pending()` + `_heartbeat()` + return.
-- [ ] 6. **`TradingDaemon._handle_drain_if_pending()`** — bulk-reject pending_approval proposals for this daemon's mode with `rejection_reason='daemon_drained'`. Idempotent (only acts if `drain_pending` flag set).
-- [ ] 7. **`TradingDaemon._heartbeat()`** — write to `daemon_heartbeats` every tick with current IBKR connection state. Use 10s minimum interval (`last_write_at + 10s > now`) to avoid hammering the DB.
-- [ ] 8. **`TradingDaemon._reconcile_with_ibkr()`** — extract from existing `iguanatrader trading reconcile` CLI into a reusable method on the daemon class. Both the CLI and the new HTTP endpoint will call it.
-- [ ] 9. **Reconcile-on-resume wiring** — when bus event `daemon.reconcile.requested(mode)` arrives, set `self.pending_reconcile_request = True`. First subsequent tick runs reconcile before normal logic.
-- [ ] 10. **Reconcile-on-boot wiring** — daemon `__aenter__()` or equivalent calls `_reconcile_with_ibkr()` before entering the main loop. Skip if `enabled=false` (just heartbeat and idle).
+> **Architecture-adaptation note**: the spec assumed a `TradingDaemon` class with a `tick()` main loop. The actual codebase is APScheduler-driven (no tick loop, no `TradingDaemon` class — the daemon is `cli.trading._run_daemon` which registers cron jobs and bus subscribers). The tasks below adapt the spec semantics to the scheduler-driven shape: the toggle gate lives at the top of each propose cron handler, the heartbeat is a 10s cron job, drain + reconcile are bus subscribers, and boot reconcile runs once before `scheduler.start()`.
+
+- [x] 5. **`apps/api/src/iguanatrader/contexts/orchestration/service.py::bootstrap_routines`** — gate every propose cron handler on `trading_enabled` for the daemon's `(tenant_id, mode)`. Reads at the top of each routine via `TradingModeRepository.load_trading_enabled`; short-circuits with structlog breadcrumb `orchestration.propose.skipped_disabled` when off.
+- [x] 6. **`apps/api/src/iguanatrader/contexts/trading/daemon_lifecycle.py::DaemonLifecycleService._drain_pending_proposals`** — bulk `UPDATE trade_proposals SET state='rejected', rejection_reason='daemon_drained', rejected_at=now() WHERE mode=:mode AND state='pending_approval'`. Triggered by `DaemonDrainRequested` event filtered to this daemon's mode. Idempotent — second drain in same toggle finds no pending rows and updates 0.
+- [x] 7. **`apps/api/src/iguanatrader/contexts/orchestration/service.py` — `daemon_heartbeat` JobSpec** — 10s cron (`second="*/10"`) calling `TradingModeRepository.write_heartbeat` with `ib_connected` derived from `broker.state == ConnectionState.CONNECTED`. Fires unconditionally so disabled daemons still surface as alive (no false "down" signal in the chip).
+- [x] 8. **`DaemonLifecycleService.reconcile_with_ibkr`** — first cut: delegates to existing `TradingService.startup_reconcile()` for fills + writes an `EquitySnapshot(snapshot_kind='event')` row from `broker.get_account_equity()`. **Position-side reconcile deferred to Phase 2.5** (needs `BrokerPort.list_positions()` + a fake-adapter fixture + extending the `Trade.exit_reason` CHECK to include `'ibkr_reconcile'`).
+- [x] 9. **`DaemonLifecycleService._reconcile_handler`** — bus subscriber for `DaemonReconcileRequested` (filtered by mode + tenant_id). Calls `reconcile_with_ibkr` with the event's correlation_id for trace continuity. Registered `idempotent=True` so retries collapse.
+- [x] 10. **Boot reconcile wiring in `cli/trading.py::_run_daemon`** — after `lifecycle_service.register_subscriptions()` and before `scheduler.start()`: read the `trading_enabled` flag; if true, call `lifecycle_service.reconcile_with_ibkr()`; if false, log `trading.daemon.boot_reconcile.skipped_disabled` and skip. The existing `trading_service.startup_reconcile()` call stays as the unconditional broker-fills drain (covers disabled-boot crash-recovery; idempotent at `broker_fill_id`).
+
+## Phase 2.5 — position-side reconcile (deferred)
+
+Acceptance criterion 5 from `proposal.md` (`local trades close with provenance='ibkr_reconcile'`) needs the following follow-ups before the slice can archive:
+
+- [ ] 2.5a. **Migration `0029_trade_exit_reason_extend.py`** — extend the `ck_trades_exit_reason_allowed` CHECK to allow `'ibkr_reconcile'` (existing set: `stop` / `target` / `manual` / `expiry`). Also update `Trade.__table_args__` model-side CHECK to match.
+- [ ] 2.5b. **`BrokerPort.list_positions() -> Iterable[Position]`** — add to the port + implement on `IBKRAdapter` (delegate to `IbAsyncIBClient.positions()`) + the fake adapter (parameterised fixture for the reconcile test).
+- [ ] 2.5c. **`DaemonLifecycleService._reconcile_positions`** — load all open `Trade` rows for `(tenant_id, mode)`; intersect with `broker.list_positions()` symbol set; for each local trade whose symbol is absent from the broker book, `UPDATE` `state='closed'`, `closed_at=now()`, `exit_reason='ibkr_reconcile'`.
+- [ ] 2.5d. **Integration test** — pre-seed 2 local open trades; fake broker returns only 1 of them; assert the other transitions to `closed`/`exit_reason='ibkr_reconcile'`.
 
 ## Phase 3 — API endpoints
 

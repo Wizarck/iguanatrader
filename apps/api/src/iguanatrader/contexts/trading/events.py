@@ -258,6 +258,64 @@ class CloseTradeRequested(Event):
 
 
 @dataclass(kw_only=True)
+class DaemonDrainRequested(Event):
+    """Emitted by ``POST /api/v1/daemons/{mode}/toggle`` on a true→false toggle.
+
+    Slice ``dual-daemon-mode-toggle-and-reconcile``. Subscriber:
+    daemon-side lifecycle handler that bulk-rejects pending_approval
+    proposals for the matching ``mode`` with
+    ``rejection_reason='daemon_drained'``. IBKR-side orders are NOT
+    cancelled — IBKR is the authoritative book; we only refuse to
+    create new orders going forward.
+
+    Each daemon process subscribes but filters by its own ``mode`` —
+    the paper daemon ignores ``DaemonDrainRequested(mode='live')`` and
+    vice versa. The bus subscription is registered with
+    ``idempotent=True`` so duplicate emissions (toggle bounce) collapse
+    to a single drain pass.
+    """
+
+    event_name: ClassVar[str] = "trading.daemon.drain_requested"
+
+    tenant_id: UUID
+    mode: str  # 'paper' | 'live'
+    reason: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = f"drain:{self.tenant_id}:{self.mode}"
+
+
+@dataclass(kw_only=True)
+class DaemonReconcileRequested(Event):
+    """Emitted by ``POST /api/v1/daemons/{mode}/reconcile`` + by ``POST
+    /api/v1/daemons/{mode}/toggle`` on a false→true toggle.
+
+    Slice ``dual-daemon-mode-toggle-and-reconcile``. Subscriber: daemon-
+    side lifecycle handler that runs reconcile against IBKR (fills +
+    equity snapshot first cut; positions/open-orders deferred to the
+    Phase-2.5 follow-up).
+
+    ``idempotency_key`` is NOT keyed by tenant + mode alone — operators
+    may legitimately trigger several reconciles in a row (e.g. after a
+    manual TWS-side action followed by a few-second observation
+    window). A monotonic correlation_id keeps each request independent.
+    """
+
+    event_name: ClassVar[str] = "trading.daemon.reconcile_requested"
+
+    tenant_id: UUID
+    mode: str  # 'paper' | 'live'
+    correlation_id: UUID
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = f"reconcile:{self.correlation_id}"
+
+
+@dataclass(kw_only=True)
 class TradeClosed(Event):
     """Emitted post-fill reconciliation when a trade transitions from
     ``state="closing"`` to ``state="closed"`` (slice A3).
@@ -294,6 +352,8 @@ class TradeClosed(Event):
 __all__ = [
     "ApprovalRequested",
     "CloseTradeRequested",
+    "DaemonDrainRequested",
+    "DaemonReconcileRequested",
     "EquityUpdated",
     "OrderFilled",
     "OrderPlaced",

@@ -168,9 +168,13 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         from iguanatrader.contexts.trading.market_data.service import (
             MarketDataIngestionService,
         )
+        from iguanatrader.contexts.trading.daemon_lifecycle import (
+            DaemonLifecycleService,
+        )
         from iguanatrader.contexts.trading.repository import (
             EquitySnapshotRepository,
             StrategyConfigRepository,
+            TradingModeRepository,
         )
         from iguanatrader.contexts.trading.service import TradingService
 
@@ -341,11 +345,31 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             bus=bus,
         )
 
+        # Slice ``dual-daemon-mode-toggle-and-reconcile``: per-daemon
+        # lifecycle coordinator. Subscribes to DaemonDrainRequested +
+        # DaemonReconcileRequested events filtered to this daemon's
+        # mode. The repo + service are scoped to the session bound to
+        # session_var above; the daemon-side bus delivery picks up the
+        # contextvar so drain UPDATEs land on the correct session.
+        trading_mode_repo = TradingModeRepository()
+        equity_repo = EquitySnapshotRepository()
+        lifecycle_service = DaemonLifecycleService(
+            mode=mode,
+            tenant_id=tenant_id,
+            bus=bus,
+            trading_service=trading_service,
+            trading_mode_repo=trading_mode_repo,
+            broker=broker,
+            equity_repo=equity_repo,
+        )
+        lifecycle_service.register_subscriptions()
+
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
         # Side-effect: registers cron JobSpecs on the scheduler (4 propose
-        # routines + 5th market_data_sync routine wired by T4-followup
-        # + equity_snapshot_sweep + stop_hit_sweep wired here).
+        # routines + 5th market_data_sync + equity_snapshot_sweep +
+        # stop_hit_sweep + daemon_heartbeat per-mode toggle gate wired
+        # via the daemon_* params).
         await orchestration_service.bootstrap_routines(
             scheduler=scheduler,
             trading_service=trading_service,
@@ -355,11 +379,46 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             ingestion_service=ingestion_service,
             equity_snapshot_sweep_service=equity_snapshot_sweep_service,
             stop_hit_sweep_service=stop_hit_sweep_service,
+            daemon_mode=mode,
+            daemon_tenant_id=tenant_id,
+            trading_mode_repo=trading_mode_repo,
+            broker=broker,
         )
 
         # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close
         # the propose→risk→approve→execute chain end-to-end.
         log.info("trading.daemon.bus_subscriptions.complete")
+
+        # Slice ``dual-daemon-mode-toggle-and-reconcile``: boot-time
+        # reconcile with IBKR — runs once before the scheduler starts
+        # so the first propose tick sees fresh broker state. Skip when
+        # the operator has toggled this daemon off (don't pin a
+        # disabled daemon's gateway with reconcile traffic on every
+        # restart).
+        try:
+            boot_enabled = await trading_mode_repo.load_trading_enabled(
+                tenant_id, mode
+            )
+        except Exception as exc:
+            log.warning(
+                "trading.daemon.boot_reconcile.gate_check_failed",
+                error=str(exc),
+            )
+            boot_enabled = False
+        if boot_enabled:
+            try:
+                await lifecycle_service.reconcile_with_ibkr()
+            except Exception as exc:
+                log.warning(
+                    "trading.daemon.boot_reconcile.failed",
+                    error=str(exc),
+                )
+        else:
+            log.info(
+                "trading.daemon.boot_reconcile.skipped_disabled",
+                mode=mode,
+                tenant_id=str(tenant_id),
+            )
 
         await scheduler.start()
         log.info("trading.daemon.scheduler_started")
