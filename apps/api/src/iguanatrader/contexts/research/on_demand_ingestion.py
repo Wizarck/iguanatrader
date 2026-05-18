@@ -45,9 +45,7 @@ class OpenBBSourceLike(Protocol):
     adapter (which would drag in httpx / sidecar HTTP plumbing).
     """
 
-    def fetch(
-        self, symbol: str, since: datetime | None
-    ) -> Iterable[ResearchFactDraft]: ...
+    def fetch(self, symbol: str, since: datetime | None) -> Iterable[ResearchFactDraft]: ...
 
     def fetch_prices(
         self,
@@ -55,6 +53,7 @@ class OpenBBSourceLike(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> Iterable[ResearchFactDraft]: ...
+
 
 logger = logging.getLogger(__name__)
 
