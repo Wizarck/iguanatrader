@@ -3,7 +3,8 @@
 Tier-A feature names map to fact_kinds R2 ingested:
 
 * ``eps_diluted`` <- ``sec_xbrl.us-gaap.EarningsPerShareDiluted``
-* ``revenue`` <- ``sec_xbrl.us-gaap.Revenues``
+* ``revenue`` <- ``sec_xbrl.us-gaap.Revenues`` (with ASC 606 / legacy
+  fallback chain — see ``_REVENUE_FACT_KINDS`` for the full list)
 * ``cpi_yoy`` <- ``fred.CPIAUCSL`` (year-over-year).
 * ``unemployment_rate`` <- ``fred.UNRATE``.
 * ``fed_funds_rate`` <- ``fred.DFF``.
@@ -42,19 +43,38 @@ if TYPE_CHECKING:
     from iguanatrader.contexts.research.repository import ResearchRepository
 
 
-# Native-fact mappings — one fact_kind, one feature.
+# Revenue XBRL tag fallback chain. ``us-gaap.Revenues`` is the canonical
+# concept but many companies tag revenue under more specific concepts:
+#   * ``RevenueFromContractWithCustomerExcludingAssessedTax`` — ASC 606
+#     adopters (post-2018, the majority of large-cap tech including AMD).
+#   * ``SalesRevenueNet`` — legacy filers pre-ASC 606.
+#   * ``SalesRevenueGoodsNet`` — companies that distinguish goods vs.
+#     services (AMD, Intel).
+# The repository's ``facts_history_by_kinds`` query returns matches from
+# any of the listed kinds; the YoY computation then dedupes by period so
+# a company that switched tags between fiscal years still compares
+# apples-to-apples within each tag's coverage window.
+_REVENUE_FACT_KINDS: tuple[str, ...] = (
+    "sec_xbrl.us-gaap.Revenues",
+    "sec_xbrl.us-gaap.RevenueFromContractWithCustomerExcludingAssessedTax",
+    "sec_xbrl.us-gaap.SalesRevenueNet",
+    "sec_xbrl.us-gaap.SalesRevenueGoodsNet",
+)
+
+# Native-fact mappings — feature name → ordered fact_kind candidates.
 _FACT_KIND_BY_FEATURE: dict[str, tuple[str, ...]] = {
     "eps_diluted": ("sec_xbrl.us-gaap.EarningsPerShareDiluted",),
-    "revenue": ("sec_xbrl.us-gaap.Revenues",),
+    "revenue": _REVENUE_FACT_KINDS,
     "cpi_yoy": ("fred.CPIAUCSL",),
     "unemployment_rate": ("fred.UNRATE",),
     "fed_funds_rate": ("fred.DFF",),
 }
 
-# Derived YoY features — (feature_name, source_fact_kind).
-_YOY_DERIVATIONS: tuple[tuple[str, str], ...] = (
-    ("eps_growth_yoy", "sec_xbrl.us-gaap.EarningsPerShareDiluted"),
-    ("revenue_growth_yoy", "sec_xbrl.us-gaap.Revenues"),
+# Derived YoY features — (feature_name, source_fact_kinds). Multiple
+# source kinds let one feature draw from a fallback chain.
+_YOY_DERIVATIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("eps_growth_yoy", ("sec_xbrl.us-gaap.EarningsPerShareDiluted",)),
+    ("revenue_growth_yoy", _REVENUE_FACT_KINDS),
 )
 
 # Momentum features computed from price bars. Listed here so the bundle
@@ -120,11 +140,13 @@ class TierAFeatureProvider:
             if fact.id is not None:
                 citations[feature_name] = fact.id
 
-        # Derived YoY features — one repo call per concept, then collapse
-        # restatements + compute (latest - prior) / |prior|.
-        for feature_name, source_kind in _YOY_DERIVATIONS:
+        # Derived YoY features — one repo call per concept (the fact_kinds
+        # tuple may list a fallback chain when the canonical XBRL tag
+        # has variants), then collapse restatements + compute
+        # (latest - prior) / |prior|.
+        for feature_name, source_kinds in _YOY_DERIVATIONS:
             yoy, anchor_fact = await self._compute_yoy(
-                symbol=symbol, fact_kind=source_kind, since=since
+                symbol=symbol, fact_kinds=source_kinds, since=since
             )
             values[feature_name] = (yoy, "A")
             if yoy is not None and anchor_fact is not None and anchor_fact.id is not None:
@@ -156,13 +178,21 @@ class TierAFeatureProvider:
         self,
         *,
         symbol: str,
-        fact_kind: str,
+        fact_kinds: tuple[str, ...],
         since: datetime | None,
     ) -> tuple[Decimal | None, ResearchFact | None]:
-        """Compute YoY change of an XBRL concept, returning ``(yoy, anchor_fact)``."""
+        """Compute YoY change of an XBRL concept, returning ``(yoy, anchor_fact)``.
+
+        ``fact_kinds`` is a tuple of one or more candidate fact-kind
+        identifiers — companies that switch XBRL revenue tags between
+        fiscal years (e.g. ``Revenues`` → ``RevenueFromContract…``)
+        appear in the union; the period-dedupe loop below picks the
+        most-recently-recorded fact per ``effective_from``, so a tag
+        switch is transparent to the consumer.
+        """
         facts = await self._repo.facts_history_by_kinds(
             symbol=symbol,
-            fact_kinds=[fact_kind],
+            fact_kinds=list(fact_kinds),
             limit=_YOY_FACT_WINDOW,
             require_recorded_before=since,
         )
