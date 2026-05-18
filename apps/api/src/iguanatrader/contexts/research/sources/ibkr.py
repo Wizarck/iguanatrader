@@ -208,7 +208,7 @@ class IBKRSource:
         if self._owns_client and self._client is not None:
             try:
                 self._client.disconnect()
-            except Exception:  # noqa: BLE001 — disconnect is best-effort.
+            except Exception:
                 logger.warning("research.ibkr.disconnect.failed")
             self._client = None
 
@@ -225,7 +225,7 @@ class IBKRSource:
             payload = await asyncio.wait_for(
                 client.market_snapshot(symbol), timeout=SUBFLOW_TIMEOUT_SECONDS
             )
-        except Exception as exc:  # noqa: BLE001 — sub-flow degradation by design.
+        except Exception as exc:
             logger.warning(
                 "research.ibkr.snapshot.failed",
                 extra={"symbol": symbol, "error": str(exc)},
@@ -262,7 +262,7 @@ class IBKRSource:
                 client.historical_bars(symbol, duration_str, "1 day"),
                 timeout=SUBFLOW_TIMEOUT_SECONDS,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "research.ibkr.historical.failed",
                 extra={"symbol": symbol, "error": str(exc)},
@@ -306,7 +306,7 @@ class IBKRSource:
             details = await asyncio.wait_for(
                 client.contract_details(symbol), timeout=SUBFLOW_TIMEOUT_SECONDS
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "research.ibkr.contract.failed",
                 extra={"symbol": symbol, "error": str(exc)},

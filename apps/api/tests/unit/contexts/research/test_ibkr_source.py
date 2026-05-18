@@ -12,7 +12,6 @@ import asyncio
 from typing import Any
 
 import pytest
-
 from iguanatrader.contexts.research.sources.ibkr import (
     DEFAULT_HISTORICAL_DURATION_DAYS,
     IBKRSource,
