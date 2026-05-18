@@ -1,3 +1,4 @@
+# ruff: noqa: RUF003
 """Unit tests for the I7 ingest scheduler service.
 
 Pure-unit — no APScheduler, no DB, no live adapters. A fake scheduler

@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002
 """Research-ingest scheduler (slice I7) — automates ingestion sources.
 
 Per ingestion-wave roadmap §I7: registers cron jobs into the existing
