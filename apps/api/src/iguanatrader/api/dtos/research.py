@@ -109,6 +109,12 @@ class ResolvedCitationDetail(BaseModel):
     Returned alongside :class:`BriefResponse` so the frontend renderer can
     paint ``[fact:<uuid>]`` markers as clickable :class:`CitationLink`
     components without an extra round-trip.
+
+    Slice ``citation-chip-enrichment`` (2026-05-18) adds ``fact_kind`` +
+    ``value_excerpt`` so chips can display WHAT the fact says, not just
+    where it came from — particularly important for facts whose
+    ``source_url`` is an internal compose-network URL (e.g. OpenBB
+    sidecar) that the browser can't reach.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -119,6 +125,8 @@ class ResolvedCitationDetail(BaseModel):
     source_label: str
     retrieved_at: datetime
     retrieval_method: str
+    fact_kind: str = ""
+    value_excerpt: str = ""
 
 
 class BriefResponse(BaseModel):

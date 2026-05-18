@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
-from iguanatrader.contexts.research.synthesis.citation_resolver import CitationResolver
+from iguanatrader.contexts.research.synthesis.citation_resolver import (
+    CitationResolver,
+    _summarise_fact_value,
+)
 
 
 def test_parse_markers_extracts_canonical_uuids() -> None:
@@ -56,3 +62,82 @@ def test_validate_against_bundle_passes_when_all_match() -> None:
     body = "[fact:11111111-1111-1111-1111-111111111111]"
     allowed = {UUID("11111111-1111-1111-1111-111111111111")}
     assert CitationResolver.validate_against_bundle(body, allowed) == []
+
+
+# ---------------------------------------------------------------------------
+# _summarise_fact_value (slice citation-chip-enrichment, 2026-05-18)
+#
+# Drives the ``value_excerpt`` shipped to the frontend so citation chips
+# can display WHAT the fact says, not just where it came from.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _FactStub:
+    """Duck-typed stand-in for ResearchFact — only the fields the
+    summariser reads. Keeps the test free of DB setup."""
+
+    value_numeric: Decimal | None = None
+    value_text: str | None = None
+    value_jsonb: Any | None = None
+    unit: str | None = None
+    currency: str | None = None
+
+
+def test_summarise_prefers_numeric_with_currency() -> None:
+    fact = _FactStub(value_numeric=Decimal("164.50"), currency="USD")
+    assert _summarise_fact_value(fact) == "164.50 USD"  # type: ignore[arg-type]
+
+
+def test_summarise_numeric_with_unit_when_no_currency() -> None:
+    fact = _FactStub(value_numeric=Decimal("0.85"), unit="ratio")
+    assert _summarise_fact_value(fact) == "0.85 ratio"  # type: ignore[arg-type]
+
+
+def test_summarise_numeric_no_suffix_when_neither() -> None:
+    fact = _FactStub(value_numeric=Decimal("12345"))
+    assert _summarise_fact_value(fact) == "12345"  # type: ignore[arg-type]
+
+
+def test_summarise_falls_back_to_text() -> None:
+    fact = _FactStub(value_text="Q1 beat estimates by 12%")
+    assert _summarise_fact_value(fact) == "Q1 beat estimates by 12%"  # type: ignore[arg-type]
+
+
+def test_summarise_clips_long_text() -> None:
+    fact = _FactStub(value_text="a" * 200)
+    out = _summarise_fact_value(fact)  # type: ignore[arg-type]
+    assert len(out) == 60
+    assert out.endswith("…")
+
+
+def test_summarise_single_key_dict_inlines_value() -> None:
+    fact = _FactStub(value_jsonb={"value": 164.5})
+    assert _summarise_fact_value(fact) == "164.5"  # type: ignore[arg-type]
+
+
+def test_summarise_multi_key_dict_lists_keys() -> None:
+    fact = _FactStub(
+        value_jsonb={"forward_pe": 30.2, "pb_ratio": 12.3, "market_cap": 4.2e12},
+    )
+    out = _summarise_fact_value(fact)  # type: ignore[arg-type]
+    assert out.startswith("{")
+    assert "forward_pe" in out
+    assert "pb_ratio" in out
+
+
+def test_summarise_list_reports_length() -> None:
+    fact = _FactStub(value_jsonb={"prices": [1, 2, 3, 4, 5]})
+    # Single-key dict → unwraps to the list value, which then str()s.
+    out = _summarise_fact_value(fact)  # type: ignore[arg-type]
+    assert "[" in out
+
+
+def test_summarise_empty_when_no_value() -> None:
+    fact = _FactStub()
+    assert _summarise_fact_value(fact) == ""  # type: ignore[arg-type]
+
+
+def test_summarise_numeric_wins_over_jsonb() -> None:
+    fact = _FactStub(value_numeric=Decimal("42"), value_jsonb={"x": 1})
+    assert _summarise_fact_value(fact) == "42"  # type: ignore[arg-type]

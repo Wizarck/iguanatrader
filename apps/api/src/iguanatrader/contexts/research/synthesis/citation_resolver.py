@@ -16,14 +16,16 @@ The resolver:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 if TYPE_CHECKING:
+    from iguanatrader.contexts.research.models import ResearchFact
     from iguanatrader.contexts.research.repository import ResearchRepository
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,11 @@ _MARKER_RE = re.compile(
     r"\[fact:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]",
     re.IGNORECASE,
 )
+
+#: Maximum length of the human-readable value excerpt shipped to the
+#: frontend. Long enough for "analyst_target_price · 164.50 USD" but
+#: short enough to keep the citation chip compact.
+_VALUE_EXCERPT_MAX = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +51,55 @@ class ResolvedCitation:
     source_label: str
     retrieved_at: datetime
     retrieval_method: str
+    fact_kind: str
+    value_excerpt: str
+
+
+def _summarise_fact_value(fact: ResearchFact) -> str:
+    """Build a short, human-readable label of the fact's stored value.
+
+    Used by :class:`ResolvedCitation.value_excerpt` so the frontend can
+    render citation chips that say WHAT the fact is, not just where it
+    came from. Truncates at :data:`_VALUE_EXCERPT_MAX` chars.
+
+    Priority: numeric > text > JSON blob > empty string.
+    """
+    if fact.value_numeric is not None:
+        suffix = ""
+        if fact.currency:
+            suffix = f" {fact.currency}"
+        elif fact.unit:
+            suffix = f" {fact.unit}"
+        return _clip(f"{fact.value_numeric}{suffix}")
+    if fact.value_text is not None:
+        return _clip(fact.value_text)
+    if fact.value_jsonb is not None:
+        return _clip(_summarise_jsonb(fact.value_jsonb))
+    return ""
+
+
+def _summarise_jsonb(blob: Any) -> str:
+    """Compact ``value_jsonb`` into a short scan-friendly excerpt.
+
+    ``{"value": 164.5}`` → ``"164.5"``. Dicts with one key inline as just
+    the value; multi-key dicts list the keys; lists report length;
+    everything else is JSON-serialized.
+    """
+    if isinstance(blob, dict):
+        if len(blob) == 1:
+            (only_value,) = blob.values()
+            return str(only_value)
+        keys = ", ".join(str(k) for k in list(blob.keys())[:4])
+        return f"{{{keys}}}"
+    if isinstance(blob, list):
+        return f"[{len(blob)} items]"
+    return json.dumps(blob, default=str)
+
+
+def _clip(s: str) -> str:
+    if len(s) <= _VALUE_EXCERPT_MAX:
+        return s
+    return s[: _VALUE_EXCERPT_MAX - 1] + "…"
 
 
 class CitationResolver:
@@ -103,6 +159,8 @@ class CitationResolver:
                     source_label=fact.source_id,
                     retrieved_at=fact.retrieved_at,
                     retrieval_method=fact.retrieval_method,
+                    fact_kind=fact.fact_kind,
+                    value_excerpt=_summarise_fact_value(fact),
                 )
             )
         return resolved, broken

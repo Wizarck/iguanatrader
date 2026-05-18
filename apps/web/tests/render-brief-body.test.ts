@@ -198,3 +198,81 @@ describe('renderBriefBody — citation chip inlining', () => {
     expect(html).not.toContain('<a ');
   });
 });
+
+describe('renderBriefBody — fact_kind + value_excerpt enrichment', () => {
+  const FACT_A = '00000000-0000-0000-0000-00000000000a';
+
+  it('uses fact_kind · value_excerpt as the chip label when both present', () => {
+    const html = renderBriefBody(
+      `analyst target per [fact:${FACT_A}]`,
+      new Map([
+        [
+          FACT_A,
+          {
+            source_id: 'openbb-sidecar',
+            source_url: 'http://openbb_sidecar:8765/v1/equity/ratings/NVDA',
+            fact_kind: 'analyst_target_price',
+            value_excerpt: '164.5 USD'
+          }
+        ]
+      ])
+    );
+    // The chip text now describes the fact, not just its source.
+    expect(html).toContain('analyst_target_price · 164.5 USD');
+    // Source name moves to the tooltip so the reader can still trace
+    // provenance on hover.
+    expect(html).toMatch(/title="[^"]*openbb-sidecar[^"]*"/);
+  });
+
+  it('falls back to fact_kind alone when value_excerpt empty', () => {
+    const html = renderBriefBody(
+      `see [fact:${FACT_A}]`,
+      new Map([
+        [
+          FACT_A,
+          {
+            source_id: 'openbb-sidecar',
+            source_url: 'http://openbb_sidecar:8765/v1/equity/fundamentals/NVDA',
+            fact_kind: 'fundamentals_snapshot',
+            value_excerpt: ''
+          }
+        ]
+      ])
+    );
+    // Chip body is just the fact_kind (the closing > marks the end of
+    // the opening tag, then the label, then the closing </span>).
+    expect(html).toMatch(/>fundamentals_snapshot<\/span>/);
+  });
+
+  it('keeps source_id label when neither fact_kind nor value_excerpt set', () => {
+    const html = renderBriefBody(
+      `legacy [fact:${FACT_A}]`,
+      new Map([[FACT_A, { source_id: 'manual-entry' }]])
+    );
+    expect(html).toContain('manual-entry');
+  });
+
+  it('embeds fact_kind + value in the chip tooltip', () => {
+    const html = renderBriefBody(
+      `see [fact:${FACT_A}]`,
+      new Map([
+        [
+          FACT_A,
+          {
+            source_id: 'edgar-r2',
+            source_url: 'https://edgar.test/10q',
+            fact_kind: 'revenue_fy',
+            value_excerpt: '60.92B USD',
+            retrieval_method: 'api',
+            retrieved_at: '2026-05-15T00:00:00Z'
+          }
+        ]
+      ])
+    );
+    expect(html).toMatch(/title="[^"]*revenue_fy:\s*60\.92B USD[^"]*"/);
+    // Anchor stays (publicly reachable URL).
+    expect(html).toMatch(/<a [^>]*class="citation-chip"[^>]*>/);
+    // Chip body uses the new label format.
+    expect(html).toContain('revenue_fy · 60.92B USD');
+  });
+});
