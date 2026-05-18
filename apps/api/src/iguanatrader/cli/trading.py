@@ -216,6 +216,11 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # production adapter shape. Best-effort across the board — a
         # missing ANTHROPIC_API_KEY surfaces as the wrapper's
         # swallowed-exception path so the bus still flows.
+        from iguanatrader.cli._ingest_factories import (
+            build_persist_drafts_closure,
+            build_source_factories,
+            load_watchlist_for_ingest,
+        )
         from iguanatrader.cli.llm_handler_wiring import wire_llm_handlers
         from iguanatrader.contexts.research.synthesis.anthropic_client import (
             build_anthropic_llm_client_from_env,
@@ -225,6 +230,15 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             TradeRepository,
         )
 
+        # I7 ingest scheduler inputs — sources, watchlist snapshot,
+        # persist closure. See ``cli/_ingest_factories.py`` for the
+        # 13-adapter factory map (sec_edgar/fred/openbb/ibkr/finnhub/
+        # motley-fool/edgartools + the six previously-orphan
+        # bea/bls/gdelt/openfda/vdem/wgi_world_bank).
+        ingest_sources = build_source_factories()
+        ingest_watchlist = await load_watchlist_for_ingest(sessionmaker=sessionmaker)
+        ingest_persist_drafts = build_persist_drafts_closure(sessionmaker=sessionmaker)
+
         wrapped_channel_dispatcher = wire_llm_handlers(
             bus=bus,
             scheduler=scheduler,
@@ -233,6 +247,9 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             trade_repo=TradeRepository(),
             proposal_repo=TradeProposalRepository(),
             session_factory=sessionmaker,
+            ingest_sources=ingest_sources,
+            ingest_watchlist=ingest_watchlist,
+            ingest_persist_drafts=ingest_persist_drafts,
         )
 
         approval_service = ApprovalService(
