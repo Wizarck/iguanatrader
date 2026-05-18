@@ -30,6 +30,11 @@
     refreshDisabled = false
   }: Props = $props();
 
+  // Slice research-strategy-handoff: link to /strategies/new with the
+  // current symbol prefilled so the operator can graduate an ad-hoc
+  // research brief into a tracked strategy in one click.
+  let strategyHref = $derived(`/strategies/new?symbol=${encodeURIComponent(symbol)}`);
+
   function formatTs(iso: string | null): string {
     if (!iso) return '—';
     try {
@@ -54,6 +59,9 @@
         <span class="value">{formatTs(synthesizedAt)}</span>
       </div>
     </div>
+    <a class="btn-secondary" href={strategyHref} data-testid="configure-strategy">
+      Configure strategy
+    </a>
     {#if !refreshDisabled}
       <button type="button" onclick={() => onRefresh()} disabled={refreshing}>
         {#if refreshing}Synthesising…{:else}Refresh{/if}
@@ -129,6 +137,21 @@
   button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+  .btn-secondary {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--mute);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    line-height: 1.4;
+  }
+  .btn-secondary:hover {
+    background: var(--surface-2, rgba(0, 0, 0, 0.06));
   }
   .error {
     color: var(--err-fg, #c00);

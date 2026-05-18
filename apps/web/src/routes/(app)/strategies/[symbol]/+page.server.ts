@@ -28,14 +28,25 @@ import {
 import type { PageServerLoad } from './$types';
 
 type LoadResult =
-  | { mode: 'new'; strategy: null; loadError: null }
-  | { mode: 'edit'; strategy: StrategyConfigOut; loadError: null }
-  | { mode: 'edit'; strategy: null; loadError: string };
+  | { mode: 'new'; strategy: null; loadError: null; symbolPrefill: string }
+  | { mode: 'edit'; strategy: StrategyConfigOut; loadError: null; symbolPrefill: '' }
+  | { mode: 'edit'; strategy: null; loadError: string; symbolPrefill: '' };
 
-export const load: PageServerLoad = async ({ fetch, cookies, params }): Promise<LoadResult> => {
+export const load: PageServerLoad = async ({
+  fetch,
+  cookies,
+  params,
+  url,
+}): Promise<LoadResult> => {
   const sym = params.symbol;
   if (sym === 'new') {
-    return { mode: 'new', strategy: null, loadError: null };
+    // Slice research-strategy-handoff: when the operator clicks
+    // "Configure strategy" on a brief detail page, the navigation
+    // includes ?symbol=<SYM> so the form lands pre-filled. Without
+    // the query param the field is blank (legacy /strategies/new).
+    const fromQuery = url.searchParams.get('symbol')?.trim() ?? '';
+    const symbolPrefill = fromQuery && SYMBOL_PATTERN.test(fromQuery) ? fromQuery : '';
+    return { mode: 'new', strategy: null, loadError: null, symbolPrefill };
   }
 
   const sessionCookie = cookies.get(COOKIE_NAME);
@@ -48,6 +59,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }): Promise<
         mode: 'edit',
         strategy: null,
         loadError: `No active strategy found for ${sym}.`,
+        symbolPrefill: '',
       };
     }
     if (!res.ok) {
@@ -55,16 +67,18 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }): Promise<
         mode: 'edit',
         strategy: null,
         loadError: `Failed to load strategy: ${res.status} ${res.statusText}`,
+        symbolPrefill: '',
       };
     }
     const strategy = (await res.json()) as StrategyConfigOut;
-    return { mode: 'edit', strategy, loadError: null };
+    return { mode: 'edit', strategy, loadError: null, symbolPrefill: '' };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
       mode: 'edit',
       strategy: null,
       loadError: `Failed to load strategy: ${message}`,
+      symbolPrefill: '',
     };
   }
 };

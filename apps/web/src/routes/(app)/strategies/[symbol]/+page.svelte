@@ -51,7 +51,8 @@
     (formTyped?.values?.strategy_kind as string | undefined) ??
     (data.strategy?.strategy_kind as string | undefined) ??
     STRATEGY_CATALOGUE[0].kind;
-  const initialSymbol: string = formTyped?.values?.symbol ?? data.strategy?.symbol ?? '';
+  const initialSymbol: string =
+    formTyped?.values?.symbol ?? data.strategy?.symbol ?? data.symbolPrefill ?? '';
   const initialEnabled: boolean = formTyped?.values?.enabled ?? data.strategy?.enabled ?? true;
 
   // Hydrate the param form values from either the previously-failed submit's

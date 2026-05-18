@@ -21,13 +21,18 @@ async function importModule() {
   return await import('../src/routes/(app)/strategies/[symbol]/+page.server');
 }
 
-function buildLoadEvent(params: { symbol: string }, cookieValue = 'jwt-blob') {
+function buildLoadEvent(
+  params: { symbol: string },
+  cookieValue = 'jwt-blob',
+  url: URL = new URL('https://test.local/strategies/new'),
+) {
   const cookies = new Map<string, string>();
   cookies.set('iguana_session', cookieValue);
   return {
     fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
     cookies: { get: (name: string) => cookies.get(name) ?? null },
     params,
+    url,
   };
 }
 
@@ -71,14 +76,43 @@ describe('strategy form load()', () => {
       mode: string;
       strategy: StrategyConfigOut | null;
       loadError: string | null;
+      symbolPrefill: string;
     };
 
     expect(result.mode).toBe('new');
     expect(result.strategy).toBeNull();
     expect(result.loadError).toBeNull();
+    expect(result.symbolPrefill).toBe('');
     expect(fetchSpy).not.toHaveBeenCalled();
 
     fetchSpy.mockRestore();
+  });
+
+  it('new mode prefills symbol from ?symbol= query param', async () => {
+    const { load } = await importModule();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const url = new URL('https://test.local/strategies/new?symbol=AMD');
+    const event = buildLoadEvent({ symbol: 'new' }, 'jwt-blob', url);
+    const result = (await load(event as never)) as {
+      mode: string;
+      strategy: StrategyConfigOut | null;
+      loadError: string | null;
+      symbolPrefill: string;
+    };
+
+    expect(result.mode).toBe('new');
+    expect(result.symbolPrefill).toBe('AMD');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('new mode rejects an invalid ?symbol= query value', async () => {
+    const { load } = await importModule();
+    const url = new URL('https://test.local/strategies/new?symbol=amd%20lower!');
+    const event = buildLoadEvent({ symbol: 'new' }, 'jwt-blob', url);
+    const result = (await load(event as never)) as { symbolPrefill: string };
+    expect(result.symbolPrefill).toBe('');
   });
 
   it('edit mode pre-fills strategy from API', async () => {
