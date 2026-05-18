@@ -239,6 +239,18 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         ingest_watchlist = await load_watchlist_for_ingest(sessionmaker=sessionmaker)
         ingest_persist_drafts = build_persist_drafts_closure(sessionmaker=sessionmaker)
 
+        # Slice ``hindsight-producer-on-trade-close``: hoist the
+        # Hindsight adapter construction ahead of wire_llm_handlers
+        # so the A3 auto-journal handler can push trade-close
+        # narratives into the recall bank. Pre-slice the adapter was
+        # only consumed by HindsightRetainHandler (brief-synthesized
+        # path); the A3 path used a no-op stub.
+        from iguanatrader.contexts.research.hindsight.http_adapter import (
+            build_hindsight_adapter_from_env,
+        )
+
+        hindsight = build_hindsight_adapter_from_env()
+
         wrapped_channel_dispatcher = wire_llm_handlers(
             bus=bus,
             scheduler=scheduler,
@@ -250,6 +262,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             ingest_sources=ingest_sources,
             ingest_watchlist=ingest_watchlist,
             ingest_persist_drafts=ingest_persist_drafts,
+            hindsight_client=hindsight,
         )
 
         approval_service = ApprovalService(
@@ -273,13 +286,11 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             audit_repo=audit_repo,
         )
 
-        # Slice R6 hindsight-integration §7 — narrative recall bank.
-        # build_hindsight_adapter_from_env() returns InMemoryHindsightAdapter
-        # if IGUANATRADER_HINDSIGHT_URL unset (dev/CI safe). Always-on
-        # retain via bus subscription on ResearchBriefSynthesized.
-        from iguanatrader.contexts.research.hindsight.http_adapter import (
-            build_hindsight_adapter_from_env,
-        )
+        # Slice R6 hindsight-integration §7 — narrative recall bank
+        # for brief-synthesized events. The adapter itself was built
+        # above (slice ``hindsight-producer-on-trade-close``) so the
+        # A3 auto-journal could share it; here we attach the
+        # brief-side retain handler that also rides on the same port.
         from iguanatrader.contexts.research.hindsight.retain_handler import (
             HindsightRetainHandler,
         )
@@ -287,7 +298,6 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             ResearchRepository,
         )
 
-        hindsight = build_hindsight_adapter_from_env()
         research_repo = ResearchRepository()
         hindsight_retain = HindsightRetainHandler(
             hindsight=hindsight,
