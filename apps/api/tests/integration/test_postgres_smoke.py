@@ -2,8 +2,8 @@
 
 Skips by default. To run::
 
-    docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \\
-        -f docker-compose.postgres.yml up -d postgres
+    docker compose -f compose/mvp.yml -f compose/mvp.override.yml \\
+        -f compose/postgres.yml up -d postgres
     IGUANA_TEST_POSTGRES_URL=postgresql+asyncpg://iguanatrader:CHANGE-ME@localhost:5432/iguanatrader \\
         poetry run pytest apps/api/tests/integration/test_postgres_smoke.py -v
 

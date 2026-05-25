@@ -111,7 +111,7 @@
 
 When operator has time on the VPS (`cx43`):
 
-1. Pull main; `docker compose -f docker-compose.mvp.yml -f docker-compose.ibgateway.yml -f docker-compose.mvp.override.yml pull` + `up -d --build` to roll the dual-daemon configuration.
+1. Pull main; `docker compose -f compose/mvp.yml -f compose/ibgateway.yml -f compose/mvp.override.yml pull` + `up -d --build` to roll the dual-daemon configuration.
 2. Source `.secrets/paper.env.enc` (decrypted) into env; verify `ib-gateway-paper` boots + VNC 5900 reachable.
 3. Validate paper daemon: `curl /api/v1/status` returns paper enabled + heartbeat fresh.
 4. Toggle paper on → confirm propose-cron fires; toggle off → confirm pending proposals drain.

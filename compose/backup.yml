@@ -1,6 +1,6 @@
 # iguanatrader — Postgres backup overlay (slice postgres-backup-cron).
 #
-# Layers on top of docker-compose.postgres.yml. Runs a long-lived
+# Layers on top of compose/postgres.yml. Runs a long-lived
 # `pg-backup` container that takes a daily pg_dump at 02:00 UTC and
 # rotates files older than 30 days.
 #

@@ -23,7 +23,7 @@ Two containers wired together:
 - **`web`** — SvelteKit (adapter-node) frontend on port 5173.
 
 Data persists in a named Docker volume (`iguanatrader_data`) — wipe with
-`docker compose -f docker-compose.mvp.yml down -v` to start fresh.
+`docker compose -f compose/mvp.yml down -v` to start fresh.
 
 **What this MVP profile deliberately does NOT include**:
 
@@ -148,7 +148,7 @@ Once the creds above are populated, flip the selector:
 
 ```bash
 echo "IGUANATRADER_CHANNEL_DISPATCHER=telegram_hermes_email" >> .env
-docker compose -f docker-compose.mvp.yml up -d --force-recreate api
+docker compose -f compose/mvp.yml up -d --force-recreate api
 ```
 
 Operator self-service recovery (`POST /api/v1/auth/forgot-password`)
@@ -174,7 +174,7 @@ cat >> .env <<'ENV'
 IGUANATRADER_AUTH_PASSWORD_AGEING_DAYS=45
 IGUANATRADER_AUTH_PASSWORD_STALE_DAYS=75
 ENV
-docker compose -f docker-compose.mvp.yml up -d --force-recreate api
+docker compose -f compose/mvp.yml up -d --force-recreate api
 ```
 
 Legacy users with `password_changed_at IS NULL` (planted before
@@ -186,7 +186,7 @@ warning (`auth.password_aging.invalid_threshold_env`).
 ## Step 3 — Build the images
 
 ```bash
-docker compose -f docker-compose.mvp.yml build
+docker compose -f compose/mvp.yml build
 ```
 
 First build: ~3-5 minutes (Poetry deps + Vite production bundle).
@@ -196,12 +196,12 @@ Subsequent builds reuse Docker layer cache.
 
 ```bash
 # Apply Alembic migrations to the SQLite file in the named volume.
-docker compose -f docker-compose.mvp.yml run --rm api \
+docker compose -f compose/mvp.yml run --rm api \
     python -m alembic -c apps/api/alembic.ini upgrade head
 
 # Create the first tenant + admin user. Interactive password prompt
 # unless you pass --password / -p on the command line.
-docker compose -f docker-compose.mvp.yml run --rm api \
+docker compose -f compose/mvp.yml run --rm api \
     iguanatrader admin bootstrap-tenant arturo-trading \
         --email arturo@example.com \
         --password 'changeme-2026-pick-a-real-one'
@@ -214,13 +214,13 @@ without `--force-reset` errors out cleanly.
 ## Step 5 — Start the stack
 
 ```bash
-docker compose -f docker-compose.mvp.yml up -d
+docker compose -f compose/mvp.yml up -d
 ```
 
 Verify both containers are healthy:
 
 ```bash
-docker compose -f docker-compose.mvp.yml ps
+docker compose -f compose/mvp.yml ps
 curl -fsS http://localhost:8000/healthz
 curl -fsS http://localhost:5173/
 ```
@@ -272,13 +272,13 @@ trading.example.com {
 }
 ```
 
-Then unbind the host ports in `docker-compose.mvp.yml` (remove the
+Then unbind the host ports in `compose/mvp.yml` (remove the
 `ports:` blocks) so the containers are only reachable through the
 proxy.
 
 ## Operator commands
 
-All available via `docker compose -f docker-compose.mvp.yml run --rm api iguanatrader <cmd>`:
+All available via `docker compose -f compose/mvp.yml run --rm api iguanatrader <cmd>`:
 
 | Command | Purpose |
 |---|---|
@@ -305,9 +305,9 @@ All available via `docker compose -f docker-compose.mvp.yml run --rm api iguanat
 
 ```bash
 git pull --ff-only
-docker compose -f docker-compose.mvp.yml build api web
-docker compose -f docker-compose.mvp.yml up -d --force-recreate api web
-docker compose -f docker-compose.mvp.yml run --rm api \
+docker compose -f compose/mvp.yml build api web
+docker compose -f compose/mvp.yml up -d --force-recreate api web
+docker compose -f compose/mvp.yml run --rm api \
     python -m alembic -c apps/api/alembic.ini upgrade head
 ```
 

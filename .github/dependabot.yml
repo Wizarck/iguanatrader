@@ -1,0 +1,147 @@
+# Dependabot config — weekly version updates + immediate security PRs.
+#
+# Coverage:
+#   1. GitHub Actions across .github/workflows/
+#   2. Python — root pyproject.toml + apps/openbb-sidecar/pyproject.toml
+#   3. JavaScript — root + apps/web/ + packages/shared-types/
+#   4. Docker — compose/ (image bumps for postgres, ib-gateway, etc.)
+#   5. Git submodules — .ai-playbook (informational; bump via scripts.bump_consumers)
+#
+# Grouping: minor + patch into a single PR per ecosystem to reduce noise.
+# Major bumps land as individual PRs so the diff stays auditable.
+
+version: 2
+
+updates:
+  # ─── GitHub Actions ──────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, github-actions]
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  # ─── Python: root (apps/api primary deps) ────────────────────────────
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 10
+    labels: [dependencies, python]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Pin major bumps require manual review per project.
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+
+  # ─── Python: openbb-sidecar (AGPL-isolated subprocess) ───────────────
+  - package-ecosystem: pip
+    directory: /apps/openbb-sidecar
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, python, openbb-sidecar]
+    groups:
+      openbb-sidecar-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+
+  # ─── JS: root (pnpm workspace tooling) ───────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, javascript]
+    groups:
+      js-root-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+
+  # ─── JS: apps/web (Svelte frontend) ──────────────────────────────────
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 10
+    labels: [dependencies, javascript, web]
+    groups:
+      web-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+
+  # ─── JS: packages/shared-types (OpenAPI-generated types) ─────────────
+  - package-ecosystem: npm
+    directory: /packages/shared-types
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, javascript, shared-types]
+    groups:
+      shared-types-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+
+  # ─── Docker: compose/ image pins ─────────────────────────────────────
+  - package-ecosystem: docker-compose
+    directory: /compose
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker]
+
+  # ─── Docker: apps/api Dockerfile ─────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker, api]
+
+  # ─── Docker: apps/web Dockerfile ─────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker, web]

@@ -23,7 +23,7 @@
 ssh eligia-vps
 cd /opt/iguanatrader
 # Stop the api/web stack BUT keep the volume mounted somewhere readable
-docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml down
+docker compose -f compose/mvp.yml -f compose/mvp.override.yml down
 
 # Tar the volume to a timestamped snapshot under /root/iguanatrader-backups/
 mkdir -p /root/iguanatrader-backups
@@ -44,23 +44,23 @@ git fetch origin
 git checkout main
 git pull origin main
 # Verify the slice landed:
-ls docker-compose.postgres.yml || { echo "slice not deployed"; exit 1; }
+ls compose/postgres.yml || { echo "slice not deployed"; exit 1; }
 
 # Pick a real password (don't leave the placeholder)
 export POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(24))")
 echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> /opt/iguanatrader/.env.postgres
 # (and persist it to your password manager + the SOPS bundle in step 6)
 
-docker compose -f docker-compose.mvp.yml \
-               -f docker-compose.mvp.override.yml \
-               -f docker-compose.postgres.yml \
+docker compose -f compose/mvp.yml \
+               -f compose/mvp.override.yml \
+               -f compose/postgres.yml \
                --env-file /opt/iguanatrader/.env.postgres \
                up -d postgres
 
 # Wait for healthcheck
-until docker compose -f docker-compose.mvp.yml \
-                    -f docker-compose.mvp.override.yml \
-                    -f docker-compose.postgres.yml \
+until docker compose -f compose/mvp.yml \
+                    -f compose/mvp.override.yml \
+                    -f compose/postgres.yml \
                     --env-file /opt/iguanatrader/.env.postgres \
                     ps postgres --format json | grep -q '"Health":"healthy"'; do
   sleep 2
@@ -70,9 +70,9 @@ done
 ## 3. Apply Alembic head against the empty Postgres
 
 ```sh
-docker compose -f docker-compose.mvp.yml \
-               -f docker-compose.mvp.override.yml \
-               -f docker-compose.postgres.yml \
+docker compose -f compose/mvp.yml \
+               -f compose/mvp.override.yml \
+               -f compose/postgres.yml \
                --env-file /opt/iguanatrader/.env.postgres \
                run --rm api \
                python -m alembic -c apps/api/alembic.ini upgrade head
@@ -104,7 +104,7 @@ docker run --rm \
 Verify row counts match:
 
 ```sh
-docker compose -f docker-compose.mvp.yml ... run --rm api python -c "
+docker compose -f compose/mvp.yml ... run --rm api python -c "
 import asyncio, os
 from sqlalchemy import text
 from iguanatrader.persistence import engine_factory
@@ -123,9 +123,9 @@ Cross-check those counts against the SQLite snapshot (run the same query with `s
 ## 5. Bring the stack up against Postgres
 
 ```sh
-docker compose -f docker-compose.mvp.yml \
-               -f docker-compose.mvp.override.yml \
-               -f docker-compose.postgres.yml \
+docker compose -f compose/mvp.yml \
+               -f compose/mvp.override.yml \
+               -f compose/postgres.yml \
                --env-file /opt/iguanatrader/.env.postgres \
                up -d
 docker compose ps  # all three should be healthy
@@ -148,24 +148,24 @@ git commit -m "chore(secrets): record POSTGRES_PASSWORD for live cut-over"
 
 ## 7. Retain the SQLite snapshot for 30 days
 
-Don't delete `/root/iguanatrader-backups/sqlite-pre-pg-cutover-*.tar.gz` until you've confirmed 30 days of normal operation on Postgres. If anything goes sideways in week 1, the rollback path is: stop the stack, restore the SQLite volume from tarball, bring up without the `-f docker-compose.postgres.yml` overlay.
+Don't delete `/root/iguanatrader-backups/sqlite-pre-pg-cutover-*.tar.gz` until you've confirmed 30 days of normal operation on Postgres. If anything goes sideways in week 1, the rollback path is: stop the stack, restore the SQLite volume from tarball, bring up without the `-f compose/postgres.yml` overlay.
 
 ---
 
 ## Rollback
 
 ```sh
-docker compose -f docker-compose.mvp.yml \
-               -f docker-compose.mvp.override.yml \
-               -f docker-compose.postgres.yml \
+docker compose -f compose/mvp.yml \
+               -f compose/mvp.override.yml \
+               -f compose/postgres.yml \
                --env-file /opt/iguanatrader/.env.postgres \
                down
 docker run --rm \
   -v iguanatrader_iguanatrader_data:/data \
   -v /root/iguanatrader-backups:/backups:ro \
   alpine sh -c 'cd /data && tar -xzf /backups/sqlite-pre-pg-cutover-*.tar.gz'
-docker compose -f docker-compose.mvp.yml \
-               -f docker-compose.mvp.override.yml up -d
+docker compose -f compose/mvp.yml \
+               -f compose/mvp.override.yml up -d
 ```
 
 This brings you back to the pre-cut-over state. The Postgres volume `iguanatrader_postgres_data` is preserved for forensics; you can `docker volume rm` it once you've confirmed the rollback is stable.

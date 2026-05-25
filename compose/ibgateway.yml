@@ -1,7 +1,7 @@
 # iguanatrader — IB Gateway sidecar overlay (slice ibkr-gateway-sidecar +
 # dual-daemon-mode-toggle-and-reconcile).
 #
-# Layers on top of `docker-compose.mvp.yml` to add TWO IB Gateway
+# Layers on top of `compose/mvp.yml` to add TWO IB Gateway
 # services (paper + live) that the matching `trading_daemon_*`
 # container connects to over the compose network. Each daemon owns its
 # own gateway sidecar so a 2FA prompt on the live side does not stall
@@ -14,8 +14,8 @@
 #
 # Bring-up (both gateways):
 #
-#   1. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \\
-#        -f docker-compose.postgres.yml -f docker-compose.ibgateway.yml build`
+#   1. `docker compose -f compose/mvp.yml -f compose/mvp.override.yml \\
+#        -f compose/postgres.yml -f compose/ibgateway.yml build`
 #   2. Set required env (see `docs/runbooks/ibkr-gateway-bringup.md`):
 #        export TWS_USERID=...                # paper
 #        export TWS_PASSWORD=...
@@ -23,8 +23,8 @@
 #        export TWS_PASSWORD_LIVE=...
 #        export VNC_SERVER_PASSWORD_PAPER=$(python -c "import secrets; print(secrets.token_urlsafe(12))")
 #        export VNC_SERVER_PASSWORD_LIVE=$(python -c "import secrets; print(secrets.token_urlsafe(12))")
-#   3. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \\
-#        -f docker-compose.postgres.yml -f docker-compose.ibgateway.yml up -d`
+#   3. `docker compose -f compose/mvp.yml -f compose/mvp.override.yml \\
+#        -f compose/postgres.yml -f compose/ibgateway.yml up -d`
 #
 # The live daemon defaults to ``enabled=false`` (migration 0026 seed):
 # the ib-gateway-live container boots + idles harmlessly until the

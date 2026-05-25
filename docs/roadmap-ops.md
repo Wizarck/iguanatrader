@@ -61,7 +61,7 @@ A boot-time SOPS decrypt would mount the age key from `~/.config/sops/age/keys.t
 
 ### Shipped
 
-- [docker-compose.ibgateway.yml](../docker-compose.ibgateway.yml) overlay using `gnzsnz/ib-gateway:stable@sha256:...` (digest-pinned 2026-05-18 after security audit).
+- [compose/ibgateway.yml](../compose/ibgateway.yml) overlay using `gnzsnz/ib-gateway:stable@sha256:...` (digest-pinned 2026-05-18 after security audit).
 - [docs/runbooks/ibkr-gateway-bringup.md](runbooks/ibkr-gateway-bringup.md) covers paper bring-up, smoke test, paper→live cutover, 2FA via VNC tunnel.
 - Paper credentials present in `paper.env.enc` (`IBKR_USERNAME`, `IBKR_PASSWORD`).
 
@@ -86,11 +86,11 @@ A boot-time SOPS decrypt would mount the age key from `~/.config/sops/age/keys.t
 
 ### Why
 
-`docker-compose.ibgateway.yml` now pins `gnzsnz/ib-gateway` by digest (audit mitigation, 2026-05-18). The same hardening should apply to every pulled image in the production stack — `iguanatrader/api:mvp` and `iguanatrader/web:mvp` are locally built so they're fine, but `gnzsnz/ib-gateway`, `iguanatrader/openbb-sidecar:mvp` (when published), and any base image used in our Dockerfiles need a refresh discipline.
+`compose/ibgateway.yml` now pins `gnzsnz/ib-gateway` by digest (audit mitigation, 2026-05-18). The same hardening should apply to every pulled image in the production stack — `iguanatrader/api:mvp` and `iguanatrader/web:mvp` are locally built so they're fine, but `gnzsnz/ib-gateway`, `iguanatrader/openbb-sidecar:mvp` (when published), and any base image used in our Dockerfiles need a refresh discipline.
 
 ### Components
 
-- Calendar-quarter workflow (`.github/workflows/refresh-image-digests.yml`) that runs on the 1st of Jan/Apr/Jul/Oct: queries Docker Hub for the latest `:stable` digest of each pinned image, opens a PR with the diff against `docker-compose.ibgateway.yml` for human review (release notes attached).
+- Calendar-quarter workflow (`.github/workflows/refresh-image-digests.yml`) that runs on the 1st of Jan/Apr/Jul/Oct: queries Docker Hub for the latest `:stable` digest of each pinned image, opens a PR with the diff against `compose/ibgateway.yml` for human review (release notes attached).
 - Runbook stub at `docs/runbooks/image-digest-refresh.md` documenting how to do it manually if the workflow is unavailable.
 - Decision: which images are in-scope. Proposal: any third-party image pulled from Docker Hub at `:stable` or `:latest`. Self-built images (`iguanatrader/*:mvp`) are excluded — their provenance is the local build pipeline.
 

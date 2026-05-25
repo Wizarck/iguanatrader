@@ -24,7 +24,7 @@ Run this checklist **once per VPS** before the first bring-up, and re-validate b
 
 **Image supply chain**:
 
-- [ ] `docker-compose.ibgateway.yml` pins `gnzsnz/ib-gateway` by `sha256` digest (NOT the floating `:stable` tag). Re-pin only after manual review of the next release notes — quarterly cadence (see [roadmap-ops.md](../roadmap-ops.md) O3).
+- [ ] `compose/ibgateway.yml` pins `gnzsnz/ib-gateway` by `sha256` digest (NOT the floating `:stable` tag). Re-pin only after manual review of the next release notes — quarterly cadence (see [roadmap-ops.md](../roadmap-ops.md) O3).
 - [ ] (Pre-rebuild only) cross-check the IB Gateway installer SHA256 in the gnzsnz Dockerfile against IBKR's official `download2.interactivebrokers.com` distribution. One-time, out-of-band.
 
 **Host-side**:
@@ -72,10 +72,10 @@ echo "VNC password: $VNC_SERVER_PASSWORD"  # save to password manager
 
 ```sh
 docker compose \
-  -f docker-compose.mvp.yml \
-  -f docker-compose.mvp.override.yml \
-  -f docker-compose.postgres.yml \
-  -f docker-compose.ibgateway.yml \
+  -f compose/mvp.yml \
+  -f compose/mvp.override.yml \
+  -f compose/postgres.yml \
+  -f compose/ibgateway.yml \
   up -d
 ```
 
@@ -150,13 +150,13 @@ IBKR forces a Gateway restart once a week (typically Sunday morning, account-reg
 If the gateway misbehaves and you want to fall back to the no-broker stack (api will boot but order placement will fail with `MissingSecretError` until IBKR_HOST is unset / pointed elsewhere):
 
 ```sh
-docker compose -f docker-compose.mvp.yml \
-               -f docker-compose.mvp.override.yml \
-               -f docker-compose.postgres.yml \
+docker compose -f compose/mvp.yml \
+               -f compose/mvp.override.yml \
+               -f compose/postgres.yml \
                stop ib-gateway
-docker compose -f docker-compose.mvp.yml \
-               -f docker-compose.mvp.override.yml \
-               -f docker-compose.postgres.yml \
+docker compose -f compose/mvp.yml \
+               -f compose/mvp.override.yml \
+               -f compose/postgres.yml \
                up -d   # without the ibgateway overlay
 ```
 

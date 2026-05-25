@@ -8,11 +8,11 @@
 # Data persists in the named volume `iguanatrader_data` (SQLite +
 # bitemporal research payloads). Bring-up sequence on a fresh VPS:
 #
-#   1. `docker compose -f docker-compose.mvp.yml build`
-#   2. `docker compose -f docker-compose.mvp.yml run --rm api \
+#   1. `docker compose -f compose/mvp.yml build`
+#   2. `docker compose -f compose/mvp.yml run --rm api \
 #        iguanatrader admin bootstrap-tenant <slug> \
 #          --email <e> --password <p>`
-#   3. `docker compose -f docker-compose.mvp.yml up -d`
+#   3. `docker compose -f compose/mvp.yml up -d`
 #
 # Schema migrations run automatically on every container boot via the
 # image's docker-entrypoint.sh (`alembic upgrade head`, idempotent).
@@ -179,7 +179,7 @@ services:
       - OPENBB_SIDECAR_ENABLED=${OPENBB_SIDECAR_ENABLED:-true}
       # IB Gateway connection — paper side. Defaults match the
       # ib-gateway-paper service name + port from
-      # docker-compose.ibgateway.yml overlay.
+      # compose/ibgateway.yml overlay.
       - IBKR_HOST=${IBKR_HOST_PAPER:-ib-gateway-paper}
       - IBKR_PORT=${IBKR_PORT_PAPER:-4002}
       - IBKR_CLIENT_ID=${IBKR_CLIENT_ID_PAPER:-1}

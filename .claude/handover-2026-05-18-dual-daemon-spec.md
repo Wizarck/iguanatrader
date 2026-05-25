@@ -17,7 +17,7 @@
    `ops/ibgateway-digest-mcp-token-sops` → main
    - Pins `gnzsnz/ib-gateway` by `sha256:a9a771b0...` (audit verdict: SAFE, EV cert from DigiCert with subject `O=IBG LLC`)
    - Adds `IGUANATRADER_MCP_TOKEN` (256-bit hex) to `.secrets/{paper,live}.env.enc`
-   - Wires `IGUANATRADER_MCP_TOKEN` + `IGUANATRADER_MCP_TENANT_SLUG` in `docker-compose.mvp.yml` api service
+   - Wires `IGUANATRADER_MCP_TOKEN` + `IGUANATRADER_MCP_TENANT_SLUG` in `compose/mvp.yml` api service
    - New `docs/roadmap-ops.md` (O1 sops-decrypt-at-boot, O2 IB Gateway prod cutover, O3 quarterly digest refresh)
    - §0 Security pre-bring-up checklist in `docs/runbooks/ibkr-gateway-bringup.md` (9 hardening items, applies to paper AND live)
    - Status: ready for review; CI probably running

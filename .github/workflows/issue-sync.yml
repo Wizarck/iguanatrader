@@ -11,6 +11,9 @@ on:
     paths:
       - "openspec/changes/**/proposal.md"
 
+# Defense-in-depth: deny-all at top-level, grant per-job below.
+permissions: {}
+
 jobs:
   sync:
     if: github.event.pull_request.merged == true

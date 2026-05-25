@@ -1,6 +1,6 @@
 # iguanatrader — Postgres overlay (slice postgres-compose-overlay).
 #
-# Layers on top of `docker-compose.mvp.yml` to swap the SQLite default
+# Layers on top of `compose/mvp.yml` to swap the SQLite default
 # for a managed Postgres 16 service. Designed for the VPS live-ready
 # path: SQLite stays the default for local dev + test (faster, no
 # docker dependency), Postgres is the canonical prod choice once a
@@ -8,16 +8,16 @@
 #
 # Bring-up (fresh VPS or fresh stack):
 #
-#   1. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \
-#        -f docker-compose.postgres.yml build`
-#   2. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \
-#        -f docker-compose.postgres.yml up -d postgres`
+#   1. `docker compose -f compose/mvp.yml -f compose/mvp.override.yml \
+#        -f compose/postgres.yml build`
+#   2. `docker compose -f compose/mvp.yml -f compose/mvp.override.yml \
+#        -f compose/postgres.yml up -d postgres`
 #       # wait for healthcheck to go healthy (~5-10s on first boot)
-#   3. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \
-#        -f docker-compose.postgres.yml run --rm api \
+#   3. `docker compose -f compose/mvp.yml -f compose/mvp.override.yml \
+#        -f compose/postgres.yml run --rm api \
 #        python -m alembic -c apps/api/alembic.ini upgrade head`
-#   4. `docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml \
-#        -f docker-compose.postgres.yml up -d`
+#   4. `docker compose -f compose/mvp.yml -f compose/mvp.override.yml \
+#        -f compose/postgres.yml up -d`
 #
 # Cut-over from an existing SQLite deployment: see
 # docs/runbooks/postgres-cutover.md.
@@ -48,7 +48,7 @@ services:
 
   api:
     environment:
-      # Override the SQLite default from docker-compose.mvp.yml. The
+      # Override the SQLite default from compose/mvp.yml. The
       # value uses the asyncpg driver (already in pyproject.toml).
       - IGUANA_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-iguanatrader}:${POSTGRES_PASSWORD:-CHANGE-ME-POSTGRES-PASSWORD}@postgres:5432/${POSTGRES_DB:-iguanatrader}
     depends_on:

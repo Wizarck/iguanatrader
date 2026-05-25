@@ -36,10 +36,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate compose YAML shape
         run: |
-          docker compose -f docker-compose.mvp.yml config --quiet
-          docker compose -f docker-compose.postgres.yml config --quiet
-          docker compose -f docker-compose.ibgateway.yml config --quiet
-          docker compose -f docker-compose.backup.yml -f docker-compose.postgres.yml config --quiet
+          docker compose -f compose/mvp.yml config --quiet
+          docker compose -f compose/postgres.yml config --quiet
+          docker compose -f compose/ibgateway.yml config --quiet
+          docker compose -f compose/backup.yml -f compose/postgres.yml config --quiet
 
   build-mvp-api:
     name: docker build apps/api/Dockerfile

@@ -77,7 +77,7 @@ class SecretEnv:
         * **IB Gateway** (headless, used by the docker sidecar shipped
           in slice ``ibkr-gateway-sidecar``): paper ``4002`` / live ``4001``.
 
-        ``docker-compose.ibgateway.yml`` defaults to ``4002`` (paper
+        ``compose/ibgateway.yml`` defaults to ``4002`` (paper
         Gateway); operators flip both ``TRADING_MODE`` + ``TWS_PORT``
         when cutting over to live.
         """

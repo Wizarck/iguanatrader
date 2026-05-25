@@ -71,7 +71,7 @@ Single source of truth for activating iguanatrader's research-fact ingestion pip
 
 **Design**:
 
-- Add `openbb_sidecar` service to `docker-compose.mvp.yml` (image build from existing Dockerfile, port 8765 internal-only).
+- Add `openbb_sidecar` service to `compose/mvp.yml` (image build from existing Dockerfile, port 8765 internal-only).
 - New `OpenBBSidecarSource` adapter calls `http://openbb_sidecar:8765/v1/equity/fundamentals/{symbol}` etc.
 - CLI: `iguanatrader research ingest openbb --symbol NVDA`.
 - Default provider: YFinance (no key). Optional FMP / Polygon keys via OpenBB-recognized env vars passed through compose.

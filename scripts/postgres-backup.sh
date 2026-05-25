@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # postgres-backup.sh — pg_dump wrapper with rotation.
 #
-# Invoked by the `pg-backup` service in docker-compose.backup.yml on
+# Invoked by the `pg-backup` service in compose/backup.yml on
 # a sleep+loop cadence. Designed to run INSIDE a container with
 # postgres + gzip available (postgres:16-alpine).
 #

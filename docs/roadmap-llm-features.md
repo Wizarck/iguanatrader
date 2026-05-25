@@ -135,7 +135,7 @@ When a `ProposalCreated` event fires and the proposal's `confidence_score > thre
 - Read-only resources at `/api/v1/mcp/{trades,briefs,portfolio}` (PR #197 et al).
 - Action tools `explain` / `risk` / `journal` / `synthesize` at `/api/v1/mcp/tools/{name}` (PR #255).
 - Tool catalogue at `GET /api/v1/mcp/tools`.
-- Token gen + SOPS storage (PR #260: `IGUANATRADER_MCP_TOKEN` in `paper.env.enc` + `live.env.enc`, wired through `docker-compose.mvp.yml`).
+- Token gen + SOPS storage (PR #260: `IGUANATRADER_MCP_TOKEN` in `paper.env.enc` + `live.env.enc`, wired through `compose/mvp.yml`).
 - Frontend `/mcp-tools` page showing catalogue + Hermes config snippet.
 
 ### Pending

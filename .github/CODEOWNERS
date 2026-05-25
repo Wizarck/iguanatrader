@@ -1,0 +1,24 @@
+# CODEOWNERS — single-maintainer project at MVP stage.
+#
+# Auto-assigns the listed owner as reviewer on PRs touching matched paths.
+# Currently a flat catch-all because bus factor is 1. Split by surface when
+# v3 SaaS onboards additional maintainers.
+#
+# Syntax: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-customizations/customizing-your-repository/about-code-owners
+
+* @Wizarck
+
+# Trading-critical surfaces — require maintainer review even if branch protection
+# is relaxed in the future. Listed explicitly so future contributor scopes never
+# bypass review on these paths.
+/apps/api/src/iguanatrader/contexts/trading/   @Wizarck
+/apps/api/src/iguanatrader/contexts/risk/      @Wizarck
+/apps/api/src/iguanatrader/migrations/         @Wizarck
+/.secrets/                                     @Wizarck
+/.sops.yaml                                    @Wizarck
+/compose/                                      @Wizarck
+
+# Playbook integration — never delegate without explicit review.
+/.ai-playbook                                  @Wizarck
+/.github/workflows/                            @Wizarck
+/AGENTS.md                                     @Wizarck

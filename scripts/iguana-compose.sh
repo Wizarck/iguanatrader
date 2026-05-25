@@ -110,17 +110,17 @@ SOPS_AGE_KEY_FILE="$AGE_KEY_FILE" \
 # overlay in slice ``ibkr-gateway-sidecar``, etc. If you bring up
 # paper/live on a branch where one of those is not yet merged, the
 # wrapper transparently falls back to the layers that ARE present.
-COMPOSE_FILES=( -f "$REPO_ROOT/docker-compose.mvp.yml" )
-if [[ -f "$REPO_ROOT/docker-compose.mvp.override.yml" ]]; then
-  COMPOSE_FILES+=( -f "$REPO_ROOT/docker-compose.mvp.override.yml" )
+COMPOSE_FILES=( -f "$REPO_ROOT/compose/mvp.yml" )
+if [[ -f "$REPO_ROOT/compose/mvp.override.yml" ]]; then
+  COMPOSE_FILES+=( -f "$REPO_ROOT/compose/mvp.override.yml" )
 fi
 case "$PROFILE" in
   paper|live)
-    if [[ -f "$REPO_ROOT/docker-compose.postgres.yml" ]]; then
-      COMPOSE_FILES+=( -f "$REPO_ROOT/docker-compose.postgres.yml" )
+    if [[ -f "$REPO_ROOT/compose/postgres.yml" ]]; then
+      COMPOSE_FILES+=( -f "$REPO_ROOT/compose/postgres.yml" )
     fi
-    if [[ -f "$REPO_ROOT/docker-compose.ibgateway.yml" ]]; then
-      COMPOSE_FILES+=( -f "$REPO_ROOT/docker-compose.ibgateway.yml" )
+    if [[ -f "$REPO_ROOT/compose/ibgateway.yml" ]]; then
+      COMPOSE_FILES+=( -f "$REPO_ROOT/compose/ibgateway.yml" )
     fi
     ;;
 esac

@@ -9,6 +9,9 @@ on:
     tags:
       - "v*.*.*"
 
+# Defense-in-depth: deny-all at top-level, grant per-job below.
+permissions: {}
+
 jobs:
   release:
     runs-on: ubuntu-latest

@@ -171,7 +171,7 @@ BLS_API_KEY=...
 # Optional
 OPENBB_FMP_API_KEY=...
 EOF
-docker compose -f docker-compose.mvp.yml -f docker-compose.mvp.override.yml up -d --no-deps --force-recreate api
+docker compose -f compose/mvp.yml -f compose/mvp.override.yml up -d --no-deps --force-recreate api
 ```
 
 For SOPS-encrypted deployments (paper / live target state — see [secret-rotation.md](secret-rotation.md)), keys land inside `.secrets/<env>.env.enc`.
