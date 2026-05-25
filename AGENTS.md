@@ -32,7 +32,7 @@ Before responding to ANY task:
 
 ## 1 Project identity
 
-{{ONE_TO_THREE_LINES_ABOUT_THE_PROJECT}}
+Iguanatrader — algorithmic trading bot. IBKR broker integration (paper + live), dual-daemon architecture (separate gateway, scheduler jobstore, client_id per mode). Stack: FastAPI + Svelte web, Postgres, Hindsight memory. MVP single-user (Arturo); v3 SaaS roadmap multi-tenant. Active fronts: ingestion (data/replay), strategies (donchian, trailing stops), risk engine, costs/observability, LLM-features roadmap (A0→A3→A1→A2→B).
 
 ## 2 Dispatcher index
 
@@ -52,11 +52,18 @@ Before responding to ANY task:
 
 ## 3 Active work
 
-{{ACTIVE_OPENSPEC_CHANGE_OR_NONE}}
+LLM-features roadmap (slice order locked): A0 LLM-budget-cap → A3 keystone (Hindsight feedback loop) → A1 → A2 → B. Authoritative doc: [docs/roadmap-llm-features.md](docs/roadmap-llm-features.md). Dual-daemon (paper + live) consolidation in flight per [.claude/handover-2026-05-18-dual-daemon-spec.md](.claude/handover-2026-05-18-dual-daemon-spec.md).
 
 ## 4 Project hard rules (project-specific, NOT duplicating playbook)
 
-{{PROJECT_SPECIFIC_RULES_NOT_DUPLICATING_PLAYBOOK}}
+- **IBKR / API keys NUNCA en commits**. SOPS/age (`.secrets/*.env.enc`) o keystore local. Pre-commit `gitleaks` debe pasar siempre.
+- **Sandbox / paper-trading antes que live**. Recomendado, no obligatorio — ver §7 override 2026-04-28.
+- **Capital máximo por trade explícito en config**. Nunca hardcoded. Default conservador (≤1% del capital) hasta confirmación explícita.
+- **Kill-switch obligatorio**. Toda estrategia live debe exponer un mecanismo trivial para detener ejecución (env var, file flag, endpoint) sin requerir despliegue.
+- **Logs de ejecución inmutables**. Cada trade live se loggea con timestamp, exchange, instrumento, side, qty, price, order_id antes y después de la confirmación del broker. No se borran logs históricos.
+- **ISO 8601 único formato fecha** en docs + code + logs. No dual formats.
+- **Append-only persistence**: tenant-scoped guards activos en el lifespan API. Listeners registrados en `_production_adapter_lifespan`.
+- **Dual-daemon comms**: paper + live daemons en paralelo, comunicación api↔daemon por DB-poll (`tenant_trading_modes.last_toggled_at` / `pending_reconcile_at`), NO in-process bus.
 
 ## 5 Capability map
 
@@ -87,7 +94,17 @@ Rendered to [`.mcp.json`](.mcp.json) + [`.gemini/settings.json`](.gemini/setting
 
 ## 7 Overrides inherited from playbook
 
-{{NONE_OR_EXPLICIT_OVERRIDES_WITH_RATIONALE}}
+### Override 1 (2026-04-28) — §4 hard rule "paper-trading antes que live" relaxed to recommendation
+
+**What is overridden**: AGENTS.md §4 hard rule "Sandbox / paper-trading antes que live. Toda nueva estrategia se valida primero contra paper trading del exchange ... o backtesting histórico. Ningún despliegue a producción sin un período mínimo de paper-trading documentado en la OpenSpec change."
+
+**New behavior**: paper trading remains the **strongly recommended** path before live trading. It is **no longer mandatory**. The user retains final authority on whether to skip paper and go directly to live. CLI surface MUST require explicit `--confirm-live --i-understand-the-risks` flag for live deployment without prior paper history; absence of paper-trading record in `audit_log` → CLI emits **WARNING with risk acknowledgment text**, not block.
+
+**Rationale**: Arturo (sole MVP user) is a discretionary trader with full risk authority and accepts the consequences of skipping paper. v3 SaaS retains the same authority via per-user setting. Bus factor 1 + 3-4 month MVP budget makes mandatory paper period a misaligned friction. Backtest gate was also evaluated and explicitly skipped from MVP scope (decision 2026-04-28); paper trading remains the only validation discipline available, recommended but not enforced.
+
+**Recommendation invariant**: The system ALWAYS recommends paper trading. The user can override per-strategy. `audit_log` records the override decision with timestamp, strategy reference, and the literal risk acknowledgment text typed by the user.
+
+**Reverts to default**: If/when v3 SaaS exposes the system to non-Arturo users with potentially less risk literacy, this override may need to be narrowed to `admin`-role users only, with §4 behavior restored as mandatory for `user`-role accounts. The decision is logged in `docs/hitl-gates-log.md` Gate A amendment 2026-04-28.
 
 <!--
 If this project has a pre-existing OpenSpec custom workflow (its own
@@ -109,7 +126,7 @@ a playbook spec by path.
 
 ## 8 Gotchas
 
-{{EMPTY_FILL_AS_YOU_LEARN}}
+_Vacío. Se rellena con uso real — entradas dated YYYY-MM-DD según el formato de abajo._
 
 Append one-line dated entries when a project gotcha is discovered:
 
