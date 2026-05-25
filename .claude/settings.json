@@ -1,13 +1,36 @@
 {
-  "_comment": "Project-level Claude Code settings. SessionStart hook auto-recalls Hindsight context per .ai-playbook/specs/memory-hierarchy.md §4. Adjust the secrets path if your SOPS-encrypted .env lives somewhere other than the sibling eligia-core checkout.",
+  "_comment": "Project-level Claude Code settings. SessionStart hook auto-recalls Hindsight context per .ai-playbook/specs/memory-hierarchy.md §4. PreToolUse hook enforces apply-skill orchestration per .ai-playbook/specs/apply-skill-enforcement.md. Matcher includes Bash (v0.20.0+) for heuristic detection of terminal-side writes to declared write_paths; set AIPLAYBOOK_BASH_INSPECTION=0 to disable that branch only.",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "sops exec-env ../eligia-core/secrets/secrets.env -- python .ai-playbook/scripts/inject_context.py --bank-id iguanatrader 2>/dev/null || true",
+            "command": "sops exec-env ../consumer-a/secrets/secrets.env -- python .ai-playbook/scripts/inject_context.py --bank-id iguanatrader 2>/dev/null || true",
             "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/openspec-apply-enforce.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .ai-playbook/scripts/rules/caveman-reinforce.rule.py",
+            "timeout": 5
           }
         ]
       }

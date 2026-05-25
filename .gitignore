@@ -2,14 +2,11 @@
 # the playbook block; do NOT remove the playbook entries below or the auto-
 # regenerated `.claude/injected-context.md` will start being committed.
 
-# ai-playbook integration
-.ai-playbook/overrides.log
-.ai-playbook/hindsight-queue.jsonl
-.ai-playbook/notifications.jsonl
-.ai-playbook/heartbeat-t18a.txt
-.claude/injected-context.md
+# Project-specific (above the playbook block).
 
-# RFC-0001 skills distribution: per-LLM mirrors are gitignored copies of skills/
+# Skills mirrors (single-source model, v0.17.0+): per-LLM mirrors are gitignored
+# copies of .ai-playbook/skills/, materialised by scripts/materialise_skills.py.
+skills/
 .claude/skills/
 .gemini/skills/
 .skills-sources/
@@ -63,6 +60,25 @@ coverage.xml
 dist/
 build/
 *.egg-info/
+.hypothesis/
+
+# ai-playbook integration
+.ai-playbook/overrides.log
+.ai-playbook/hindsight-queue.jsonl
+.ai-playbook/notifications.jsonl
+.ai-playbook/heartbeat-t18a.txt
+.claude/injected-context.md
+
+# ai-playbook runtime state (telemetry, rule events, break-glass audit) — per-consumer, local only
+.ai-playbook-state/
+
+# >>> ai-playbook-config: per-consumer toggle state >>>
+.ai-playbook/rules-toggle.json
+.ai-playbook/rules-toggle-audit.jsonl
+.ai-playbook/feature-flags.env
+.ai-playbook/applied-config.json
+.ai-playbook/applied-config.js
+# <<< ai-playbook-config <<<
 
 # Poetry: only the per-developer local override (.local) is gitignored; the
 # committed `poetry.toml` carries the portable repo settings (e.g.

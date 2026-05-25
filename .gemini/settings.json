@@ -6,11 +6,26 @@
         "ATLASSIAN_URL": "${ATLASSIAN_URL}"
       }
     },
-    "atlassian-geeplo": {},
-    "camoufox": {
-      "command": "npx -y camoufox-mcp-server"
+    "atlassian-geeplo": {
+      "httpUrl": "https://eligia-atlassian.palafitofood.com/mcp"
     },
-    "context7": {},
+    "camoufox": {
+      "_caveman_original": {
+        "args": [],
+        "command": "npx -y camoufox-mcp-server"
+      },
+      "_caveman_wrapped": true,
+      "args": [
+        "-y",
+        "caveman-shrink",
+        "--",
+        "npx -y camoufox-mcp-server"
+      ],
+      "command": "npx"
+    },
+    "context7": {
+      "httpUrl": "https://mcp.context7.com/mcp"
+    },
     "crm": {
       "env": {
         "TWENTY_API_KEY": "${TWENTY_API_KEY}",
@@ -23,8 +38,12 @@
         "GOOGLE_OAUTH_TOKEN": "${GOOGLE_OAUTH_TOKEN}"
       }
     },
-    "google-workspace-arturo": {},
-    "google-workspace-palafito": {},
+    "google-workspace-arturo": {
+      "httpUrl": "https://eligia-gws-arturo.palafitofood.com"
+    },
+    "google-workspace-palafito": {
+      "httpUrl": "https://eligia-gws-palafito.palafitofood.com"
+    },
     "guardrails-mcp": {
       "env": {
         "GUARDRAILS_API_KEY": "${GUARDRAILS_API_KEY}",
@@ -46,17 +65,26 @@
         "LITELLM_URL": "${LITELLM_URL}"
       }
     },
-    "miro": {},
+    "miro": {
+      "httpUrl": "https://mcp.miro.com/"
+    },
     "ms365-onedrive": {
-      "command": "npx -y @softeria/ms-365-mcp-server"
+      "_caveman_original": {
+        "args": [],
+        "command": "npx -y @softeria/ms-365-mcp-server"
+      },
+      "_caveman_wrapped": true,
+      "args": [
+        "-y",
+        "caveman-shrink",
+        "--",
+        "npx -y @softeria/ms-365-mcp-server"
+      ],
+      "command": "npx"
     },
     "notebooklm": {},
     "paperclip": {},
-    "rag": {
-      "env": {
-        "RAG_VAULT_PATH": "${RAG_VAULT_PATH}"
-      }
-    },
+    "rag": {},
     "skills-manager": {},
     "skills-registry": {
       "env": {
@@ -64,7 +92,18 @@
       }
     },
     "trello": {
-      "command": "npx -y trello-mcp",
+      "_caveman_original": {
+        "args": [],
+        "command": "npx -y trello-mcp"
+      },
+      "_caveman_wrapped": true,
+      "args": [
+        "-y",
+        "caveman-shrink",
+        "--",
+        "npx -y trello-mcp"
+      ],
+      "command": "npx",
       "env": {
         "TRELLO_API_KEY": "${TRELLO_API_KEY}",
         "TRELLO_TOKEN": "${TRELLO_TOKEN}"

@@ -13,14 +13,27 @@
       "transport": "http"
     },
     "atlassian-geeplo": {
-      "transport": "http"
+      "transport": "http",
+      "url": "https://eligia-atlassian.palafitofood.com/mcp"
     },
     "camoufox": {
-      "command": "npx -y camoufox-mcp-server",
+      "_caveman_original": {
+        "args": [],
+        "command": "npx -y camoufox-mcp-server"
+      },
+      "_caveman_wrapped": true,
+      "args": [
+        "-y",
+        "caveman-shrink",
+        "--",
+        "npx -y camoufox-mcp-server"
+      ],
+      "command": "npx",
       "transport": "stdio"
     },
     "context7": {
-      "transport": "http"
+      "transport": "http",
+      "url": "https://mcp.context7.com/mcp"
     },
     "crm": {
       "auth": "bearer",
@@ -46,10 +59,12 @@
       "transport": "http"
     },
     "google-workspace-arturo": {
-      "transport": "http"
+      "transport": "http",
+      "url": "https://eligia-gws-arturo.palafitofood.com"
     },
     "google-workspace-palafito": {
-      "transport": "http"
+      "transport": "http",
+      "url": "https://eligia-gws-palafito.palafitofood.com"
     },
     "guardrails-mcp": {
       "auth": "bearer",
@@ -89,10 +104,22 @@
       "transport": "http"
     },
     "miro": {
-      "transport": "http"
+      "transport": "http",
+      "url": "https://mcp.miro.com/"
     },
     "ms365-onedrive": {
-      "command": "npx -y @softeria/ms-365-mcp-server",
+      "_caveman_original": {
+        "args": [],
+        "command": "npx -y @softeria/ms-365-mcp-server"
+      },
+      "_caveman_wrapped": true,
+      "args": [
+        "-y",
+        "caveman-shrink",
+        "--",
+        "npx -y @softeria/ms-365-mcp-server"
+      ],
+      "command": "npx",
       "transport": "stdio"
     },
     "notebooklm": {
@@ -102,14 +129,6 @@
       "transport": "http"
     },
     "rag": {
-      "auth": "none",
-      "env_optional": [
-        "RAG_INDEX_PATH",
-        "RAG_TOP_K"
-      ],
-      "env_required": [
-        "RAG_VAULT_PATH"
-      ],
       "transport": "sse"
     },
     "skills-manager": {
@@ -126,8 +145,19 @@
       "transport": "http"
     },
     "trello": {
+      "_caveman_original": {
+        "args": [],
+        "command": "npx -y trello-mcp"
+      },
+      "_caveman_wrapped": true,
+      "args": [
+        "-y",
+        "caveman-shrink",
+        "--",
+        "npx -y trello-mcp"
+      ],
       "auth": "bearer",
-      "command": "npx -y trello-mcp",
+      "command": "npx",
       "env_optional": [
         "TRELLO_DEFAULT_BOARD_ID"
       ],
