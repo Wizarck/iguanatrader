@@ -1,0 +1,12 @@
+---
+description: AGENTS.md is the canonical dispatcher
+alwaysApply: true
+---
+
+# Cursor dispatcher pointer
+
+This file is loaded by Cursor at session start. The canonical dispatcher is
+[AGENTS.md](../../AGENTS.md) — follow its §0 bootstrap directive before any task.
+
+For universal norms, this repo inherits from `.ai-playbook/docs/` (the
+playbook submodule pinned to a semver tag).

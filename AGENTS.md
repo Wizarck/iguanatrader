@@ -2,7 +2,7 @@
 schema: agents-md/v1
 version: 0.1.0
 inherits_from:
-  - github.com/Wizarck/ai-playbook@v0.19.6
+  - github.com/Wizarck/ai-playbook@v0.19.7
 updated: 2026-05-25
 project: iguanatrader
 owner: arturo6ramirez@gmail.com
