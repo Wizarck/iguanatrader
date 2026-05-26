@@ -145,7 +145,7 @@ Every Monday during retrospective:
 
 ## See also
 
-- [openspec/changes/risk-engine-protections/](../../openspec/changes/risk-engine-protections/) — slice K1 design + spec contract.
+- `openspec/changes/risk-engine-protections/` (slice K1 design + spec contract — archived or not yet created at time of writing).
 - [docs/data-model.md §3.3](../data-model.md) — risk table schema.
 - [docs/gotchas.md #44, #45, #46](../gotchas.md) — engine purity, cache drift, reason-text junk floor.
 - [apps/api/README.md](../../apps/api/README.md) §"Risk context" — public API summary.

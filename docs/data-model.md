@@ -12,7 +12,7 @@ sources:
   - docs/prd.md
   - docs/architecture-decisions.md
   - docs/research/data-sources-catalogue.md
-  - .ai-playbook/specs/runbook-bmad-openspec.md
+  - .ai-playbook/docs/concepts/runbook-bmad-openspec.md
 db_engine_mvp: SQLite (WAL mode, append-only on critical tables, JSON1 extension required)
 db_engine_v2: Postgres 16+ (native JSONB)
 orm: SQLAlchemy 2.x + sqlmodel
@@ -23,7 +23,7 @@ migrations: Alembic
 
 ERD + entity catalogue + cascade rules for the MVP schema, with v2 multi-tenant Postgres path explicitly preserved (NFR-SC2). Authoritative source for migrations and the SQLAlchemy event listener that rejects queries without `tenant_id` filter (NFR-SC1).
 
-Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runbook-bmad-openspec.md) §2.1 BMAD artefact requirement.
+Per [`.ai-playbook/docs/concepts/runbook-bmad-openspec.md`](../.ai-playbook/docs/concepts/runbook-bmad-openspec.md) §2.1 BMAD artefact requirement.
 
 ---
 
@@ -864,4 +864,4 @@ CHECK constraints:
 - [docs/architecture-decisions.md](architecture-decisions.md) §Authentication & Security — `tenant_id` propagation chain.
 - [docs/prd.md](prd.md) FR46-FR51 — append-only + multi-tenant requirements.
 - [docs/personas-jtbd.md](personas-jtbd.md) §RBAC Matrix — `admin` / `user` roles drive `users.role` constraint.
-- [.ai-playbook/specs/runbook-bmad-openspec.md](../.ai-playbook/specs/runbook-bmad-openspec.md) §2.1 — artefact requirement.
+- [.ai-playbook/docs/concepts/runbook-bmad-openspec.md](../.ai-playbook/docs/concepts/runbook-bmad-openspec.md) §2.1 — artefact requirement.

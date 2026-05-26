@@ -1,40 +1,40 @@
-# Lumibot — Deep-dive técnico para iguanatrader
+# Lumibot — Technical deep-dive for iguanatrader
 
-**Fecha:** 2026-04-27
+**Date:** 2026-04-27
 **Repo:** https://github.com/Lumiwealth/lumibot
 **Docs:** https://lumibot.lumiwealth.com/
-**Maintainer:** Lumiwealth (corporación con producto comercial encima)
-**Branch default:** `dev`
-**Última actividad:** 2026-04-26 (vivo, commits regulares)
-**Stars:** 1.366
-**Licencia:** ⚠️ **GPL-3.0** (no Apache-2.0 como decía la research previa — corrección importante)
+**Maintainer:** Lumiwealth (corporation with a commercial product layered on top)
+**Default branch:** `dev`
+**Latest activity:** 2026-04-26 (alive, regular commits)
+**Stars:** 1,366
+**License:** ⚠️ **GPL-3.0** (not Apache-2.0 as the previous research stated — important correction)
 
 ---
 
-## 1. Veredicto rápido (TL;DR)
+## 1. Quick verdict (TL;DR)
 
-Lumibot **es funcionalmente** el competidor más cercano al MVP de iguanatrader. Cubre IBKR, backtest↔live parity, lifecycle de Strategy bien diseñado, integración LLM-en-backtest pionera. **Pero la licencia GPL-3.0 lo descarta como base para fork comercial cerrado** — y eso es exactamente la trayectoria que iguanatrader contempla post-MVP. Útil como **referencia de API y patrones**, no como base de código.
+Lumibot **is functionally** the closest competitor to the iguanatrader MVP. It covers IBKR, backtest↔live parity, a well-designed Strategy lifecycle, and pioneering LLM-in-backtest integration. **But the GPL-3.0 license rules it out as a base for a closed commercial fork** — and that is exactly the trajectory iguanatrader contemplates post-MVP. Useful as an **API and pattern reference**, not as a code base.
 
 ---
 
-## 2. Arquitectura general
+## 2. Overall architecture
 
-Cuatro componentes principales:
+Four main components:
 
-| Componente | Rol |
+| Component | Role |
 |---|---|
-| `Strategy` | Clase del usuario. Toda la lógica vive aquí. Hereda de `lumibot.strategies.strategy.Strategy`. |
-| `Broker` | Capa de conexión. Implementaciones: `Alpaca`, `InteractiveBrokers`, `Schwab`, `Tradier`, `Ccxt` (cripto), `Tradovate`, etc. |
-| `Backtesting` | Engine de simulación histórica. Variantes por data source: `YahooDataBacktesting`, `PolygonDataBacktesting`, `DataBentoBacktesting`. |
-| `Trader` | Orquestador. Carga estrategias, levanta el loop, gestiona crash-recovery. |
+| `Strategy` | The user's class. All the logic lives here. Inherits from `lumibot.strategies.strategy.Strategy`. |
+| `Broker` | Connection layer. Implementations: `Alpaca`, `InteractiveBrokers`, `Schwab`, `Tradier`, `Ccxt` (crypto), `Tradovate`, etc. |
+| `Backtesting` | Historical simulation engine. Variants by data source: `YahooDataBacktesting`, `PolygonDataBacktesting`, `DataBentoBacktesting`. |
+| `Trader` | Orchestrator. Loads strategies, spins up the loop, handles crash-recovery. |
 
-**Modelo arquitectónico**: event-driven (no vectorizado). Mismo `Strategy` corre en backtest y en live; las diferencias las absorben `Broker` y `Backtesting`.
+**Architectural model**: event-driven (not vectorized). The same `Strategy` runs in backtest and in live; the differences are absorbed by `Broker` and `Backtesting`.
 
 ---
 
-## 3. `Strategy` interface — el patrón a robar
+## 3. `Strategy` interface — the pattern to steal
 
-### Esqueleto mínimo
+### Minimal skeleton
 
 ```python
 from datetime import datetime
@@ -51,7 +51,7 @@ class MyStrategy(Strategy):
     }
 
     def initialize(self):
-        self.sleeptime = "180M"  # cada 180 minutos
+        self.sleeptime = "180M"  # every 180 minutes
 
     def on_trading_iteration(self):
         symbol = self.parameters["symbol"]
@@ -59,38 +59,38 @@ class MyStrategy(Strategy):
         self.submit_order(order)
 ```
 
-### Lifecycle completo (12 hooks)
+### Full lifecycle (12 hooks)
 
-| Hook | Cuándo dispara |
+| Hook | When it fires |
 |---|---|
-| `initialize()` | Una vez al arranque |
-| `before_starting_trading()` | Antes del primer `on_trading_iteration` del día |
-| `before_market_opens()` | Pre-mercado |
-| `on_trading_iteration()` | Loop principal (cada `sleeptime`) |
-| `before_market_closes()` | Pre-cierre |
-| `after_market_closes()` | Post-cierre |
-| `on_new_order(order)` | Confirmación de orden creada |
-| `on_partially_filled_order(order, qty)` | Fill parcial |
-| `on_filled_order(order)` | Fill completo |
-| `on_canceled_order(order)` | Cancelación |
-| `on_parameters_updated()` | Cambio dinámico de `parameters` (hot-reload) |
-| `on_bot_crash()` / `on_abrupt_closing()` | Manejo de errores y cierre abrupto |
+| `initialize()` | Once at startup |
+| `before_starting_trading()` | Before the day's first `on_trading_iteration` |
+| `before_market_opens()` | Pre-market |
+| `on_trading_iteration()` | Main loop (every `sleeptime`) |
+| `before_market_closes()` | Pre-close |
+| `after_market_closes()` | Post-close |
+| `on_new_order(order)` | Confirmation that an order was created |
+| `on_partially_filled_order(order, qty)` | Partial fill |
+| `on_filled_order(order)` | Full fill |
+| `on_canceled_order(order)` | Cancellation |
+| `on_parameters_updated()` | Dynamic change to `parameters` (hot-reload) |
+| `on_bot_crash()` / `on_abrupt_closing()` | Error handling and abrupt shutdown |
 
-### API de órdenes
+### Order API
 
 `create_order()`, `submit_order()`, `submit_orders()` (batch), `cancel_order()`, `cancel_open_orders()`, `wait_for_order_execution()` (sync blocking), `wait_for_order_registration()`.
 
-### Estado del portfolio
+### Portfolio state
 
 `get_position(symbol)`, `get_positions()`, `get_cash()`, `adjust_cash()`, `deposit_cash()`, `withdraw_cash()`.
 
-**Lo bueno**: separación de concerns excelente. El usuario solo necesita pensar en `on_trading_iteration` y los `on_*_order` callbacks. La diferencia backtest vs live la absorbe el framework.
+**The good**: excellent separation of concerns. The user only needs to think about `on_trading_iteration` and the `on_*_order` callbacks. The backtest vs live difference is absorbed by the framework.
 
-**Lo regular**: `sleeptime` como string ("180M") es ergonómico pero implica que el loop NO es event-driven puro a nivel `Strategy` — es polling con sleep. El `Broker` sí maneja eventos, pero la `Strategy` está sleeping entre iteraciones. Para una estrategia event-driven (DonchianATR sobre tick/bar new), tienes que polear o usar `on_filled_order` como proxy.
+**The mediocre**: `sleeptime` as a string ("180M") is ergonomic but implies that the loop is NOT purely event-driven at the `Strategy` level — it's polling with sleep. The `Broker` does handle events, but the `Strategy` is sleeping between iterations. For an event-driven strategy (DonchianATR on tick/bar new), you have to poll or use `on_filled_order` as a proxy.
 
 ---
 
-## 4. Abstracción `Broker` — el otro patrón a robar
+## 4. `Broker` abstraction — the other pattern to steal
 
 ```python
 from lumibot.brokers import Alpaca, InteractiveBrokers
@@ -98,31 +98,31 @@ from lumibot.brokers import Alpaca, InteractiveBrokers
 ALPACA_CONFIG = {"API_KEY": "...", "API_SECRET": "...", "PAPER": True}
 broker = Alpaca(ALPACA_CONFIG)
 
-# o
+# or
 broker = InteractiveBrokers(IBKR_CONFIG)
 ```
 
-**Diseño clave**:
-- Una clase por broker, todas implementan la misma interface implícita.
-- `PAPER: True/False` switch en config — mismo objeto, distinto endpoint. **Patrón a copiar literal en iguanatrader**.
-- ENV vars `TRADING_BROKER` y `DATA_SOURCE` permiten **separar** broker de ejecución y broker de datos. Útil para usar IBKR para fills + Polygon para datos en backtest, por ejemplo.
+**Key design**:
+- One class per broker, all implementing the same implicit interface.
+- `PAPER: True/False` switch in config — same object, different endpoint. **Pattern to copy literally in iguanatrader**.
+- ENV vars `TRADING_BROKER` and `DATA_SOURCE` allow **separating** execution broker from data broker. Useful for using IBKR for fills + Polygon for data in backtest, for example.
 
-**Brokers disponibles** (2026):
+**Available brokers** (2026):
 - **Equity/options**: Alpaca, Interactive Brokers, Schwab, Tradier
-- **Cripto**: Binance, Coinbase, Kraken, KuCoin (vía CCXT wrapper)
+- **Crypto**: Binance, Coinbase, Kraken, KuCoin (via CCXT wrapper)
 - **Futures**: Tradovate, DataBento, Bitunix
-- **Forex**: vía broker integrations existentes
+- **Forex**: via existing broker integrations
 
 ---
 
 ## 5. Backtest engine
 
-- **Mismo código** que live (la diferencia la absorbe el `Broker` que se inyecta).
-- **Event-based** (no vectorizado): simula iteración a iteración.
-- **Slippage** modelado vía entidad `TradingSlippage`.
-- **Comisiones** modeladas vía entidad `TradingFee` (per-order o porcentual).
-- **Data sources**: `YahooDataBacktesting` (gratis), `PolygonDataBacktesting` (premium), `DataBentoBacktesting` (premium futures), `AlpacaBacktesting` (data del propio broker).
-- **Cash management**: `adjust_cash()`, `deposit_cash()`, `withdraw_cash()` registran flujos externos para que el equity curve refleje correctamente entradas/salidas de capital.
+- **Same code** as live (the difference is absorbed by the injected `Broker`).
+- **Event-based** (not vectorized): simulates iteration by iteration.
+- **Slippage** modeled via the `TradingSlippage` entity.
+- **Commissions** modeled via the `TradingFee` entity (per-order or percentage).
+- **Data sources**: `YahooDataBacktesting` (free), `PolygonDataBacktesting` (premium), `DataBentoBacktesting` (premium futures), `AlpacaBacktesting` (data from the broker itself).
+- **Cash management**: `adjust_cash()`, `deposit_cash()`, `withdraw_cash()` record external flows so the equity curve correctly reflects capital inflows/outflows.
 
 ```python
 backtesting_start = datetime(2020, 1, 1)
@@ -136,106 +136,106 @@ strategy.run_backtest(
 )
 ```
 
-**Lo bueno**: API trivial. El método `run_backtest` es de la propia clase Strategy.
+**The good**: trivial API. The `run_backtest` method belongs to the Strategy class itself.
 
-**Lo cuestionable**: no encontré modelo de slippage paramétrico configurable (5-15 bps small-cap / 1-3 bps large-cap como pide el plan de iguanatrader). Hay que verificar en el código si `TradingSlippage` permite ese nivel de granularidad o si es un valor fijo.
+**The questionable**: I could not find a configurable parametric slippage model (5-15 bps small-cap / 1-3 bps large-cap as the iguanatrader plan requires). It needs to be verified in the code whether `TradingSlippage` allows that level of granularity or whether it's a fixed value.
 
 ---
 
-## 6. Risk engine — **EL HUECO GRAVE**
+## 6. Risk engine — **THE SERIOUS GAP**
 
-**Ningún módulo built-in para**:
+**No built-in module for**:
 - Risk caps (per-trade %, daily loss %, weekly loss %)
 - Kill-switch
-- Drawdown protection automática
-- Pre-trade checks que rechacen órdenes
-- Position sizing basado en ATR / volatilidad
+- Automatic drawdown protection
+- Pre-trade checks that reject orders
+- Position sizing based on ATR / volatility
 
-Todo lo anterior es **responsabilidad del usuario** dentro de `on_trading_iteration`. Lumibot solo provee primitivas: `get_cash`, `get_positions`, `cancel_open_orders`. Si quieres caps 2/5/15, los implementas tú.
+All of the above is the **user's responsibility** inside `on_trading_iteration`. Lumibot only provides primitives: `get_cash`, `get_positions`, `cancel_open_orders`. If you want 2/5/15 caps, you implement them yourself.
 
-**Implicación para iguanatrader**: el `RiskEngine` que iguanatrader necesita escribir **es el principal aporte de valor sobre Lumibot**. Lumibot tiene engine + brokers + lifecycle; iguanatrader añade risk + approval + LLM observability.
-
----
-
-## 7. AI/LLM integration — la sorpresa
-
-Lumibot ha integrado **agentes LLM dentro del backtest loop** con un patrón notable:
-
-- Los agentes razonan y llaman tools externos **en cada bar** durante simulación.
-- **Replay caching**: la primera corrida de backtest persiste todas las llamadas LLM; corridas warm reutilizan el cache → reruns deterministas y casi gratis.
-- Soporte para **MCP servers externos** como data sources / tools.
-- "Same code for backtest and live" se extiende a los agentes — el agente corre idéntico en ambos modos.
-
-**Esto es ORO para iguanatrader**: el patrón "replay cache de llamadas LLM" es exactamente lo que necesitas para que un backtest con LLM-orchestrated routines sea reproducible sin pagar tokens cada vez.
-
-**Producto comercial encima**: **BotSpot.trade** — "Build trading bots using natural language and AI" (LLM genera estrategias). No es agentic auto-trade, es **LLM-as-codegen**.
+**Implication for iguanatrader**: the `RiskEngine` that iguanatrader needs to write **is the main value-add over Lumibot**. Lumibot has engine + brokers + lifecycle; iguanatrader adds risk + approval + LLM observability.
 
 ---
 
-## 8. HITL / approval gate — **NO existe**
+## 7. AI/LLM integration — the surprise
 
-No hay hooks nativos para approval humano por trade. El insertion point natural sería **interceptar `submit_order()`** desde la estrategia y meter ahí un wait sobre un signal externo (Telegram, webhook, etc.). Lumibot no lo provee, pero el lifecycle no lo bloquea.
+Lumibot has integrated **LLM agents inside the backtest loop** with a notable pattern:
+
+- The agents reason and call external tools **on every bar** during simulation.
+- **Replay caching**: the first backtest run persists every LLM call; warm runs reuse the cache → deterministic and nearly free reruns.
+- Support for **external MCP servers** as data sources / tools.
+- "Same code for backtest and live" extends to the agents — the agent runs identically in both modes.
+
+**This is GOLD for iguanatrader**: the "replay cache of LLM calls" pattern is exactly what you need so that a backtest with LLM-orchestrated routines is reproducible without paying tokens every time.
+
+**Commercial product on top**: **BotSpot.trade** — "Build trading bots using natural language and AI" (LLM generates strategies). It's not agentic auto-trade, it's **LLM-as-codegen**.
 
 ---
 
-## 9. Persistencia y configuración
+## 8. HITL / approval gate — **does NOT exist**
 
-- **`Variable Backup & Restore`**: documentación menciona persistencia de variables de Strategy entre runs. Implementación no detallada en docs públicas — habría que ver el código.
-- **Configuración**: dict pasado al Broker + ENV vars (`TRADING_BROKER`, `DATA_SOURCE`). No usa pydantic/yaml nativo.
-- **`parameters` first-class** en Strategy + hot-reload via `on_parameters_updated()`. Bueno.
-
-**Multi-tenancy**: NO. Lumibot asume single-strategy single-broker single-user. Para multi-tenant habría que envolverlo en una capa externa.
+There are no native hooks for human approval per trade. The natural insertion point would be to **intercept `submit_order()`** from the strategy and put a wait on an external signal there (Telegram, webhook, etc.). Lumibot doesn't provide it, but the lifecycle doesn't block it.
 
 ---
 
-## 10. Lumiwealth — la capa comercial
+## 9. Persistence and configuration
 
-Lumibot OSS (GPL-3.0) es la base. Encima Lumiwealth vende:
+- **`Variable Backup & Restore`**: documentation mentions persistence of Strategy variables between runs. Implementation not detailed in public docs — you'd have to look at the code.
+- **Configuration**: dict passed to the Broker + ENV vars (`TRADING_BROKER`, `DATA_SOURCE`). Does not use pydantic/yaml natively.
+- **`parameters` first-class** in Strategy + hot-reload via `on_parameters_updated()`. Good.
 
-| Producto | Qué es |
+**Multi-tenancy**: NO. Lumibot assumes single-strategy single-broker single-user. For multi-tenant you'd have to wrap it in an external layer.
+
+---
+
+## 10. Lumiwealth — the commercial layer
+
+Lumibot OSS (GPL-3.0) is the base. On top of it, Lumiwealth sells:
+
+| Product | What it is |
 |---|---|
-| **BotSpot.trade** | Plataforma SaaS donde describes la estrategia en NL y un LLM la genera + corre. |
-| **Algorithmic Trading course** | Curso de pago. |
-| **Machine Learning for Trading course** | Curso de pago. |
-| **Options Trading course** | Curso de pago. |
+| **BotSpot.trade** | SaaS platform where you describe the strategy in NL and an LLM generates and runs it. |
+| **Algorithmic Trading course** | Paid course. |
+| **Machine Learning for Trading course** | Paid course. |
+| **Options Trading course** | Paid course. |
 
-**Modelo monetización**: education-flywheel + SaaS premium encima del OSS. Análogo a QuantStart/Jesse.
+**Monetization model**: education-flywheel + premium SaaS on top of the OSS. Analogous to QuantStart/Jesse.
 
-**Implicación legal**: Lumiwealth puede vender BotSpot porque **ellos** son los autores del OSS GPL-3.0 y mantienen dual-licensing implícito. **Un tercero NO puede hacer lo mismo legalmente** sin liberar todo el SaaS bajo GPL-3.0.
-
----
-
-## 11. Governance y bus factor
-
-- **Maintainer**: Lumiwealth (empresa). Bus factor estimado **medio**: dependes del survival de la corp, pero no de un único individuo.
-- **Ritmo**: commits regulares 2026.
-- **Comunidad**: pequeña (~1.4k stars). Tracción modesta vs Lean (18.6k) o Freqtrade (30k).
-- **Política de breaking changes**: branch default es `dev` → no garantizan estabilidad de API release-to-release.
+**Legal implication**: Lumiwealth can sell BotSpot because **they** are the authors of the GPL-3.0 OSS and maintain implicit dual-licensing. **A third party legally CANNOT do the same** without releasing the entire SaaS under GPL-3.0.
 
 ---
 
-## 12. **5 patrones a ROBAR** para iguanatrader
+## 11. Governance and bus factor
 
-1. **`Strategy` lifecycle de 12 hooks** — copia literal la separación `initialize` / `before_market_opens` / `on_trading_iteration` / `on_filled_order`. Limpia y testeable.
-2. **`Broker` switch via config dict + flag `PAPER`** — mismo objeto, distinto endpoint. Adaptar para `IBKR(config={'PAPER': True})` desde día 1, evita el dual-class `IbkrPaper` + `IbkrLive`.
-3. **ENV vars `TRADING_BROKER` + `DATA_SOURCE`** — separación broker-de-ejecución vs broker-de-datos. Útil cuando IBKR fills + Polygon data históricos.
-4. **Replay caching de llamadas LLM en backtest** — patrón crítico para reproducibilidad. Implementar en `CostMeter`: hash del prompt → cache JSON; en backtest, lee cache; en live, llama API real y persiste.
-5. **`parameters` first-class + `on_parameters_updated()` hot-reload** — permite tunear DonchianATR via Telegram (`/set period 20`) sin reiniciar el bot.
-
-## 13. **3 anti-patrones a EVITAR**
-
-1. **Licencia GPL-3.0 sin dual-licensing** — bloquea la trayectoria SaaS comercial. iguanatrader debe usar **Apache-2.0 + Commons Clause** desde el primer commit.
-2. **Risk engine ausente built-in** — Lumibot lo deja al usuario. iguanatrader debe hacerlo **obligatorio y no-bypaseable**: las estrategias proponen, el `RiskEngine` filtra/recorta/rechaza ANTES del approval gate. No opt-in.
-3. **`sleeptime` polling como modelo principal** — Lumibot itera por sleep. Para iguanatrader (event-driven sobre bars/news/alertas), el modelo correcto es asyncio + queues + event loop sobre IBKR streaming, no polling.
+- **Maintainer**: Lumiwealth (company). Estimated bus factor **medium**: you depend on the corp's survival, but not on a single individual.
+- **Cadence**: regular commits in 2026.
+- **Community**: small (~1.4k stars). Modest traction vs Lean (18.6k) or Freqtrade (30k).
+- **Breaking-change policy**: default branch is `dev` → API stability release-to-release is not guaranteed.
 
 ---
 
-## 14. Verdict honesto para iguanatrader
+## 12. **5 patterns to STEAL** for iguanatrader
 
-**¿Forkear?** **NO**. La GPL-3.0 mata la opción SaaS comercial cerrado. Aunque iguanatrader empezara como OSS GPL-3.0 también, perderías la opcionalidad de cambiar de modelo sin reescribir.
+1. **`Strategy` lifecycle with 12 hooks** — copy literally the `initialize` / `before_market_opens` / `on_trading_iteration` / `on_filled_order` separation. Clean and testable.
+2. **`Broker` switch via config dict + `PAPER` flag** — same object, different endpoint. Adapt to `IBKR(config={'PAPER': True})` from day 1, avoid the dual-class `IbkrPaper` + `IbkrLive`.
+3. **ENV vars `TRADING_BROKER` + `DATA_SOURCE`** — separation of execution broker vs data broker. Useful when using IBKR fills + Polygon historical data.
+4. **Replay caching of LLM calls in backtest** — critical pattern for reproducibility. Implement in `CostMeter`: hash of the prompt → JSON cache; in backtest, read the cache; in live, call the real API and persist.
+5. **`parameters` first-class + `on_parameters_updated()` hot-reload** — allows tuning DonchianATR via Telegram (`/set period 20`) without restarting the bot.
 
-**¿Copiar interfaces?** **SÍ, agresivamente**. El `Strategy` lifecycle, el `Broker` config-switch, el patrón replay-cache de LLM. Estos tres patrones por separado ya justifican el deep-dive.
+## 13. **3 anti-patterns to AVOID**
 
-**¿Ignorar?** **NO**. BotSpot.trade es competencia directa con la trayectoria comercial de iguanatrader; hay que estudiarla.
+1. **GPL-3.0 license without dual-licensing** — blocks the commercial SaaS trajectory. iguanatrader should use **Apache-2.0 + Commons Clause** from the first commit.
+2. **No built-in risk engine** — Lumibot leaves it to the user. iguanatrader must make it **mandatory and non-bypassable**: strategies propose, the `RiskEngine` filters/trims/rejects BEFORE the approval gate. Not opt-in.
+3. **`sleeptime` polling as the main model** — Lumibot iterates by sleep. For iguanatrader (event-driven on bars/news/alerts), the correct model is asyncio + queues + event loop over IBKR streaming, not polling.
 
-**Decisión operativa para el PRD**: Lumibot queda como **referencia de diseño obligada** (linkear este documento desde `docs/architecture-decisions.md` ADR-001) y como **competidor a vigilar** (no a reemplazar — el approval gate por trade + cost observability del propio LLM stack siguen siendo huecos que Lumibot/BotSpot no cubren).
+---
+
+## 14. Honest verdict for iguanatrader
+
+**Fork it?** **NO**. GPL-3.0 kills the closed commercial SaaS option. Even if iguanatrader started out as GPL-3.0 OSS too, you'd lose the optionality of changing the model without rewriting.
+
+**Copy interfaces?** **YES, aggressively**. The `Strategy` lifecycle, the `Broker` config-switch, the LLM replay-cache pattern. These three patterns on their own already justify the deep-dive.
+
+**Ignore it?** **NO**. BotSpot.trade is direct competition for iguanatrader's commercial trajectory; it must be studied.
+
+**Operational decision for the PRD**: Lumibot stays as a **mandatory design reference** (link this document from `docs/architecture-decisions.md` ADR-001) and as a **competitor to watch** (not to replace — the per-trade approval gate + cost observability of the LLM stack itself remain gaps that Lumibot/BotSpot do not cover).

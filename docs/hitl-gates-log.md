@@ -4,14 +4,14 @@ project: iguanatrader
 schema_version: 1
 created: 2026-04-28
 updated: 2026-04-28
-purpose: Append-only record of HITL gate approvals per .ai-playbook/specs/runbook-bmad-openspec.md §5
+purpose: Append-only record of HITL gate approvals per .ai-playbook/docs/concepts/runbook-bmad-openspec.md §5
 ---
 
 # HITL Gates Log — iguanatrader
 
 Append-only registro de aprobaciones humanas en cada gate del runbook BMAD+OpenSpec. Cada entrada cita el artifact aprobado y la session ID del chat donde se otorgó la aprobación.
 
-Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runbook-bmad-openspec.md) §5: "Humans may delegate D/E/F to a designated reviewer, but the gate must be **recorded** in the retro. An archived change whose gates have no recorded approver is an audit-fail in the monthly lifecycle check."
+Per [`.ai-playbook/docs/concepts/runbook-bmad-openspec.md`](../.ai-playbook/docs/concepts/runbook-bmad-openspec.md) §5: "Humans may delegate D/E/F to a designated reviewer, but the gate must be **recorded** in the retro. An archived change whose gates have no recorded approver is an audit-fail in the monthly lifecycle check."
 
 ## Format
 
@@ -41,7 +41,7 @@ Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runboo
   - PRD passed bmad-validate-prd 13-check audit (PASS, holistic 4.5/5).
   - Top-3 polish edits applied via bmad-edit-prd (4 cosmetic FR56/NFR-S6/NFR-S7/NFR-O2 fixes; Fraud Prevention consolidated subsection; Journey 3 routine clarification).
   - User responded "E" then "S" to validation summary, then proceeded to /bmad-agent-architect — implicit approval to advance to Phase 2 (architecture).
-  - Approval recorded retroactively 2026-04-28 after gap discovered in compliance audit against `.ai-playbook/specs/runbook-bmad-openspec.md` §5.
+  - Approval recorded retroactively 2026-04-28 after gap discovered in compliance audit against `.ai-playbook/docs/concepts/runbook-bmad-openspec.md` §5.
 - **Retroactive?**: yes (original verbal approval ~2026-04-27 during edit/validate workflow)
 
 ---
@@ -100,7 +100,7 @@ Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runboo
 - **Date**: 2026-04-28
 - **Approved by**: Arturo Ramírez (arturo6ramirez@gmail.com)
 - **Artefact(s) approved**:
-  - [`docs/openspec-slice.md`](openspec-slice.md) — 20 changes, 4 parallel waves, max 7 simultaneous agents per wave (canonical schema per `.ai-playbook/specs/bmad-openspec-bridge.md` §3.1; renamed from `openspec-slice-plan.md` 2026-04-29 for runbook compliance)
+  - [`docs/openspec-slice.md`](openspec-slice.md) — 20 changes, 4 parallel waves, max 7 simultaneous agents per wave (canonical schema per `.ai-playbook/docs/concepts/bmad-openspec-bridge.md` §3.1; renamed from `openspec-slice-plan.md` 2026-04-29 for runbook compliance)
   - Optimization target confirmed: **maximum-parallelism-with-disjoint-write-paths** (over cohesion + reviewability per single-dev assumption)
   - Anti-collision patterns confirmed for slice 5 (`api-foundation-rfc7807`):
     - API routes auto-discovery via `pkgutil.iter_modules` in `routes/__init__.py`

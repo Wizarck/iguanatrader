@@ -9,12 +9,12 @@ status: draft-pending-gate-b
 sources:
   - docs/prd.md
   - docs/architecture-decisions.md
-  - .ai-playbook/specs/runbook-bmad-openspec.md
+  - .ai-playbook/docs/concepts/runbook-bmad-openspec.md
 ---
 
 # Personas & JTBD — iguanatrader
 
-Per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runbook-bmad-openspec.md) §2.1, this artefact captures **roles + JTBD + RBAC matrix** for the MVP scope. Multi-tenant v2/v3 personas explicitly deferred (see §Future Personas).
+Per [`.ai-playbook/docs/concepts/runbook-bmad-openspec.md`](../.ai-playbook/docs/concepts/runbook-bmad-openspec.md) §2.1, this artefact captures **roles + JTBD + RBAC matrix** for the MVP scope. Multi-tenant v2/v3 personas explicitly deferred (see §Future Personas).
 
 ---
 
@@ -173,4 +173,4 @@ These personas trigger v2/v3 architectural milestones documented in [`docs/backl
 - [docs/prd.md](prd.md) — User Journeys 1-5 are concrete instantiations of JTBD-1..6 above.
 - [docs/architecture-decisions.md](architecture-decisions.md) §Multi-tenant context propagation — RBAC enforcement architecture preserves v2 path without MVP overhead.
 - [docs/backlog.md](backlog.md) — v2/v3 personas anchor specific roadmap items.
-- [.ai-playbook/specs/runbook-bmad-openspec.md](../.ai-playbook/specs/runbook-bmad-openspec.md) §2.1 — artefact requirement.
+- [.ai-playbook/docs/concepts/runbook-bmad-openspec.md](../.ai-playbook/docs/concepts/runbook-bmad-openspec.md) §2.1 — artefact requirement.

@@ -112,5 +112,5 @@ After fixing, push — the workflow regenerates from scratch.
 
 ## Out-of-scope
 
-- **`regen-lock.yml` failures** — different workflow (poetry.lock regeneration); see [its own runbook](TODO-add-when-it-exists.md) — until then, see gotcha #18 for the "poetry isn't on the local PATH" workaround.
+- **`regen-lock.yml` failures** — different workflow (poetry.lock regeneration); its own runbook does not exist yet — until then, see gotcha #18 for the "poetry isn't on the local PATH" workaround.
 - **Frontend type errors after a regen bot commit** — that's a slice consumer issue (slice W1+ owns the SvelteKit imports). Report the failure to the slice owner; do not edit `packages/shared-types/src/index.ts` by hand.

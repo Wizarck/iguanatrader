@@ -1,58 +1,58 @@
-# QuantConnect Lean — Deep-dive técnico para iguanatrader
+# QuantConnect Lean — Technical deep-dive for iguanatrader
 
-**Fecha:** 2026-04-27
+**Date:** 2026-04-27
 **Repo:** https://github.com/QuantConnect/Lean
 **Docs:** https://www.lean.io/, https://www.quantconnect.com/docs/v2/
-**Maintainer:** QuantConnect Inc (corporación)
-**Branch default:** `master`
-**Última actividad:** 2026-04-27 (commits hoy mismo)
-**Stars:** 18.648
-**Licencia:** **Apache-2.0** ✅ (sin restricciones para fork comercial)
+**Maintainer:** QuantConnect Inc (corporation)
+**Default branch:** `master`
+**Last activity:** 2026-04-27 (commits today)
+**Stars:** 18,648
+**License:** **Apache-2.0** ✅ (no restrictions for commercial fork)
 
 ---
 
-## 1. Veredicto rápido (TL;DR)
+## 1. Quick verdict (TL;DR)
 
-Lean es **el estándar consensus** del trading algorítmico OSS retail/prosumer. C# 94% del código + Python via PythonNet. La **Apache-2.0 es perfecta** para los planes SaaS de iguanatrader. Lleva 12+ años, 13k+ commits, tiene ~$300+ hedge funds usándolo en producción y QuantConnect Cloud (su propio SaaS multi-tenant) corre exactamente este código.
+Lean is **the consensus standard** of OSS retail/prosumer algorithmic trading. C# 94% of the code + Python via PythonNet. The **Apache-2.0 license is perfect** for iguanatrader's SaaS plans. It has been around for 12+ years, has 13k+ commits, ~$300+ hedge funds running it in production, and QuantConnect Cloud (its own multi-tenant SaaS) runs exactly this code.
 
-**Para iguanatrader**: el `BrokerageModel` y el `Algorithm Framework` (Universe → Alpha → Portfolio → Execution → Risk) son arquitectura a robar. Como base de código, **demasiado pesado** para un dev solo Python (la curva del API + el stack C#/Python híbrido te frenan en MVP). Como **modelo SaaS comercial** a copiar (5 tiers públicos), template sólido.
-
----
-
-## 2. Identidad y posicionamiento
-
-- **Filosofía**: "Everything is configurable and pluggable" + "no vendor lock-in".
-- **Diferenciadores**:
-  - Survivorship bias-free accounting (datos rigurosos, importante para backtests honestos).
-  - Universe selection para reducir selection bias.
-  - Apache-2.0 = "suitable for compliance requirements" en hedge funds.
-- **Stack**: C# para performance + Python para ML. Mismo proyecto, mismo runtime via PythonNet.
+**For iguanatrader**: the `BrokerageModel` and the `Algorithm Framework` (Universe → Alpha → Portfolio → Execution → Risk) are architecture worth stealing. As a codebase, **too heavy** for a solo Python dev (the API curve + the hybrid C#/Python stack will slow you down at MVP). As a **commercial SaaS model** to copy (5 public tiers), it's a solid template.
 
 ---
 
-## 3. Algorithm Framework — el patrón opinionated
+## 2. Identity and positioning
 
-Lean impone una **separación de 5 componentes** dentro de toda estrategia:
+- **Philosophy**: "Everything is configurable and pluggable" + "no vendor lock-in".
+- **Differentiators**:
+  - Survivorship bias-free accounting (rigorous data, important for honest backtests).
+  - Universe selection to reduce selection bias.
+  - Apache-2.0 = "suitable for compliance requirements" at hedge funds.
+- **Stack**: C# for performance + Python for ML. Same project, same runtime via PythonNet.
 
-| Componente | Rol |
+---
+
+## 3. Algorithm Framework — the opinionated pattern
+
+Lean imposes a **5-component separation** within every strategy:
+
+| Component | Role |
 |---|---|
-| **Universe Selection** | Qué símbolos están en el universo en cada momento (filtros dinámicos). |
-| **Alpha Creation** | Genera "insights" (señales con dirección, confianza, magnitud, periodo). |
-| **Portfolio Construction** | Convierte insights en target allocations. Modelos built-in: Equal Weighting, Mean-Variance, Black-Litterman. |
-| **Execution Models** | Convierte target allocations en órdenes concretas. Maneja TWAP/VWAP/Iceberg si aplica. |
-| **Risk Management** | "Pasivo o activo via hedging de posiciones expuestas". Filtros sobre las órdenes generadas. |
+| **Universe Selection** | Which symbols are in the universe at each point in time (dynamic filters). |
+| **Alpha Creation** | Generates "insights" (signals with direction, confidence, magnitude, period). |
+| **Portfolio Construction** | Converts insights into target allocations. Built-in models: Equal Weighting, Mean-Variance, Black-Litterman. |
+| **Execution Models** | Converts target allocations into concrete orders. Handles TWAP/VWAP/Iceberg when applicable. |
+| **Risk Management** | "Passive or active via hedging of exposed positions". Filters on generated orders. |
 
-**Lo bueno**: separation of concerns extrema. Cada componente swappeable. Puedes combinar tu Alpha con un Portfolio model built-in.
+**The good**: extreme separation of concerns. Each component is swappable. You can combine your Alpha with a built-in Portfolio model.
 
-**Lo cuestionable**: para una estrategia simple tipo DonchianATR (un símbolo, un signal, un sizing ATR), esta separación es **overhead**. Lean lo sabe y permite el modo "clásico" donde escribes todo en `OnData`. Pero el framework te empuja hacia los 5 componentes.
+**The questionable**: for a simple strategy like DonchianATR (one symbol, one signal, ATR sizing), this separation is **overhead**. Lean knows this and allows the "classic" mode where you write everything in `OnData`. But the framework pushes you toward the 5 components.
 
 ---
 
-## 4. Algorithm API — esqueleto
+## 4. Algorithm API — skeleton
 
-Lean tiene 2 modos:
+Lean has 2 modes:
 
-### Modo clásico (similar a Lumibot/Nautilus)
+### Classic mode (similar to Lumibot/Nautilus)
 
 ```python
 class MyAlgorithm(QCAlgorithm):
@@ -70,7 +70,7 @@ class MyAlgorithm(QCAlgorithm):
         self.Debug(f"Order event: {orderEvent}")
 ```
 
-### Modo framework (5 componentes)
+### Framework mode (5 components)
 
 ```python
 class MyFrameworkAlgo(QCAlgorithm):
@@ -82,125 +82,125 @@ class MyFrameworkAlgo(QCAlgorithm):
         self.SetRiskManagement(MaximumDrawdownPercentPerSecurity(0.05))
 ```
 
-**Nota**: API es **PascalCase** (heredado del C#). Los devs Python puros lo notan inmediatamente — es ruido visual.
+**Note**: API is **PascalCase** (inherited from C#). Pure Python devs notice it immediately — it's visual noise.
 
 ---
 
-## 5. `BrokerageModel` — la abstracción a robar
+## 5. `BrokerageModel` — the abstraction worth stealing
 
-Quizás **el patrón más valioso de Lean**:
+Perhaps **the most valuable pattern in Lean**:
 
-- Cada broker tiene su `BrokerageModel`: simula fees, order support (qué tipos de órdenes acepta), API behavior nuances (rate limits, rejects característicos).
-- En **backtest** Lean usa el `BrokerageModel` para fingir realismo: comisiones realistas, rejects realistas, slippage característico del broker.
-- En **live**, mismo `BrokerageModel` + el `Brokerage` real conectado al venue.
-- Permite testar tu algoritmo contra "IBKR ideal" en backtest y luego ejecutar contra IBKR real con confianza.
+- Each broker has its own `BrokerageModel`: simulates fees, order support (which order types it accepts), API behavior nuances (rate limits, characteristic rejects).
+- In **backtest** Lean uses the `BrokerageModel` to fake realism: realistic commissions, realistic rejects, broker-characteristic slippage.
+- In **live**, the same `BrokerageModel` + the real `Brokerage` connected to the venue.
+- Allows you to test your algorithm against "ideal IBKR" in backtest and then run against real IBKR with confidence.
 
-**Para iguanatrader**: este es el patrón clave para resolver el "gap modelo↔live" del plan original. **Cada broker en iguanatrader debe tener un `BrokerageModel`** (ej. `IBKRBrokerageModel(commission_per_share=0.005, min_commission=1.0, supports_market_on_close=True, ...)`). El `BacktestEngine` usa este modelo para simular fills realistas.
+**For iguanatrader**: this is the key pattern to solve the "model↔live gap" from the original plan. **Every broker in iguanatrader should have a `BrokerageModel`** (e.g. `IBKRBrokerageModel(commission_per_share=0.005, min_commission=1.0, supports_market_on_close=True, ...)`). The `BacktestEngine` uses this model to simulate realistic fills.
 
-Brokers built-in en Lean: Interactive Brokers, tastytrade, Charles Schwab, Alpaca, OANDA, Tradier, TradeStation, Binance, Coinbase, Bybit, Kraken, Bitfinex, Bitstamp, Zerodha, Wolverine.
+Built-in brokers in Lean: Interactive Brokers, tastytrade, Charles Schwab, Alpaca, OANDA, Tradier, TradeStation, Binance, Coinbase, Bybit, Kraken, Bitfinex, Bitstamp, Zerodha, Wolverine.
 
 ---
 
-## 6. Engine de backtest vs live
+## 6. Backtest vs live engine
 
-- **Mismo algorithm**: `QCAlgorithm` corre idéntico en backtest y live.
-- **Diferencia**: `IDataFeed` y `IBrokerage` son inyectados según modo.
-  - Backtest: `BacktestingDataFeed` + `BacktestingBrokerage` (que usa el `BrokerageModel` para simular).
-  - Live: `LiveTradingDataFeed` + el broker real (`InteractiveBrokersBrokerage`).
-- **Time model**: `Time` y `UtcTime` se sincronizan con el data feed. En backtest el reloj avanza con cada bar; en live es real-time.
-- **Determinismo**: bueno pero no nanosecond como Nautilus. Suficiente para timeframes de minutos/bars.
+- **Same algorithm**: `QCAlgorithm` runs identically in backtest and live.
+- **Difference**: `IDataFeed` and `IBrokerage` are injected according to mode.
+  - Backtest: `BacktestingDataFeed` + `BacktestingBrokerage` (which uses the `BrokerageModel` to simulate).
+  - Live: `LiveTradingDataFeed` + the real broker (`InteractiveBrokersBrokerage`).
+- **Time model**: `Time` and `UtcTime` sync with the data feed. In backtest the clock advances with each bar; in live it's real-time.
+- **Determinism**: good but not nanosecond like Nautilus. Sufficient for minute/bar timeframes.
 
 ---
 
 ## 7. Lean CLI
 
 ```bash
-lean init                          # crea proyecto
-lean backtest --algorithm-name X   # backtest local con Docker
-lean live --brokerage IBKR         # live trading local
-lean cloud backtest                # backtest en QC Cloud
-lean cloud live                    # live en QC Cloud
+lean init                          # creates project
+lean backtest --algorithm-name X   # local backtest with Docker
+lean live --brokerage IBKR         # local live trading
+lean cloud backtest                # backtest on QC Cloud
+lean cloud live                    # live on QC Cloud
 lean optimize                      # parameter sweeps
 ```
 
-- **Docker-first**: el CLI corre Lean dentro de un container. Cero setup de C#/Python en local.
-- **VSCode integration**: extensión oficial.
-- **Jupyter Lab**: para research interactivo.
+- **Docker-first**: the CLI runs Lean inside a container. Zero local C#/Python setup.
+- **VSCode integration**: official extension.
+- **Jupyter Lab**: for interactive research.
 
-**UX**: limpia. Para iguanatrader, **el patrón `iguana <command>` con typer es exactamente esto** (ya en plan).
+**UX**: clean. For iguanatrader, **the `iguana <command>` pattern with typer is exactly this** (already in the plan).
 
 ---
 
 ## 8. C# vs Python tradeoffs
 
-| Eje | C# en Lean | Python en Lean (via PythonNet) |
+| Axis | C# in Lean | Python in Lean (via PythonNet) |
 |---|---|---|
-| Performance | Top-tier | ~2-3x más lento |
-| Acceso a libs ML | Limitado | Pleno (sklearn, pytorch, etc.) |
-| Curva de aprendizaje | Empinada para devs Python | Más suave |
-| Debugging | Visual Studio + LINQPad | pdb/IPython, pero hay friction con PythonNet |
-| Comunidad ejemplos | Menor (la mayoría escribe Python) | Mayor |
+| Performance | Top-tier | ~2-3x slower |
+| Access to ML libs | Limited | Full (sklearn, pytorch, etc.) |
+| Learning curve | Steep for Python devs | Smoother |
+| Debugging | Visual Studio + LINQPad | pdb/IPython, but friction with PythonNet |
+| Community examples | Smaller (most write Python) | Larger |
 
-**Implicación para iguanatrader**: fuera de cualquier scenario "iguanatrader es Lean fork", el C# es deuda cognitiva. **Python puro como decisión arquitectónica está validada**.
+**Implication for iguanatrader**: outside any "iguanatrader is a Lean fork" scenario, C# is cognitive debt. **Pure Python as an architectural decision is validated**.
 
 ---
 
-## 9. QuantConnect Cloud — el modelo SaaS a estudiar
+## 9. QuantConnect Cloud — the SaaS model to study
 
-5 tiers públicos:
+5 public tiers:
 
-| Tier | Audiencia | Qué incluye |
+| Tier | Audience | What's included |
 |---|---|---|
-| **Free** | Estudiantes, evaluadores | Backtesting unlimited, 1 research node, 200 projects, 500MB workspace, datos básicos. **Sin live trading**. |
-| **Researcher** | Quants individuales | Paper trading, local coding (VSCode/CLI), 2 compute nodes, datos extendidos, tick/second data como add-on. |
-| **Team** | Startups, equipos pequeños | Hasta 10 miembros, project collaboration, 10 compute nodes, brokerages (IBKR, tastytrade, Schwab, Alpaca). |
-| **Trading Firm** | Empresas profesionales | Team ownership, permissions management, unlimited compute nodes. |
+| **Free** | Students, evaluators | Unlimited backtesting, 1 research node, 200 projects, 500MB workspace, basic data. **No live trading**. |
+| **Researcher** | Individual quants | Paper trading, local coding (VSCode/CLI), 2 compute nodes, extended data, tick/second data as add-on. |
+| **Team** | Startups, small teams | Up to 10 members, project collaboration, 10 compute nodes, brokerages (IBKR, tastytrade, Schwab, Alpaca). |
+| **Trading Firm** | Professional firms | Team ownership, permissions management, unlimited compute nodes. |
 | **Institution** | Hedge funds, on-premise | On-premise, AES-256 code encryption, FIX/Professional brokerages, unlimited everything. |
 
-**Pricing**: no disclosed públicamente, "recommended setups" by quote.
+**Pricing**: not publicly disclosed, "recommended setups" by quote.
 
-**Alpha Streams**: marketplace de estrategias (mencionado históricamente en otras fuentes, no en pricing page).
+**Alpha Streams**: strategy marketplace (mentioned historically in other sources, not on the pricing page).
 
-**Implicación para iguanatrader**: **5 tiers es muy granular para empezar**. Para iguanatrader v3 SaaS, **3 tiers (Solo / Team / Pro)** sería más manejable. Pero el patrón de "Free con compute limitado + paid con live trading" es el embudo correcto.
-
----
-
-## 10. Governance y bus factor
-
-- **Maintainer**: QuantConnect Inc. Bus factor estimado **muy alto** (corp con SaaS encima — incentivo financiero del orden de millones).
-- **Ritmo**: commits semanales 2026.
-- **Comunidad**: 18.648 stars + Discord activo + foro.
-- **API stability**: alta. Lean es el más conservador en breaking changes del ecosistema.
-- **Apache-2.0**: sin restricciones legales para fork comercial cerrado.
+**Implication for iguanatrader**: **5 tiers is too granular to start with**. For iguanatrader v3 SaaS, **3 tiers (Solo / Team / Pro)** would be more manageable. But the "Free with limited compute + paid with live trading" pattern is the correct funnel.
 
 ---
 
-## 11. **5 patrones a ROBAR** para iguanatrader
+## 10. Governance and bus factor
 
-1. **`BrokerageModel` abstraction** — separación entre "broker real" y "modelo de comportamiento del broker". Permite que el `BacktestEngine` use el mismo `IBKRBrokerageModel` que define comisiones/slippage/rejects, asegurando paridad real backtest↔live. **Probablemente el patrón más valioso de Lean**.
-2. **Algorithm Framework como opt-in** — Lean ofrece tanto el modo clásico (todo en `OnData`) como el modo framework (5 componentes). Para iguanatrader: **modo clásico para MVP** (DonchianATR es trivial), **modo framework para v2** cuando haya múltiples estrategias y portfolio construction sofisticada.
-3. **Lean CLI con Docker** — el modelo `iguana backtest` con container ya está en el plan. Replicar la separación local/cloud para v3 (`iguana cloud backtest` cuando exista hosted).
-4. **Survivorship bias-free data** como característica explícita y vendible — iguanatrader debe documentar cómo carga histórico (¿incluye delisted? ¿hace adjustments correctos?). Es un "feature" que retail no entiende pero pros sí.
-5. **5-tier SaaS pricing structure** como template para v3, simplificado a 3 tiers (Solo / Team / Pro). El patrón "Free con backtest unlimited pero sin live" es el embudo de conversión correcto.
-
-## 12. **3 anti-patrones a EVITAR**
-
-1. **Stack C#/Python híbrido** — para un dev solo Python, el C# es deuda cognitiva permanente. iguanatrader debe ser **Python puro de cabo a rabo**, sin compromiso.
-2. **PascalCase API en Python** — Lean usa `SetCash`, `OnData`, `Initialize` (heredado del C#). En Python idiomático sería `set_cash`, `on_data`, `initialize`. iguanatrader debe seguir snake_case PEP-8 estricto.
-3. **Algorithm Framework como obligatorio** — los 5 componentes son power user features. Para una estrategia simple (DonchianATR sobre 1 símbolo), forzar la separación Universe→Alpha→Portfolio→Execution→Risk es overhead muerto. iguanatrader debe **NO imponer framework** en MVP; los componentes pueden emerger en v2 si hacen falta.
+- **Maintainer**: QuantConnect Inc. Estimated bus factor **very high** (corp with SaaS on top — financial incentive in the order of millions).
+- **Pace**: weekly commits in 2026.
+- **Community**: 18,648 stars + active Discord + forum.
+- **API stability**: high. Lean is the most conservative on breaking changes in the ecosystem.
+- **Apache-2.0**: no legal restrictions for a closed commercial fork.
 
 ---
 
-## 13. Verdict honesto para iguanatrader
+## 11. **5 patterns to STEAL** for iguanatrader
 
-**¿Forkear?** **NO**. Demasiado pesado para un dev solo Python. La curva del API + el stack C# híbrido + el peso del Algorithm Framework te frenan en MVP.
+1. **`BrokerageModel` abstraction** — separation between "real broker" and "model of broker behavior". Allows the `BacktestEngine` to use the same `IBKRBrokerageModel` that defines commissions/slippage/rejects, ensuring real backtest↔live parity. **Probably the most valuable pattern in Lean**.
+2. **Algorithm Framework as opt-in** — Lean offers both classic mode (everything in `OnData`) and framework mode (5 components). For iguanatrader: **classic mode for MVP** (DonchianATR is trivial), **framework mode for v2** when there are multiple strategies and sophisticated portfolio construction.
+3. **Lean CLI with Docker** — the `iguana backtest` with container model is already in the plan. Replicate the local/cloud separation for v3 (`iguana cloud backtest` when hosted exists).
+4. **Survivorship bias-free data** as an explicit and sellable feature — iguanatrader must document how it loads history (does it include delisted? does it do correct adjustments?). It's a "feature" that retail doesn't understand but pros do.
+5. **5-tier SaaS pricing structure** as a template for v3, simplified to 3 tiers (Solo / Team / Pro). The "Free with unlimited backtest but no live" pattern is the correct conversion funnel.
 
-**¿Copiar interfaces?** **SÍ, selectivamente**. El `BrokerageModel` es **obligatorio robar** (resuelve el "gap backtest↔live realista" del plan original). El modo "clásico" del Algorithm es un buen template para el MVP.
+## 12. **3 anti-patterns to AVOID**
 
-**¿Modelo SaaS a estudiar?** **SÍ**. QuantConnect Cloud es el referente del sector. Sus 5 tiers + el embudo "free backtest, paid live" son lo que iguanatrader v3 debe replicar (simplificado).
+1. **Hybrid C#/Python stack** — for a solo Python dev, C# is permanent cognitive debt. iguanatrader must be **pure Python end-to-end**, no compromise.
+2. **PascalCase API in Python** — Lean uses `SetCash`, `OnData`, `Initialize` (inherited from C#). Idiomatic Python would be `set_cash`, `on_data`, `initialize`. iguanatrader must follow strict snake_case PEP-8.
+3. **Algorithm Framework as mandatory** — the 5 components are power user features. For a simple strategy (DonchianATR on 1 symbol), forcing the Universe→Alpha→Portfolio→Execution→Risk separation is dead overhead. iguanatrader must **NOT impose a framework** at MVP; components can emerge in v2 if needed.
 
-**¿Como referencia de "qué bien hecho se ve"?** **SÍ**. Para validar decisiones arquitectónicas tipo "¿separamos Universe Selection?" o "¿qué tipos de órdenes soportamos?", consultar Lean es como tener un senior architect a mano.
+---
 
-**Decisión operativa para el PRD**:
-- ADR-004: "iguanatrader implementará un `BrokerageModel` per broker desde MVP siguiendo el patrón Lean. El `BacktestEngine` usará el `BrokerageModel` para simular slippage/comisiones/rejects realistas."
-- ADR-005 (post-MVP): "v3 SaaS de iguanatrader seguirá un pricing tiered de 3 niveles (Solo / Team / Pro) inspirado en QuantConnect Cloud (5-tier), con el embudo 'free backtest unlimited, paid live trading'."
+## 13. Honest verdict for iguanatrader
+
+**Fork it?** **NO**. Too heavy for a solo Python dev. The API curve + the hybrid C# stack + the weight of the Algorithm Framework will slow you down at MVP.
+
+**Copy interfaces?** **YES, selectively**. The `BrokerageModel` is **mandatory to steal** (it solves the "realistic backtest↔live gap" from the original plan). The Algorithm's "classic" mode is a good template for the MVP.
+
+**SaaS model to study?** **YES**. QuantConnect Cloud is the sector benchmark. Its 5 tiers + the "free backtest, paid live" funnel are what iguanatrader v3 should replicate (simplified).
+
+**As a reference for "what well-done looks like"?** **YES**. To validate architectural decisions like "do we separate Universe Selection?" or "which order types do we support?", consulting Lean is like having a senior architect on hand.
+
+**Operational decision for the PRD**:
+- ADR-004: "iguanatrader will implement a `BrokerageModel` per broker from MVP following the Lean pattern. The `BacktestEngine` will use the `BrokerageModel` to simulate realistic slippage/commissions/rejects."
+- ADR-005 (post-MVP): "iguanatrader's v3 SaaS will follow a 3-tier (Solo / Team / Pro) tiered pricing inspired by QuantConnect Cloud (5-tier), with the 'free unlimited backtest, paid live trading' funnel."

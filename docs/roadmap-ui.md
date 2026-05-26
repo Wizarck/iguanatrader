@@ -27,7 +27,7 @@ Single source of truth for UX / frontend improvements that don't fit the LLM-fea
 ## U1 — Symbol search autocomplete (research landing page)
 
 **Status**: proposed
-**Where**: [apps/web/src/routes/(app)/research/+page.svelte](../apps/web/src/routes/(app)/research/+page.svelte) ("Buscar brief" form).
+**Where**: `apps/web/src/routes/(app)/research/+page.svelte` ("Buscar brief" form).
 **Estimated**: ~250 LoC + 1 new API route (read-only).
 
 ### What
@@ -199,7 +199,7 @@ Frontend catalogue ships the form today; backend catalogue is the right long-ter
 ## U-next-1 — global trading-mode indicator chips
 
 **Status**: merged 2026-05-18 (PR #265 — shipped together with roadmap-ops O4 in slice `dual-daemon-mode-toggle-and-reconcile`; pending VPS deploy).
-**Where**: [apps/web/src/routes/(app)/+layout.svelte](../apps/web/src/routes/(app)/+layout.svelte) header.
+**Where**: `apps/web/src/routes/(app)/+layout.svelte` header.
 **Estimated**: ~200 LOC (component + store + modal).
 
 Two chips in the top-right header — `PAPER · dinero ficticio` (yellow tint) + `LIVE · dinero real` (red tint) — visible on every authenticated page. Color encodes risk (fixed); brightness encodes active/inactive. Pulses on recent fill (last 60s). Click opens a toggle modal — paper is one-click, live requires reason + password re-entry. Hover tooltip explains paper-vs-live in plain language for newbies.

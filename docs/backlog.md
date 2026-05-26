@@ -1,159 +1,159 @@
 # iguanatrader — Backlog & Roadmap
 
-**Fecha:** 2026-04-27
+**Date:** 2026-04-27
 **Owner:** Arturo
-**Política:** Nada se descarta. Todo lo identificado va a una versión o al backlog libre.
+**Policy:** Nothing gets discarded. Everything identified goes into a version or into the open backlog.
 
-**Leyenda:**
-- 🟢 Confirmado en su versión
-- 🟡 Propuesto, pendiente de validación
-- 🎯 Diferenciador único
-- ⚠️ Riesgo / hueco a vigilar
-- 📅 Fecha objetivo (si aplica)
+**Legend:**
+- 🟢 Confirmed in its version
+- 🟡 Proposed, pending validation
+- 🎯 Unique differentiator
+- ⚠️ Risk / gap to watch
+- 📅 Target date (if applicable)
 
 ---
 
 ## v1.0 — MVP (current scope)
 
-> **Objetivo:** dogfooding personal funcional. Tú apruebas trades reales en IBKR vía Telegram + WhatsApp con un risk engine que no se salta. Backtest reproducible. Cost observability del LLM stack.
+> **Goal:** functional personal dogfooding. You approve real trades on IBKR via Telegram + WhatsApp with a risk engine that can't be bypassed. Reproducible backtest. Cost observability for the LLM stack.
 
 ### Foundation
-- 🟢 Estructura repo `src/iguanatrader/`
+- 🟢 Repo structure `src/iguanatrader/`
 - 🟢 Pydantic Settings + yaml configs
-- 🟢 SQLite append-only con `tenant_id` first-class (schema multi-tenant ready)
+- 🟢 SQLite append-only with `tenant_id` first-class (multi-tenant ready schema)
 - 🟢 Types: `Bar`, `Signal`, `Order`, `Fill`, `Position`, `ApiCostEvent`, `RiskOverride`
-- 🟢 Tests unitarios + property tests (hypothesis sobre risk caps)
-- 🟢 License **Apache-2.0 + Commons Clause** desde primer commit 🎯
-- 🟢 SOPS (age) para secrets + gitleaks pre-commit
-- 🟢 **Docker + docker-compose** (mitigable, sube a MVP)
-- 🟢 **Docs base** (`getting-started.md`, `architecture.md`, `runbook.md`, `strategies/donchian_atr.md`)
+- 🟢 Unit tests + property tests (hypothesis over risk caps)
+- 🟢 License **Apache-2.0 + Commons Clause** from the first commit 🎯
+- 🟢 SOPS (age) for secrets + gitleaks pre-commit
+- 🟢 **Docker + docker-compose** (mitigable, promoted to MVP)
+- 🟢 **Base docs** (`getting-started.md`, `architecture.md`, `runbook.md`, `strategies/donchian_atr.md`)
 
-### Engine architecture (Nautilus pattern adaptado)
-- 🟢 `MessageBus` con asyncio.Queue (pub/sub + cmd/event)
-- 🟢 Engines separados: `DataEngine`, `ExecutionEngine`, `RiskEngine`, `Cache`
+### Engine architecture (Nautilus pattern adapted)
+- 🟢 `MessageBus` with asyncio.Queue (pub/sub + cmd/event)
+- 🟢 Separate engines: `DataEngine`, `ExecutionEngine`, `RiskEngine`, `Cache`
 - 🟢 Cache-before-handler ordering guarantee
 - 🟢 Single-threaded asyncio event loop
 
 ### Backtest engine
-- 🟢 Event-driven, mismo loop que live
-- 🟢 Slippage paramétrico (5-15 bps small-cap / 1-3 bps large-cap)
-- 🟢 Commission modeling realista (IBKR rates)
+- 🟢 Event-driven, same loop as live
+- 🟢 Parametric slippage (5-15 bps small-cap / 1-3 bps large-cap)
+- 🟢 Realistic commission modeling (IBKR rates)
 - 🟢 `BrokerageModel` per broker (Lean pattern) 🎯
-- 🟢 Métricas: Sharpe, Sortino, Calmar, max DD, profit factor
-- 🟢 Fixtures históricas para tests
+- 🟢 Metrics: Sharpe, Sortino, Calmar, max DD, profit factor
+- 🟢 Historical fixtures for tests
 
-### BrokerInterface (mitigable, sube a v1)
-- 🟢 Interface abstracta `BrokerInterface` desde día 1
-- 🟢 Adapter `IBKRAdapter` (vía `ib_async` + TWS Gateway)
-- 🟢 Switch `paper:true/false` único (no dual-class) — Lumibot pattern
-- 🟢 Reconciliación periódica con broker state
+### BrokerInterface (mitigable, promoted to v1)
+- 🟢 Abstract `BrokerInterface` from day 1
+- 🟢 `IBKRAdapter` adapter (via `ib_async` + TWS Gateway)
+- 🟢 Single `paper:true/false` switch (no dual-class) — Lumibot pattern
+- 🟢 Periodic reconciliation with broker state
 
 ### Risk engine (Freqtrade Protections pattern)
-- 🟢 Protections declarativas en `config/risk.yaml`
+- 🟢 Declarative protections in `config/risk.yaml`
 - 🟢 `PerTradeRisk` (default 2%)
-- 🟢 `DailyLossCap` (5% kill-switch hasta T+1)
-- 🟢 `WeeklyLossCap` (15% kill-switch hasta L+1)
+- 🟢 `DailyLossCap` (5% kill-switch until T+1)
+- 🟢 `WeeklyLossCap` (15% kill-switch until W+1)
 - 🟢 `MaxOpenPositions` (default 5)
 - 🟢 `MaxDrawdown` (configurable threshold)
-- 🟢 ATR-based position sizing (input al risk engine)
+- 🟢 ATR-based position sizing (input to the risk engine)
 - 🟢 Master switch `enable_protections: true`
 - 🟢 Kill-switch file (`.killswitch`) + env var (`IGUANA_HALT`)
-- 🟢 Override vía Telegram (`/override <id> <reason>`) con audit log inmutable 🎯
-- 🟢 RiskEngine NO bypaseable desde código de Strategy (declarativo only)
+- 🟢 Override via Telegram (`/override <id> <reason>`) with immutable audit log 🎯
+- 🟢 RiskEngine NOT bypassable from Strategy code (declarative only)
 
 ### Strategy interface (Lumibot pattern)
 - 🟢 Lifecycle 12 hooks: `initialize`, `before_starting_trading`, `before_market_opens`, `on_trading_iteration`, `before_market_closes`, `after_market_closes`, `on_new_order`, `on_partially_filled_order`, `on_filled_order`, `on_canceled_order`, `on_parameters_updated`, `on_bot_crash`
 - 🟢 `parameters` first-class + hot-reload via `on_parameters_updated`
 - 🟢 **Per-symbol strategy config** (yaml-driven) 🎯
 
-### Estrategias incluidas en MVP
+### Strategies included in MVP
 - 🟢 **DonchianBreakout + ATR** (v0 — golden path)
-- 🟢 **SMA Cross** (smoke test del end-to-end)
+- 🟢 **SMA Cross** (end-to-end smoke test)
 
 ### Approval gate (Freqtrade Telegram pattern)
-- 🟢 `ApprovalChannel` abstracto
-- 🟢 `TelegramChannel` (`python-telegram-bot` con inline buttons)
-- 🟢 `WhatsAppChannel` vía Hermes/Meta API 🎯
-- 🟢 ~17 comandos: `/start`, `/stop`, `/pause`, `/reload_config`, `/propose`, `/approve`, `/reject`, `/forceexit`, `/status`, `/balance`, `/profit`, `/daily`, `/weekly`, `/performance`, `/trades`, `/logs`, `/risk_status`, `/cost_today`, `/cost_week`, `/halt`, `/resume`, `/override`, `/version`, `/help`
+- 🟢 Abstract `ApprovalChannel`
+- 🟢 `TelegramChannel` (`python-telegram-bot` with inline buttons)
+- 🟢 `WhatsAppChannel` via Hermes/Meta API 🎯
+- 🟢 ~17 commands: `/start`, `/stop`, `/pause`, `/reload_config`, `/propose`, `/approve`, `/reject`, `/forceexit`, `/status`, `/balance`, `/profit`, `/daily`, `/weekly`, `/performance`, `/trades`, `/logs`, `/risk_status`, `/cost_today`, `/cost_week`, `/halt`, `/resume`, `/override`, `/version`, `/help`
 - 🟢 Per-user authorization (`authorized_phones`, `authorized_telegram_ids`)
-- 🟢 Approval timeout configurable (default 60s) — si no respondes, propuesta descartada + log
-- 🟢 Hindsight `bank-id` per user/teléfono (memoria aislada) 🎯
+- 🟢 Configurable approval timeout (default 60s) — if you don't respond, the proposal is discarded + logged
+- 🟢 Hindsight `bank-id` per user/phone (isolated memory) 🎯
 
 ### Web dashboard
-- 🟢 FastAPI + HTMX + Jinja2 + Plotly.js (mobile-first, localhost en MVP)
-- 🟢 `/` — equity curve live + drawdown + posiciones abiertas + kill-switch button
-- 🟢 `/approvals` — cola de propuestas pending (mismo backend que Telegram)
-- 🟢 `/trades` — histórico filtrable (timestamp, symbol, side, qty, P&L, holding period)
+- 🟢 FastAPI + HTMX + Jinja2 + Plotly.js (mobile-first, localhost in MVP)
+- 🟢 `/` — live equity curve + drawdown + open positions + kill-switch button
+- 🟢 `/approvals` — pending proposal queue (same backend as Telegram)
+- 🟢 `/trades` — filterable history (timestamp, symbol, side, qty, P&L, holding period)
 - 🟢 `/portfolio` — per-symbol P&L + asset allocation + cash
-- 🟢 `/costs` — USD/día por proveedor + por nodo LangGraph + ratio cost-per-trade 🎯
-- 🟢 `/risk` — estado de risk caps + audit trail de overrides
-- 🟢 `/runs` — histórico de backtests + live sessions
+- 🟢 `/costs` — USD/day per provider + per LangGraph node + cost-per-trade ratio 🎯
+- 🟢 `/risk` — risk cap status + override audit trail
+- 🟢 `/runs` — backtest history + live sessions
 
-### LangGraph orchestration (Capa 3)
-- 🟢 Nodes: `premarket_briefing` (8:30 ET), `midday_check` (1 PM ET), `postmarket_summary` (4:30 PM ET), `weekly_review` (Vie 6 PM ET, PDF) 🎯
-- 🟢 Cron-jobs proactivos tier-graded (Tier 1 hardcoded / Tier 2 LLM-filtered / Tier 3 routine) 🎯
-- 🟢 Multi-model routing: Opus 4.7 research / Sonnet 4.6 routines / Haiku 4.5 alerts triviales 🎯
-- 🟢 Perplexity API para news/sentiment
-- 🟢 LLM **propone**, NO ejecuta (constraint arquitectónico)
+### LangGraph orchestration (Layer 3)
+- 🟢 Nodes: `premarket_briefing` (8:30 ET), `midday_check` (1 PM ET), `postmarket_summary` (4:30 PM ET), `weekly_review` (Fri 6 PM ET, PDF) 🎯
+- 🟢 Proactive cron-jobs tier-graded (Tier 1 hardcoded / Tier 2 LLM-filtered / Tier 3 routine) 🎯
+- 🟢 Multi-model routing: Opus 4.7 research / Sonnet 4.6 routines / Haiku 4.5 trivial alerts 🎯
+- 🟢 Perplexity API for news/sentiment
+- 🟢 LLM **proposes**, does NOT execute (architectural constraint)
 
 ### Cost & P&L observability
 - 🟢 `ApiCostEvent` table (provider, model, node, tokens in/out, cache reads/writes, USD cost)
-- 🟢 `CostMeter` wrapper sobre Anthropic + Perplexity SDKs
-- 🟢 Tabla precios versionada `config/llm_prices.yaml`
-- 🟢 **Replay caching de LLM calls en backtest** (Lumibot pattern) 🎯
+- 🟢 `CostMeter` wrapper over Anthropic + Perplexity SDKs
+- 🟢 Versioned pricing table `config/llm_prices.yaml`
+- 🟢 **Replay caching of LLM calls in backtest** (Lumibot pattern) 🎯
 - 🟢 `PnLCalculator`: per-trade FIFO, per-symbol, per-portfolio (realized + unrealized)
-- 🟢 EquitySnapshot timeseries (cada N min en sesión activa)
+- 🟢 EquitySnapshot timeseries (every N min during active session)
 
-### Operacional
+### Operational
 - 🟢 CLI `iguana` (typer): `ingest`, `backtest`, `paper`, `live`, `dashboard`, `propose`, `halt`, `resume`
-- 🟢 Structured JSON logs (structlog) + rotación
+- 🟢 Structured JSON logs (structlog) + rotation
 - 🟢 Crash recovery (resume from last consistent state)
 - 🟢 GitHub Project mandatory + `issue_sync.py` automation
 
-### Operator provisioning (post-deploy carry-forwards, sesión 2026-05-13)
+### Operator provisioning (post-deploy carry-forwards, session 2026-05-13)
 
-Cada item es un blocker externo al código — sin esto el feature shipped queda inactivo / cae a log-only fallback. **Quitarlos de aquí cuando se resuelvan.**
+Each item is a blocker external to the code — without it the shipped feature stays inactive / falls back to log-only. **Remove them from here once resolved.**
 
-- ⚠️ **SMTP relay** para sender `iguanatrader@palafitofood.com` — cuenta en Mailgun/Resend/SES/Postmark + 4 vars (`IGUANATRADER_SMTP_HOST` + `_PORT` + `_USERNAME` + `_PASSWORD`). **Bloquea**: forgot-password real delivery (`auth-forgot-password-flow` PR #135 + guardrail PR #137) — hoy cae en log-only por per-channel fallback.
-- ⚠️ **DNS SPF + DKIM** en `palafitofood.com` (Cloudflare) — gated en SMTP. **Bloquea**: que A1 no caiga en spam.
-- ⚠️ **Telegram `chat_id`** para Arturo — `/start` al bot iguanatrader → grab `chat_id` → `UPDATE users SET telegram_chat_id='<id>' WHERE email='arturo6ramirez@gmail.com'`. **Bloquea**: Telegram recovery channel + futuras alertas Telegram. Migración 0014 (PR #135) añadió la columna; queda poblarla.
-- ⚠️ **Hermes (WhatsApp) HMAC alignment** con la instancia ELIGIA — verificar si soporta HMAC (iguanatrader's adapter firma POST bodies). Si usa bearer auth: decidir entre (a) cambiar ELIGIA Hermes a HMAC, (b) añadir variante bearer-auth al adapter de iguanatrader. **Bloquea**: WhatsApp recovery channel.
-- ⚠️ **SOPS bundle key rename** (gated en Hermes alignment) — `sops -d .secrets/dev.env.enc` → rename `HERMES_WEBHOOK_URL` → `HERMES_BASE_URL` + `HERMES_AUTH_TOKEN` → `HERMES_HMAC_SECRET` → re-encrypt. Mirror en `paper.env.enc` + `live.env.enc`.
+- ⚠️ **SMTP relay** for sender `iguanatrader@palafitofood.com` — account on Mailgun/Resend/SES/Postmark + 4 vars (`IGUANATRADER_SMTP_HOST` + `_PORT` + `_USERNAME` + `_PASSWORD`). **Blocks**: real forgot-password delivery (`auth-forgot-password-flow` PR #135 + guardrail PR #137) — currently falls back to log-only via per-channel fallback.
+- ⚠️ **DNS SPF + DKIM** on `palafitofood.com` (Cloudflare) — gated on SMTP. **Blocks**: keeping A1 out of spam.
+- ⚠️ **Telegram `chat_id`** for Arturo — `/start` to the iguanatrader bot → grab `chat_id` → `UPDATE users SET telegram_chat_id='<id>' WHERE email='arturo6ramirez@gmail.com'`. **Blocks**: Telegram recovery channel + future Telegram alerts. Migration 0014 (PR #135) added the column; it still needs to be populated.
+- ⚠️ **Hermes (WhatsApp) HMAC alignment** with the ELIGIA instance — verify whether it supports HMAC (iguanatrader's adapter signs POST bodies). If it uses bearer auth: decide between (a) switching ELIGIA Hermes to HMAC, (b) adding a bearer-auth variant to iguanatrader's adapter. **Blocks**: WhatsApp recovery channel.
+- ⚠️ **SOPS bundle key rename** (gated on Hermes alignment) — `sops -d .secrets/dev.env.enc` → rename `HERMES_WEBHOOK_URL` → `HERMES_BASE_URL` + `HERMES_AUTH_TOKEN` → `HERMES_HMAC_SECRET` → re-encrypt. Mirror in `paper.env.enc` + `live.env.enc`.
 
-### Ya en plan, **NO en MVP** (mover explícito)
-- ❌ Migración engine a Lumibot/Lean/Nautilus en v2 (BrokerInterface deja la puerta)
+### Already planned, **NOT in MVP** (explicit move)
+- ❌ Engine migration to Lumibot/Lean/Nautilus in v2 (BrokerInterface leaves the door open)
 
 ---
 
 ## v1.5 — Quick wins post-MVP
 
-> **Objetivo:** cubrir los huecos cómodos de v1 que dolerán pronto. Aún single-user, sin SaaS.
+> **Goal:** cover the comfortable gaps in v1 that will hurt soon. Still single-user, no SaaS.
 
-### Estrategias adicionales (catálogo retail equity)
-- 🟡 **RSI mean-reversion** (counter-trend en oversold/overbought)
+### Additional strategies (retail equity catalog)
+- 🟡 **RSI mean-reversion** (counter-trend on oversold/overbought)
 - 🟡 **Bollinger Bands breakout/squeeze** (vol-based)
 - 🟡 **MACD crossover** (momentum-based)
-- 🟡 **Volume-weighted Donchian** (Donchian + filtro volumen)
+- 🟡 **Volume-weighted Donchian** (Donchian + volume filter)
 
-### IBKR Execution Algorithms (algos de orden, no de decisión)
-- 🟡 **Adaptive** — el más recomendado para retail
+### IBKR Execution Algorithms (order algos, not decision algos)
+- 🟡 **Adaptive** — the most recommended for retail
 - 🟡 **TWAP** — Time-Weighted Average Price
 - 🟡 **VWAP** — Volume-Weighted Average Price
-- 🟡 **Snap (Bid/Mid/Ask)** — captura puntual
+- 🟡 **Snap (Bid/Mid/Ask)** — point-in-time capture
 
-### Risk engine extensiones (Freqtrade-style)
-- 🟡 **StoplossGuard** (pause tras N stoploss consecutivos)
-- 🟡 **CooldownPeriod** (tiempo mínimo entre trades del mismo symbol)
-- 🟡 **Trailing stops dinámicos** (custom_stoploss equivalent)
+### Risk engine extensions (Freqtrade-style)
+- 🟡 **StoplossGuard** (pause after N consecutive stoplosses)
+- 🟡 **CooldownPeriod** (minimum time between trades on the same symbol)
+- 🟡 **Dynamic trailing stops** (custom_stoploss equivalent)
 
-### Backtest engine extensiones
+### Backtest engine extensions
 - 🟡 **Walk-forward analysis**
-- 🟡 **HTML report auto-generado** (Lean pattern)
-- 🟡 **Datos Polygon** (premium opcional vs Yahoo MVP)
+- 🟡 **Auto-generated HTML report** (Lean pattern)
+- 🟡 **Polygon data** (optional premium vs Yahoo MVP)
 
-### Operacional
-- 🟡 **Hot-reload de strategy code** (sin restart)
-- 🟡 **Postgres opcional** (mismo schema, swap SQLite ↔ Postgres por config)
+### Operational
+- 🟡 **Hot-reload of strategy code** (no restart)
+- 🟡 **Optional Postgres** (same schema, swap SQLite ↔ Postgres via config)
 - 🟡 **Variable backup/restore** (Lumibot pattern)
 - 🟡 **Prometheus metrics export**
 
@@ -161,10 +161,10 @@ Cada item es un blocker externo al código — sin esto el feature shipped queda
 
 ## v2 — Multi-broker + SaaS preparation
 
-> **Objetivo:** validar arquitectura multi-tenant. Múltiples brokers. Lista para invitar 5-10 beta users si se decide OSS launch.
+> **Goal:** validate multi-tenant architecture. Multiple brokers. Ready to invite 5-10 beta users if OSS launch is decided.
 
-### Brokers adicionales (BrokerInterface ya lista)
-- 🟡 **AlpacaAdapter** (equity US, free)
+### Additional brokers (BrokerInterface already ready)
+- 🟡 **AlpacaAdapter** (US equity, free)
 - 🟡 **SchwabAdapter**
 - 🟡 **TradierAdapter**
 
@@ -173,157 +173,157 @@ Cada item es un blocker externo al código — sin esto el feature shipped queda
 - 🟡 Bracket orders
 - 🟡 IBKR Iceberg + PassRelative + Percentage of Volume
 
-### Estrategias sofisticadas
-- 🟡 **Pairs trading / cointegration** (long A short B cuando spread se aleja)
+### Sophisticated strategies
+- 🟡 **Pairs trading / cointegration** (long A short B when spread diverges)
 - 🟡 **Z-score mean reversion** (statistical)
-- 🟡 **Multi-timeframe trend following** (confluence 1D + 1H + 15m)
+- 🟡 **Multi-timeframe trend following** (1D + 1H + 15m confluence)
 
 ### Risk engine
 - 🟡 **LowProfitPairs blocker** (Freqtrade pattern)
 
-### Notificaciones
+### Notifications
 - 🟡 Email alerts
 - 🟡 Discord integration
 
 ### UI
-- 🟡 Hot-reload de config UI desde dashboard
-- 🟡 Strategy visualization (estrategia activa + recent signals)
-- 🟡 Order management UI (cancel/modify desde web)
+- 🟡 Hot-reload of UI config from dashboard
+- 🟡 Strategy visualization (active strategy + recent signals)
+- 🟡 Order management UI (cancel/modify from web)
 
 ### Multi-asset
 - 🟡 **Futures** (CME via IBKR — micros: MES, MNQ, MGC, MCL)
 
 ### Multi-tenant infra
-- 🟡 Per-user secrets aislados (SOPS per tenant)
-- 🟡 1 proceso/container per tenant pattern (Docker Compose orchestration)
+- 🟡 Per-user isolated secrets (SOPS per tenant)
+- 🟡 1 process/container per tenant pattern (Docker Compose orchestration)
 
 ---
 
 ## v3 — SaaS launch
 
-> **Objetivo:** producto comercial. OSS Apache + Commons Clause + tier paid hosted. Decisión basada en evidencia: si v2 valida adopción + tu propio dogfooding genera P&L positivo.
+> **Goal:** commercial product. OSS Apache + Commons Clause + paid hosted tier. Evidence-based decision: if v2 validates adoption + your own dogfooding generates positive P&L.
 
 ### Pricing
-- 🟡 **3 tiers**: Solo / Team / Pro (inspirado QC simplificado)
-- 🟡 Free tier: backtest unlimited, sin live
+- 🟡 **3 tiers**: Solo / Team / Pro (inspired by simplified QC)
+- 🟡 Free tier: unlimited backtest, no live
 - 🟡 Solo paid: paper + live single-broker
-- 🟡 Team paid: 3-5 seats, multi-broker, dashboard compartido
-- 🟡 Pro: unlimited compute, soporte SLA, multi-strategy concurrente
+- 🟡 Team paid: 3-5 seats, multi-broker, shared dashboard
+- 🟡 Pro: unlimited compute, SLA support, concurrent multi-strategy
 
 ### Onboarding & billing
 - 🟡 Sign-up flow + email verification
-- 🟡 Broker connect wizard (OAuth donde aplique)
+- 🟡 Broker connect wizard (OAuth where applicable)
 - 🟡 Stripe integration
 
-### Estrategias avanzadas
-- 🟡 **Sector rotation** (momentum mensual ETFs sectoriales)
-- 🟡 **Earnings post-drift** (event-driven sobre calendar)
-- 🟡 **Risk parity rebalancing** (allocation systemática mensual)
+### Advanced strategies
+- 🟡 **Sector rotation** (monthly momentum on sector ETFs)
+- 🟡 **Earnings post-drift** (event-driven over calendar)
+- 🟡 **Risk parity rebalancing** (systematic monthly allocation)
 
 ### Multi-asset expansion
-- 🟡 **Cripto exchanges** vía CCXT (Binance, Coinbase, Kraken)
+- 🟡 **Crypto exchanges** via CCXT (Binance, Coinbase, Kraken)
 - 🟡 **DEX support** (Hyperliquid, dYdX, Polymarket)
 - 🟡 **Forex** (OANDA via IBKR)
 
-### IBKR Execution Algos avanzados
+### Advanced IBKR Execution Algos
 - 🟡 DarkIce (dark pool + iceberg combo)
-- 🟡 Accumulate-Distribute (builds graduales)
-- 🟡 ArrivalPx (benchmark al precio de arrival)
+- 🟡 Accumulate-Distribute (gradual builds)
+- 🟡 ArrivalPx (benchmark to arrival price)
 
-### LLM features avanzadas
-- 🟡 **LLM strategy codegen** (Composer/BotSpot pattern — usuario describe NL, LLM genera Strategy class)
-- 🟡 **Strategy marketplace** (usuarios comparten estrategias, marketplace con revenue share)
+### Advanced LLM features
+- 🟡 **LLM strategy codegen** (Composer/BotSpot pattern — user describes in NL, LLM generates Strategy class)
+- 🟡 **Strategy marketplace** (users share strategies, marketplace with revenue share)
 - 🟡 Distributed hyperopt (Ray cluster)
 - 🟡 Cohort-based course (education flywheel)
 - 🟡 Discord community + Foundation-style governance
 
 ---
 
-## Backlog libre — sin compromiso de versión
+## Open backlog — no version commitment
 
-Cosas identificadas que NO están planificadas. Ideas para considerar si surge demanda real.
+Items identified that are NOT planned. Ideas to consider if real demand emerges.
 
-### Asset classes nicho
-- Polymarket / Betfair (event-betting algorítmico)
+### Niche asset classes
+- Polymarket / Betfair (algorithmic event-betting)
 - Bonds
 - Mutual funds
-- Comodidades físicas
+- Physical commodities
 
-### Métodos avanzados
-- Monte Carlo simulation para stress-testing
+### Advanced methods
+- Monte Carlo simulation for stress-testing
 - ML/RL strategies (FinRL pattern)
-- Reinforcement learning estrategias adaptativas
-- Sentiment analysis multi-source (Twitter/X, Reddit, news)
+- Adaptive reinforcement learning strategies
+- Multi-source sentiment analysis (Twitter/X, Reddit, news)
 
-### Plataformas
-- Mobile app nativa iOS/Android (vs PWA actual del dashboard)
+### Platforms
+- Native iOS/Android mobile app (vs current dashboard PWA)
 - IB FYI alerts integration
-- TradingView Pine Script importer (compilar Pine → Python Strategy)
+- TradingView Pine Script importer (compile Pine → Python Strategy)
 - MT4/MT5 bridge
 
-### Integraciones
-- WhatsApp Business API multi-país
+### Integrations
+- WhatsApp Business API multi-country
 - Slack integration
 - Apple Watch quick approval
 - Voice approval (Whisper + LLM intent)
 
-### Observabilidad
-- OpenTelemetry tracing distribuido
-- Grafana dashboards pre-built
+### Observability
+- Distributed OpenTelemetry tracing
+- Pre-built Grafana dashboards
 - Honeycomb integration
 
-### Nautilus migration (si v3 escala)
-- Migrar engine de execution a NautilusTrader como backend (manteniendo iguanatrader API en Python puro como wrapper)
+### Nautilus migration (if v3 scales)
+- Migrate execution engine to NautilusTrader as backend (keeping the iguanatrader API in pure Python as a wrapper)
 
 ---
 
-## Riesgos operacionales (no son features, requieren decisión)
+## Operational risks (not features, require a decision)
 
 ### ⚠️ Bus factor 1
-**El más serio.** Si vas OSS, gobernanza explícita desde día 1:
-- Co-maintainer documentado (¿hermano? ¿amigo de confianza con conocimiento Python?)
-- O Foundation-style governance (modelo Hummingbot)
-- Plan de sucesión si te pasa algo
+**The most serious one.** If you go OSS, explicit governance from day 1:
+- Documented co-maintainer (sibling? trusted friend with Python knowledge?)
+- Or Foundation-style governance (Hummingbot model)
+- Succession plan if something happens to you
 
-**Acción**: documentar en `docs/governance.md` antes del OSS launch (probable v2-v3).
+**Action**: document in `docs/governance.md` before the OSS launch (likely v2-v3).
 
-### ⚠️ Sin Docker en MVP — MITIGADO
-Subido a v1 MVP. Docker + docker-compose básico desde primer release.
+### ⚠️ No Docker in MVP — MITIGATED
+Promoted to v1 MVP. Basic Docker + docker-compose from the first release.
 
-### ⚠️ 0 docs / 0 community — MITIGADO parcialmente
-Docs base subidas a v1 MVP. Community building empieza en v3 con OSS launch.
+### ⚠️ 0 docs / 0 community — PARTIALLY MITIGATED
+Base docs promoted to v1 MVP. Community building begins in v3 with OSS launch.
 
-### ⚠️ Riesgo regulatorio si SaaS
-Para v3 SaaS:
-- Auditar si cae en "investment advisor" (US SEC/FINRA) o "investment service" (EU MiFID II)
-- Mantener arquitectura "el usuario es quien tiene la cuenta IBKR; tú solo orquestas su software"
-- Considerar entrar en EU primero (regulación más clara)
+### ⚠️ Regulatory risk if SaaS
+For v3 SaaS:
+- Audit whether it falls under "investment advisor" (US SEC/FINRA) or "investment service" (EU MiFID II)
+- Maintain the "the user is the one with the IBKR account; you only orchestrate their software" architecture
+- Consider entering EU first (clearer regulation)
 
 ---
 
-## Decisiones arquitectónicas que afectan v1 (ADRs propuestos)
+## Architectural decisions that affect v1 (proposed ADRs)
 
-| ADR | Decisión |
+| ADR | Decision |
 |---|---|
-| ADR-001 | Strategy lifecycle de 12 hooks (Lumibot pattern) |
-| ADR-002 | MessageBus + Engines separados en Python puro (Nautilus pattern) |
-| ADR-003 | License **Apache-2.0 + Commons Clause** desde primer commit |
-| ADR-004 | `BrokerageModel` per broker desde MVP (Lean pattern) |
-| ADR-005 (post-MVP) | v3 SaaS tier 3-niveles `Solo / Team / Pro` |
-| ADR-006 (revisado) | Risk engine declarativo en yaml, no-bypaseable desde Strategy code, config-deshabilitable, Telegram-overrideable con audit log |
-| ADR-007 | Catálogo Telegram + WhatsApp via Hermes |
-| **ADR-008 (NUEVO)** | **Per-symbol strategy config en yaml — cada symbol activa/desactiva/configura su propia strategy** |
-| **ADR-009 (NUEVO)** | **Estrategias incluidas en MVP: solo DonchianATR + SMA cross. Resto en v1.5 (RSI/Bollinger/MACD), v2 (pairs/multi-tf), v3 (sector/earnings/risk-parity)** |
-| **ADR-010 (NUEVO)** | **IBKR Execution Algorithms se exponen como `execution_algo` opcional en cada strategy config (Adaptive/TWAP/VWAP en v1.5)** |
+| ADR-001 | 12-hook Strategy lifecycle (Lumibot pattern) |
+| ADR-002 | MessageBus + separate Engines in pure Python (Nautilus pattern) |
+| ADR-003 | License **Apache-2.0 + Commons Clause** from the first commit |
+| ADR-004 | `BrokerageModel` per broker from MVP (Lean pattern) |
+| ADR-005 (post-MVP) | v3 SaaS 3-tier `Solo / Team / Pro` |
+| ADR-006 (revised) | Declarative risk engine in yaml, non-bypassable from Strategy code, config-disableable, Telegram-overrideable with audit log |
+| ADR-007 | Telegram + WhatsApp catalog via Hermes |
+| **ADR-008 (NEW)** | **Per-symbol strategy config in yaml — each symbol activates/deactivates/configures its own strategy** |
+| **ADR-009 (NEW)** | **Strategies included in MVP: only DonchianATR + SMA cross. The rest in v1.5 (RSI/Bollinger/MACD), v2 (pairs/multi-tf), v3 (sector/earnings/risk-parity)** |
+| **ADR-010 (NEW)** | **IBKR Execution Algorithms are exposed as an optional `execution_algo` in each strategy config (Adaptive/TWAP/VWAP in v1.5)** |
 
 ---
 
-## ADR-008 — Per-symbol strategy config (detalle)
+## ADR-008 — Per-symbol strategy config (detail)
 
-### Decisión
-Cada symbol tiene su propio (estrategia + parámetros + estado enabled). Configurable en yaml, hot-reloadable vía `/reload_config`.
+### Decision
+Each symbol has its own (strategy + parameters + enabled state). Configurable in yaml, hot-reloadable via `/reload_config`.
 
-### Schema propuesto
+### Proposed schema
 
 ```yaml
 # config/strategies.yaml
@@ -333,7 +333,7 @@ defaults:
   params:
     period: 20
     atr_multiplier: 2.0
-  execution_algo: Adaptive  # opcional, default Adaptive desde v1.5
+  execution_algo: Adaptive  # optional, default Adaptive from v1.5
 
 symbols:
   SPY:
@@ -348,15 +348,15 @@ symbols:
 
   AAPL:
     enabled: true
-    strategy: RSI_MeanReversion  # disponible en v1.5
+    strategy: RSI_MeanReversion  # available in v1.5
     params: {rsi_period: 14, oversold: 30, overbought: 70}
 
   TSLA:
-    enabled: false  # disabled but config preservada (toggle desde Telegram)
+    enabled: false  # disabled but config preserved (toggle from Telegram)
     strategy: BollingerBreakout
     params: {period: 20, num_std: 2.0}
 
-  # estrategia compleja (v2)
+  # complex strategy (v2)
   KO_PEP_PAIR:
     enabled: false
     strategy: PairsTrading
@@ -368,41 +368,41 @@ symbols:
       exit_zscore: 0.5
 ```
 
-### Comandos Telegram derivados
+### Derived Telegram commands
 
-| Comando | Función |
+| Command | Function |
 |---|---|
-| `/strategies` | Lista symbols + strategy + estado (enabled/disabled) |
-| `/enable_symbol <symbol>` | Activa strategy para symbol |
-| `/disable_symbol <symbol>` | Desactiva strategy (mantiene posiciones abiertas) |
-| `/set_strategy <symbol> <strategy_name>` | Cambia strategy de un symbol |
-| `/set_param <symbol> <param> <value>` | Hot-tunear un param sin reiniciar |
-| `/list_strategies` | Catálogo de strategies disponibles en esta versión |
+| `/strategies` | List symbols + strategy + state (enabled/disabled) |
+| `/enable_symbol <symbol>` | Activates strategy for symbol |
+| `/disable_symbol <symbol>` | Deactivates strategy (keeps open positions) |
+| `/set_strategy <symbol> <strategy_name>` | Changes a symbol's strategy |
+| `/set_param <symbol> <param> <value>` | Hot-tune a param without restarting |
+| `/list_strategies` | Catalog of strategies available in this version |
 
-### Implicación arquitectónica
+### Architectural implication
 
-- `StrategyManager` carga `config/strategies.yaml` al arranque y al `/reload_config`
-- Cada `(symbol, strategy)` instancia un `StrategyInstance` con su estado independiente
-- El `RiskEngine` ve todas las propuestas concurrentes y aplica caps a nivel portfolio (no per-strategy)
-- El `ApprovalChannel` muestra el `symbol + strategy_name` en cada propuesta para que el usuario sepa "qué está sugiriendo qué"
-- Hot-disable desde Telegram NO cierra posiciones abiertas (eso requiere `/forceexit` explícito)
+- `StrategyManager` loads `config/strategies.yaml` at startup and on `/reload_config`
+- Each `(symbol, strategy)` instantiates a `StrategyInstance` with its independent state
+- The `RiskEngine` sees all concurrent proposals and applies caps at portfolio level (not per-strategy)
+- The `ApprovalChannel` shows the `symbol + strategy_name` in each proposal so the user knows "what is suggesting what"
+- Hot-disable from Telegram does NOT close open positions (that requires an explicit `/forceexit`)
 
 ---
 
-## Catálogo de estrategias soportadas (visión completa)
+## Catalog of supported strategies (full view)
 
-| Estrategia | Versión | Descripción | Parámetros principales |
+| Strategy | Version | Description | Main parameters |
 |---|---|---|---|
-| **DonchianATR** | v1.0 | Breakout del high de N periodos, sizing ATR-based | `period`, `atr_multiplier` |
-| **SMA_Cross** | v1.0 | Cross fast SMA over slow SMA | `fast`, `slow` |
+| **DonchianATR** | v1.0 | Breakout of the N-period high, ATR-based sizing | `period`, `atr_multiplier` |
+| **SMA_Cross** | v1.0 | Fast SMA crossing over slow SMA | `fast`, `slow` |
 | **RSI_MeanReversion** | v1.5 | Buy oversold, sell overbought | `rsi_period`, `oversold`, `overbought` |
-| **BollingerBreakout** | v1.5 | Cruce de banda con confirmación volumen | `period`, `num_std`, `vol_filter` |
-| **MACD_Cross** | v1.5 | Cross signal line del MACD | `fast`, `slow`, `signal` |
-| **VolumeBreakoutDonchian** | v1.5 | DonchianATR + filtro de volumen anómalo | `period`, `atr_mult`, `vol_threshold` |
-| **PairsTrading** | v2 | Long A short B cuando spread se aleja del mean | `symbol_a`, `symbol_b`, `lookback`, `entry_z`, `exit_z` |
-| **ZScoreMeanReversion** | v2 | Mean reversion estadística sin direction bias | `lookback`, `entry_z`, `exit_z` |
+| **BollingerBreakout** | v1.5 | Band crossing with volume confirmation | `period`, `num_std`, `vol_filter` |
+| **MACD_Cross** | v1.5 | MACD signal line cross | `fast`, `slow`, `signal` |
+| **VolumeBreakoutDonchian** | v1.5 | DonchianATR + anomalous volume filter | `period`, `atr_mult`, `vol_threshold` |
+| **PairsTrading** | v2 | Long A short B when spread diverges from mean | `symbol_a`, `symbol_b`, `lookback`, `entry_z`, `exit_z` |
+| **ZScoreMeanReversion** | v2 | Statistical mean reversion without directional bias | `lookback`, `entry_z`, `exit_z` |
 | **MultiTimeframeTrendFollowing** | v2 | Confluence 1D + 1H + 15m | `tf_macro`, `tf_meso`, `tf_micro` |
-| **SectorRotation** | v3 | Momentum mensual de ETFs sectoriales | `etfs_list`, `lookback_months`, `top_n` |
-| **EarningsPostDrift** | v3 | Event-driven sobre earnings calendar | `min_surprise_pct`, `holding_period` |
-| **RiskParityRebalance** | v3 | Allocation systemática mensual | `target_vol`, `rebalance_freq` |
-| **CustomMLStrategy** | v3 | Pluggable ML/RL (FinRL pattern) | Modelo serializable + features pipeline |
+| **SectorRotation** | v3 | Monthly momentum of sector ETFs | `etfs_list`, `lookback_months`, `top_n` |
+| **EarningsPostDrift** | v3 | Event-driven on earnings calendar | `min_surprise_pct`, `holding_period` |
+| **RiskParityRebalance** | v3 | Systematic monthly allocation | `target_vol`, `rebalance_freq` |
+| **CustomMLStrategy** | v3 | Pluggable ML/RL (FinRL pattern) | Serializable model + features pipeline |

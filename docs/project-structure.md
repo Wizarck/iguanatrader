@@ -9,13 +9,13 @@ status: draft-pending-gate-b
 sources:
   - docs/architecture-decisions.md (Step 6 Project Structure & Boundaries)
   - docs/data-model.md
-  - .ai-playbook/specs/runbook-bmad-openspec.md
+  - .ai-playbook/docs/concepts/runbook-bmad-openspec.md
 license: Apache-2.0 + Commons Clause (iguanatrader-proper) | AGPL-3.0 (apps/openbb-sidecar isolated)
 ---
 
 # Project Structure — iguanatrader
 
-Standalone directory map per [`.ai-playbook/specs/runbook-bmad-openspec.md`](../.ai-playbook/specs/runbook-bmad-openspec.md) §2.1 BMAD artefact requirement. This document is the authoritative file/folder layout reference; the same tree is embedded in [docs/architecture-decisions.md](architecture-decisions.md) §Project Structure for architectural context, but this file is the canonical lookup for "where does X live?".
+Standalone directory map per [`.ai-playbook/docs/concepts/runbook-bmad-openspec.md`](../.ai-playbook/docs/concepts/runbook-bmad-openspec.md) §2.1 BMAD artefact requirement. This document is the authoritative file/folder layout reference; the same tree is embedded in [docs/architecture-decisions.md](architecture-decisions.md) §Project Structure for architectural context, but this file is the canonical lookup for "where does X live?".
 
 ## 1 High-level layout
 
@@ -627,4 +627,4 @@ openspec/
 - [docs/data-model.md](data-model.md) — entity definitions referenced by `apps/api/src/iguanatrader/contexts/<context>/models.py`.
 - [docs/personas-jtbd.md](personas-jtbd.md) — persona + RBAC role mapping referenced by `users.role` schema.
 - [docs/hitl-gates-log.md](hitl-gates-log.md) — Gate A amendment 2026-04-28 cascade documented.
-- [.ai-playbook/specs/runbook-bmad-openspec.md](../.ai-playbook/specs/runbook-bmad-openspec.md) §2.1 — artefact requirement.
+- [.ai-playbook/docs/concepts/runbook-bmad-openspec.md](../.ai-playbook/docs/concepts/runbook-bmad-openspec.md) §2.1 — artefact requirement.

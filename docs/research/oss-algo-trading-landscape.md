@@ -1,327 +1,327 @@
-# OSS Algorithmic Trading Landscape — Investigación para iguanatrader
+# OSS Algorithmic Trading Landscape — Research for iguanatrader
 
-**Fecha:** 2026-04-26
-**Autor:** Claude (research agent)
-**Audiencia:** PM (John) → discovery del PRD de iguanatrader
-**Alcance:** Plataformas open-source de trading algorítmico relevantes para el MVP single-user (Python + IBKR + LangGraph + human-approval) y para la visión a largo plazo (OSS core + SaaS multi-tenant).
+**Date:** 2026-04-26
+**Author:** Claude (research agent)
+**Audience:** PM (John) → iguanatrader PRD discovery
+**Scope:** Open-source algorithmic trading platforms relevant to the single-user MVP (Python + IBKR + LangGraph + human-approval) and to the long-term vision (OSS core + multi-tenant SaaS).
 
 ---
 
 ## 1. Executive Summary
 
-- **El espacio OSS de trading algorítmico está MUY vivo en 2026**, pero polarizado: dos núcleos serios para retail/prosumer (QuantConnect Lean, NautilusTrader), un dominio aplastante de Freqtrade en cripto, y una larga cola de proyectos zombi (Backtrader, PyAlgoTrade, bt, Catalyst).
-- **Ningún proyecto OSS combina** los cuatro pilares de iguanatrader: (a) backtest↔live parity en Python, (b) IBKR de primera clase, (c) human-approval-gate vía Telegram + dashboard, (d) orquestación LangGraph/LLM con observabilidad de coste. Existen partes; no existe el todo.
-- **Lean es el "rey por defecto"** para equity/futuros/multi-asset retail (Apache 2.0, 18.6k★, 13k+ commits, dual-stack Python/C#, mismo código backtest↔live, IBKR built-in). Si iguanatrader fuera "yet another quant platform", la respuesta sería "use Lean y termina la conversación". No lo es.
-- **NautilusTrader es la apuesta técnica más fuerte de la nueva generación** (Rust core + Python control plane, event-driven determinista, LGPL-3.0, 2.7k★, releases bi-semanales, IBKR adapter nativo). Más limpio arquitectónicamente que Lean pero con menos community.
-- **Freqtrade domina cripto** (no aplica a IBKR/equities) pero es el **único OSS con Telegram/webUI maduros para human-in-the-loop** — patrón a robar literal.
-- **Lumibot es el competidor más cercano al MVP de iguanatrader**: Python-puro, IBKR + Alpaca + crypto, mismo código backtest↔live, AI hooks (BotSpot/LLM sentiment), open-source con SaaS comercial encima (Lumiwealth). **Candidato #1 para fork o "be a wrapper around"**.
-- **Modelo OSS+SaaS multi-tenant tiene precedentes claros y rentables**: QuantConnect Cloud (sobre Lean Apache-2.0), Lumiwealth (sobre Lumibot), Hummingbot (sobre HBOT, monetiza vía exchange-fee-share, no SaaS clásico), Composer (no es OSS pero es el benchmark de UX y pricing $40/mes en este vertical). Vectorbt PRO usa Apache-2.0 + Commons Clause como bloqueo a forks comerciales — patrón legal a copiar.
-- **El gap real que cubre iguanatrader**: **trading retail con LLM-orchestrated routines + human approval gate explícito + cost observability del propio LLM stack**. Nadie lo hace bien hoy. TradingAgents (académico) y LLM-trading-agents (Medium hype) están en el lado opuesto: full-auto sin approval gate. Composer está cerca (no-code visual + AI) pero cerrado y sin LLM-agent layer.
-- **Pitfalls históricos a evitar**: Quantopian murió por (a) modelo de negocio basado en regalar y monetizar después con un fondo que falló y (b) overfitting masivo del crowdsource. Backtrader/PyAlgoTrade/bt murieron por **bus factor = 1**. Catalyst murió arrastrado por SEC / Enigma. Lección: **mantener bus factor ≥ 2, monetizar antes y modesto, no apostar la viabilidad a un único alpha**.
-- **Veredicto adelantado** (detalle en §8): **construir desde cero el orquestador LLM + approval gate + cost layer**, pero **no reinventar el engine de backtest/execution**. Hacer wrapping fino sobre `ib_async` para el MVP; mantener Lean y NautilusTrader como opciones de migración del engine cuando se escale al SaaS.
+- **The OSS algorithmic trading space is VERY much alive in 2026**, but polarized: two serious cores for retail/prosumer (QuantConnect Lean, NautilusTrader), an overwhelming dominance of Freqtrade in crypto, and a long tail of zombie projects (Backtrader, PyAlgoTrade, bt, Catalyst).
+- **No OSS project combines** the four pillars of iguanatrader: (a) backtest↔live parity in Python, (b) first-class IBKR, (c) human-approval-gate via Telegram + dashboard, (d) LangGraph/LLM orchestration with cost observability. The parts exist; the whole does not.
+- **Lean is the "default king"** for retail equity/futures/multi-asset (Apache 2.0, 18.6k★, 13k+ commits, dual-stack Python/C#, same code backtest↔live, IBKR built-in). If iguanatrader were "yet another quant platform", the answer would be "use Lean and end the conversation". It is not.
+- **NautilusTrader is the strongest technical bet of the new generation** (Rust core + Python control plane, deterministic event-driven, LGPL-3.0, 2.7k★, bi-weekly releases, native IBKR adapter). Architecturally cleaner than Lean but with a smaller community.
+- **Freqtrade dominates crypto** (does not apply to IBKR/equities) but is the **only OSS with mature Telegram/webUI for human-in-the-loop** — a pattern to steal literally.
+- **Lumibot is the closest competitor to iguanatrader's MVP**: pure Python, IBKR + Alpaca + crypto, same code backtest↔live, AI hooks (BotSpot/LLM sentiment), open-source with a commercial SaaS on top (Lumiwealth). **Candidate #1 to fork or "be a wrapper around"**.
+- **The OSS+SaaS multi-tenant model has clear and profitable precedents**: QuantConnect Cloud (on top of Lean Apache-2.0), Lumiwealth (on top of Lumibot), Hummingbot (on top of HBOT, monetizes via exchange-fee-share, not classic SaaS), Composer (not OSS but the UX and pricing benchmark at $40/month in this vertical). Vectorbt PRO uses Apache-2.0 + Commons Clause as a block against commercial forks — a legal pattern worth copying.
+- **The real gap iguanatrader fills**: **retail trading with LLM-orchestrated routines + explicit human approval gate + cost observability of the LLM stack itself**. Nobody does it well today. TradingAgents (academic) and LLM-trading-agents (Medium hype) are on the opposite side: full-auto without an approval gate. Composer is close (visual no-code + AI) but closed and without an LLM-agent layer.
+- **Historical pitfalls to avoid**: Quantopian died from (a) a business model based on giving everything away and monetizing later via a fund that failed, and (b) massive crowdsource overfitting. Backtrader/PyAlgoTrade/bt died from **bus factor = 1**. Catalyst died dragged down by SEC / Enigma. Lesson: **keep bus factor ≥ 2, monetize early and modestly, do not bet viability on a single alpha**.
+- **Verdict, previewed** (detail in §8): **build the LLM orchestrator + approval gate + cost layer from scratch**, but **do not reinvent the backtest/execution engine**. Do a thin wrap over `ib_async` for the MVP; keep Lean and NautilusTrader as engine migration options when scaling to SaaS.
 
 ---
 
-## 2. Tabla comparativa
+## 2. Comparison Table
 
-| Plataforma | URL | Vivo | ★ | Licencia | Stack | Brokers | Arquitectura | Backtest↔Live parity | Risk engine | Multi-tenant ready | HITL approval | Modelo de negocio | Verdict (1 línea) |
+| Platform | URL | Alive | ★ | License | Stack | Brokers | Architecture | Backtest↔Live parity | Risk engine | Multi-tenant ready | HITL approval | Business model | Verdict (1 line) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **QuantConnect Lean** | github.com/QuantConnect/Lean | Vivo (commits semanales 2026) | 18.6k | Apache-2.0 | C# core + Python via PythonNet | IBKR, Alpaca, Binance, Bybit, Coinbase, OANDA, Tradier, TradeStation, Kraken, Bitfinex, Bitstamp, Zerodha, Tradier, Wolverine | Event-driven | Sí (mismo algoritmo) | Sí (built-in: position sizing, drawdown limits, brokerage models) | Diseñado para multi-tenant (es lo que corre QC Cloud) | No nativo (extensible) | OSS Apache + SaaS QC Cloud (free → enterprise $thousands/mes) | El estándar de facto multi-asset con SaaS probada |
-| **NautilusTrader** | github.com/nautechsystems/nautilus_trader | Muy vivo (releases bi-weekly, 2026) | 2.7k | LGPL-3.0 | Rust core + Python control plane | IBKR, Binance (spot/futures), Bybit, dYdX, Coinbase Intl, Polymarket, Databento | Event-driven determinista | Sí (mismo runtime y time model) | Sí (modular: risk engine separado del execution engine) | Diseñado para production multi-strategy (no multi-tenant out-of-box) | No | Pure OSS (corp Nautech Systems detrás) | El más limpio arquitectónicamente, futuro probable líder |
-| **Freqtrade** | github.com/freqtrade/freqtrade | Muy vivo (commits diarios, abril 2026) | ~30k | GPL-3.0 | Python | Solo cripto (Binance, Kraken, OKX, Bybit, etc. via CCXT) | Event-driven | Sí | Sí (stoploss, tiered, trailing, max-drawdown protection) | No (single-instance por design) | **Telegram + webUI (FreqUI)** maduros | OSS puro + ecosystem de cursos/comunidad | El rey indiscutible de cripto retail; **patrón Telegram a copiar** |
-| **Lumibot** | github.com/Lumiwealth/lumibot | Vivo (3.x en 2026) | ~2k | Apache-2.0 (parece) | Python | **IBKR**, Alpaca, Tradier, Coinbase, Binance, Kucoin, TradeStation, Theta Data | Event-driven | Sí (mismo código) | Sí (basic) | Diseñado para individual; SaaS Lumiwealth multi-user | No nativo, pero "BotSpot" añade LLM sentiment | OSS Apache + Lumiwealth SaaS comercial | **El competidor MÁS CERCANO al MVP de iguanatrader** |
-| **vectorbt** (OSS) | github.com/polakowo/vectorbt | Mantenimiento mínimo; foco se desplazó a PRO | ~5k | Apache-2.0 + **Commons Clause** | Python (NumPy/Numba) | N/A (research-only) | Vectorizado | No (research-only) | Limitado | N/A | N/A | OSS gratis para research; **PRO de pago** | Mejor para grid-search masivo de parámetros, no para live |
-| **vectorbt PRO** | vectorbt.pro | Vivo (pago) | N/A | Propietario | Python | Conectores via CCXT/IB opt-in | Vectorizado + event-driven hooks | Limitado | Sí | No | No | Subscripción mensual privada | El sandbox de research más potente del mercado, comercial |
-| **Hummingbot** | github.com/hummingbot/hummingbot | Muy vivo, Foundation activa 2026 | ~9k | Apache-2.0 | Python + Cython | DEX + 30+ CEX (binance, kucoin, etc.); **no equity** | Event-driven (market-making focus) | Sí | Sí (specialized para MM) | Local-first, no multi-tenant nativo | No (Telegram cliente, no approval) | OSS + revenue por exchange-fee-share + token HBOT | El líder de market-making cripto OSS |
-| **Jesse** | github.com/jesse-ai/jesse | Vivo, JesseGPT añadido | ~5.6k | MIT (core) + servicios pago | Python | Cripto (CCXT-like) | Event-driven | Sí | Sí | No | No | OSS MIT + JesseGPT/dashboards de pago | Crypto-only; UX agradable; modelo "OSS + serv premium" |
-| **Backtrader** | github.com/mementum/backtrader | **Dormant/dead** (sin commits relevantes desde 2023) | ~14k | GPL-3.0 | Python | IBKR (legacy), OANDA, VC, CCXT | Event-driven | Sí | Sí | No | No | OSS abandonado | Aún funciona pero sin futuro; problemas con Python 3.10+ |
-| **Zipline-Reloaded** | github.com/stefan-jansen/zipline-reloaded | Vivo (mantenedor único) | 1.6k | Apache-2.0 | Python | N/A directo (research-first) | Event-driven | No (research) | Sí | N/A | N/A | OSS personal (libro de Jansen) | Excelente para research factor-equity; no live |
-| **Backtesting.py** | github.com/kernc/backtesting.py | Vivo (commits 2026) | ~6k | **AGPL-3.0** | Python | Ninguno (backtest only) | Event-driven simple | No | Básico | N/A | N/A | OSS AGPL | Lightweight; AGPL bloquea uso comercial cerrado |
-| **QSTrader** | github.com/mhallsmoore/qstrader | Vivo (mantenimiento lento) | ~1k | MIT | Python | Limited | Event-driven schedule-based | Sí (parcial) | Sí (modular) | No | No | OSS + libros QuantStart | Buen ejemplo arquitectónico; comunidad pequeña |
-| **OctoBot** | github.com/Drakkar-Software/OctoBot | Muy vivo (v2.1.1 mar 2026, mobile app, Hyperliquid) | ~3.5k | LGPL-3.0 / GPL | Python 3.12/13 | Cripto (15+ CEX), Polymarket | Event-driven | Sí | Sí | Soporta cloud (octobot.cloud) | webUI; Telegram via plugin | OSS + OctoBot.cloud SaaS | Crypto-focused; **modelo OSS+cloud SaaS funcional** |
-| **FinRL / FinRL-X** | github.com/AI4Finance-Foundation/FinRL | Vivo (research-driven, evoluciona a FinRL-X) | ~12k | MIT | Python (RL: Stable-Baselines3, Ray) | Limited (paper-trading) | Hybrid | Limited | Limited | N/A | N/A | OSS académico | Sandbox para RL en finanzas; no production-ready |
-| **Catalyst (Enigma)** | github.com/scrtlabs/catalyst | **DEAD** | ~2.5k | Apache-2.0 | Python (zipline fork) | Cripto (legacy) | Event-driven | Sí | Limited | No | No | Murió con Enigma/SEC | No usar (referencia histórica) |
-| **PyAlgoTrade** | github.com/gbeced/pyalgotrade | **Dormant** (último push hace 2 años) | ~4.5k | Apache-2.0 | Python | Limited (Bitstamp, Xignite) | Event-driven | Parcial | Limited | No | No | OSS abandonado | Zombi; legacy code only |
-| **bt** | github.com/pmorissette/bt | **Abandoned** (per Trading Strategy docs) | ~2k | MIT | Python | N/A | Vectorizado portfolio | No | Sí (rebalancing) | N/A | N/A | OSS abandonado | Bueno conceptualmente para asset-allocation; muerto |
-| **Composer.trade** | composer.trade | Vivo (no OSS) | N/A | Propietario | Web (DSL propio) | Alpaca subyacente | Visual no-code | Sí (DSL único) | Sí | Multi-tenant SaaS | "Trade With AI" (no es approval-gate, es generación) | Subscripción $40/mes stocks, 0.2% crypto | El benchmark UX/pricing del retail-quant moderno |
-| **TradingAgents** | github.com/TauricResearch/TradingAgents | Vivo (v0.2.3 mar 2026) | (alta tracción 2025-26) | (research) | Python (multi-LLM) | Paper-trading | Multi-agent LLM (sin engine de execution propio) | No | No | N/A | No (full-auto agent demos) | Académico/research | El paper que define "multi-agent trading firm" pero NO es production |
+| **QuantConnect Lean** | github.com/QuantConnect/Lean | Alive (weekly commits 2026) | 18.6k | Apache-2.0 | C# core + Python via PythonNet | IBKR, Alpaca, Binance, Bybit, Coinbase, OANDA, Tradier, TradeStation, Kraken, Bitfinex, Bitstamp, Zerodha, Tradier, Wolverine | Event-driven | Yes (same algorithm) | Yes (built-in: position sizing, drawdown limits, brokerage models) | Designed for multi-tenant (it's what QC Cloud runs) | Not native (extensible) | OSS Apache + SaaS QC Cloud (free → enterprise $thousands/month) | The de facto multi-asset standard with proven SaaS |
+| **NautilusTrader** | github.com/nautechsystems/nautilus_trader | Very alive (bi-weekly releases, 2026) | 2.7k | LGPL-3.0 | Rust core + Python control plane | IBKR, Binance (spot/futures), Bybit, dYdX, Coinbase Intl, Polymarket, Databento | Deterministic event-driven | Yes (same runtime and time model) | Yes (modular: risk engine separated from execution engine) | Designed for production multi-strategy (not multi-tenant out-of-box) | No | Pure OSS (corp Nautech Systems behind it) | Architecturally cleanest, probable future leader |
+| **Freqtrade** | github.com/freqtrade/freqtrade | Very alive (daily commits, April 2026) | ~30k | GPL-3.0 | Python | Crypto only (Binance, Kraken, OKX, Bybit, etc. via CCXT) | Event-driven | Yes | Yes (stoploss, tiered, trailing, max-drawdown protection) | No (single-instance by design) | **Mature Telegram + webUI (FreqUI)** | Pure OSS + ecosystem of courses/community | The undisputed king of retail crypto; **Telegram pattern to copy** |
+| **Lumibot** | github.com/Lumiwealth/lumibot | Alive (3.x in 2026) | ~2k | Apache-2.0 (appears so) | Python | **IBKR**, Alpaca, Tradier, Coinbase, Binance, Kucoin, TradeStation, Theta Data | Event-driven | Yes (same code) | Yes (basic) | Designed for individual; Lumiwealth SaaS multi-user | Not native, but "BotSpot" adds LLM sentiment | OSS Apache + commercial Lumiwealth SaaS | **The CLOSEST competitor to iguanatrader's MVP** |
+| **vectorbt** (OSS) | github.com/polakowo/vectorbt | Minimal maintenance; focus shifted to PRO | ~5k | Apache-2.0 + **Commons Clause** | Python (NumPy/Numba) | N/A (research-only) | Vectorized | No (research-only) | Limited | N/A | N/A | OSS free for research; **paid PRO** | Best for massive parameter grid-search, not for live |
+| **vectorbt PRO** | vectorbt.pro | Alive (paid) | N/A | Proprietary | Python | Connectors via CCXT/IB opt-in | Vectorized + event-driven hooks | Limited | Yes | No | No | Private monthly subscription | The most powerful research sandbox on the market, commercial |
+| **Hummingbot** | github.com/hummingbot/hummingbot | Very alive, Foundation active 2026 | ~9k | Apache-2.0 | Python + Cython | DEX + 30+ CEX (binance, kucoin, etc.); **no equity** | Event-driven (market-making focus) | Yes | Yes (specialized for MM) | Local-first, not natively multi-tenant | No (Telegram client, no approval) | OSS + revenue via exchange-fee-share + HBOT token | The leader of OSS crypto market-making |
+| **Jesse** | github.com/jesse-ai/jesse | Alive, JesseGPT added | ~5.6k | MIT (core) + paid services | Python | Crypto (CCXT-like) | Event-driven | Yes | Yes | No | No | OSS MIT + paid JesseGPT/dashboards | Crypto-only; nice UX; "OSS + premium services" model |
+| **Backtrader** | github.com/mementum/backtrader | **Dormant/dead** (no relevant commits since 2023) | ~14k | GPL-3.0 | Python | IBKR (legacy), OANDA, VC, CCXT | Event-driven | Yes | Yes | No | No | Abandoned OSS | Still works but has no future; issues with Python 3.10+ |
+| **Zipline-Reloaded** | github.com/stefan-jansen/zipline-reloaded | Alive (single maintainer) | 1.6k | Apache-2.0 | Python | N/A direct (research-first) | Event-driven | No (research) | Yes | N/A | N/A | Personal OSS (Jansen's book) | Excellent for factor-equity research; no live |
+| **Backtesting.py** | github.com/kernc/backtesting.py | Alive (2026 commits) | ~6k | **AGPL-3.0** | Python | None (backtest only) | Simple event-driven | No | Basic | N/A | N/A | AGPL OSS | Lightweight; AGPL blocks closed commercial use |
+| **QSTrader** | github.com/mhallsmoore/qstrader | Alive (slow maintenance) | ~1k | MIT | Python | Limited | Event-driven schedule-based | Yes (partial) | Yes (modular) | No | No | OSS + QuantStart books | Good architectural example; small community |
+| **OctoBot** | github.com/Drakkar-Software/OctoBot | Very alive (v2.1.1 Mar 2026, mobile app, Hyperliquid) | ~3.5k | LGPL-3.0 / GPL | Python 3.12/13 | Crypto (15+ CEX), Polymarket | Event-driven | Yes | Yes | Supports cloud (octobot.cloud) | webUI; Telegram via plugin | OSS + OctoBot.cloud SaaS | Crypto-focused; **functional OSS+cloud SaaS model** |
+| **FinRL / FinRL-X** | github.com/AI4Finance-Foundation/FinRL | Alive (research-driven, evolving into FinRL-X) | ~12k | MIT | Python (RL: Stable-Baselines3, Ray) | Limited (paper-trading) | Hybrid | Limited | Limited | N/A | N/A | Academic OSS | Sandbox for RL in finance; not production-ready |
+| **Catalyst (Enigma)** | github.com/scrtlabs/catalyst | **DEAD** | ~2.5k | Apache-2.0 | Python (zipline fork) | Crypto (legacy) | Event-driven | Yes | Limited | No | No | Died with Enigma/SEC | Do not use (historical reference) |
+| **PyAlgoTrade** | github.com/gbeced/pyalgotrade | **Dormant** (last push 2 years ago) | ~4.5k | Apache-2.0 | Python | Limited (Bitstamp, Xignite) | Event-driven | Partial | Limited | No | No | Abandoned OSS | Zombie; legacy code only |
+| **bt** | github.com/pmorissette/bt | **Abandoned** (per Trading Strategy docs) | ~2k | MIT | Python | N/A | Vectorized portfolio | No | Yes (rebalancing) | N/A | N/A | Abandoned OSS | Conceptually good for asset-allocation; dead |
+| **Composer.trade** | composer.trade | Alive (not OSS) | N/A | Proprietary | Web (proprietary DSL) | Alpaca underneath | Visual no-code | Yes (unique DSL) | Yes | Multi-tenant SaaS | "Trade With AI" (not approval-gate, it's generation) | Subscription $40/month stocks, 0.2% crypto | The UX/pricing benchmark of modern retail-quant |
+| **TradingAgents** | github.com/TauricResearch/TradingAgents | Alive (v0.2.3 Mar 2026) | (high traction 2025-26) | (research) | Python (multi-LLM) | Paper-trading | Multi-agent LLM (no execution engine of its own) | No | No | N/A | No (full-auto agent demos) | Academic/research | The paper that defines "multi-agent trading firm" but is NOT production |
 
 ---
 
-## 3. Deep-dives: las 6 plataformas más relevantes para iguanatrader
+## 3. Deep-dives: the 6 most relevant platforms for iguanatrader
 
 ### 3.1 QuantConnect Lean (★ 18.6k, Apache-2.0)
 
-**Qué es:** El motor de trading algorítmico OSS más maduro del mercado retail/prosumer. C# en el core (94% del código), Python como first-class via PythonNet. Soporta backtest, optimization, paper trading y live trading **con el mismo algoritmo**, contra IBKR, Alpaca, Binance, Tradier, Coinbase y ~10 brokers más. El propio QuantConnect Cloud corre exactamente este código en multi-tenant para 300+ hedge funds y miles de retail.
+**What it is:** The most mature OSS algorithmic trading engine in the retail/prosumer market. C# at the core (94% of the code), Python as first-class via PythonNet. Supports backtest, optimization, paper trading and live trading **with the same algorithm**, against IBKR, Alpaca, Binance, Tradier, Coinbase and ~10 more brokers. QuantConnect Cloud itself runs exactly this code in multi-tenant mode for 300+ hedge funds and thousands of retail users.
 
-**Por qué importa para iguanatrader:**
-- Apache 2.0 → puedes forkear, modificar y vender SaaS encima sin restricciones de licencia.
-- IBKR adapter battle-tested.
-- Backtest↔live parity es el principio rector del proyecto.
-- Lean CLI permite correr todo localmente vía Docker — no hay vendor lock-in.
+**Why it matters for iguanatrader:**
+- Apache 2.0 → you can fork, modify and sell SaaS on top without license restrictions.
+- Battle-tested IBKR adapter.
+- Backtest↔live parity is the project's guiding principle.
+- Lean CLI lets you run everything locally via Docker — no vendor lock-in.
 
-**Por qué NO usarlo tal cual:**
-- Stack C#/Python híbrido es pesado para un dev solo en Python puro. La curva de aprendizaje del API es real.
-- No tiene approval gate ni Telegram nativo; tendrías que añadirlo en una capa externa.
-- No tiene observabilidad de coste de LLM (porque no usa LLMs).
-- Filosofía "el algoritmo es la unidad atómica" choca un poco con la idea de "LLM propone, humano aprueba, engine ejecuta".
+**Why NOT to use it as-is:**
+- The hybrid C#/Python stack is heavy for a solo dev in pure Python. The API learning curve is real.
+- It has no native approval gate or Telegram; you would have to add it as an external layer.
+- It has no LLM cost observability (because it doesn't use LLMs).
+- The philosophy "the algorithm is the atomic unit" clashes a bit with "LLM proposes, human approves, engine executes".
 
-**Recomendación:** Estudiar el `Algorithm` API y el `BrokerageModel` abstraction. Robar conceptos. **No forkear** salvo que iguanatrader vire a "QC clon en español + LLM layer".
+**Recommendation:** Study the `Algorithm` API and the `BrokerageModel` abstraction. Steal concepts. **Do not fork** unless iguanatrader pivots to "QC clone in Spanish + LLM layer".
 
 ### 3.2 NautilusTrader (★ 2.7k, LGPL-3.0)
 
-**Qué es:** El "Lean de nueva generación" — Rust en el core para determinismo y performance, Python como control plane. Mismo runtime para backtest y live (no son dos engines distintos cosidos). Diseñado para producción multi-asset/multi-venue. Adapter IBKR completo.
+**What it is:** The "next-generation Lean" — Rust at the core for determinism and performance, Python as control plane. Same runtime for backtest and live (not two distinct engines stitched together). Designed for multi-asset/multi-venue production. Complete IBKR adapter.
 
-**Por qué importa:**
-- Determinismo a nivel reloj — fundamental para backtest↔live parity real (no solo "mismo código", sino "mismo orden de eventos").
-- Arquitectura modular limpia: `DataEngine`, `ExecutionEngine`, `RiskEngine`, `Cache`, `MessageBus` separados.
-- Releases bi-semanales, mantenedor corporativo (Nautech Systems Pty Ltd) con incentivo de monetizar via servicios.
-- Permite escribir estrategias **solo en Python** sin tocar Rust.
+**Why it matters:**
+- Clock-level determinism — fundamental for real backtest↔live parity (not just "same code", but "same event order").
+- Clean modular architecture: separate `DataEngine`, `ExecutionEngine`, `RiskEngine`, `Cache`, `MessageBus`.
+- Bi-weekly releases, corporate maintainer (Nautech Systems Pty Ltd) with an incentive to monetize via services.
+- Allows writing strategies **in Python only** without touching Rust.
 
 **Caveats:**
-- LGPL-3.0 es más restrictivo que Apache. Si embebes Nautilus en un SaaS comercial cerrado, debes permitir al usuario reemplazar la librería (típicamente vía dynamic linking). Manejable, pero no tan libre como Apache.
-- API "becoming more stable" — admiten breaking changes entre releases. Riesgo para un MVP que quiere estabilidad.
-- Comunidad ~10x más pequeña que Lean → menos ejemplos, menos respuestas en Stack Overflow.
+- LGPL-3.0 is more restrictive than Apache. If you embed Nautilus in a closed commercial SaaS, you must allow the user to replace the library (typically via dynamic linking). Manageable, but not as free as Apache.
+- API "becoming more stable" — they admit breaking changes between releases. Risk for an MVP that wants stability.
+- Community ~10x smaller than Lean → fewer examples, fewer answers on Stack Overflow.
 
-**Recomendación:** **Si iguanatrader quiere apostar por el engine "del futuro"**, este es. Para MVP single-user, demasiado overkill; para v2 multi-tenant SaaS, candidato fuerte como engine subyacente.
+**Recommendation:** **If iguanatrader wants to bet on the "engine of the future"**, this is it. For a single-user MVP, overkill; for a v2 multi-tenant SaaS, a strong candidate as the underlying engine.
 
 ### 3.3 Lumibot (★ ~2k, Apache-2.0)
 
-**Qué es:** Framework Python de trading creado por Lumiwealth (empresa con educación de pago + bots gestionados). Soporta IBKR, Alpaca, Tradier, crypto. Mismo código backtest↔live. En 2026 añadió "BotSpot": módulo que conecta estrategias a LLMs para sentiment/news en tiempo real.
+**What it is:** Python trading framework created by Lumiwealth (a company with paid education + managed bots). Supports IBKR, Alpaca, Tradier, crypto. Same code backtest↔live. In 2026 it added "BotSpot": a module that connects strategies to LLMs for real-time sentiment/news.
 
-**Por qué es el más cercano al MVP de iguanatrader:**
-- Python puro, ergonómico para dev solo.
-- IBKR de primera clase (REST + Legacy).
-- AI hooks ya pensados — no rechaza la idea LLM como Lean/Nautilus.
-- Modelo de negocio OSS + SaaS comercial **ya validado en este nicho** (Lumiwealth vende bots gestionados, cursos, dashboards).
+**Why it's the closest to iguanatrader's MVP:**
+- Pure Python, ergonomic for a solo dev.
+- First-class IBKR (REST + Legacy).
+- AI hooks already thought through — does not reject the LLM idea the way Lean/Nautilus do.
+- OSS + commercial SaaS business model **already validated in this niche** (Lumiwealth sells managed bots, courses, dashboards).
 
-**Por qué hay que mirarlo con lupa:**
-- Comunidad pequeña, código menos pulido que Lean/Nautilus.
-- Documentación irregular.
-- "BotSpot" parece marketing-driven, no un layer agentic serio (no es LangGraph).
-- No hay approval gate explícito.
+**Why you need to look at it with a magnifying glass:**
+- Small community, less polished code than Lean/Nautilus.
+- Uneven documentation.
+- "BotSpot" looks marketing-driven, not a serious agentic layer (not LangGraph).
+- No explicit approval gate.
 
-**Recomendación:** **Lectura obligada antes de escribir una línea de iguanatrader**. Considerar fork o, al menos, copiar literalmente el `Strategy` interface y el `Broker` abstraction. Es el "stand on shoulders of giants" más eficiente.
+**Recommendation:** **Mandatory reading before writing a line of iguanatrader**. Consider forking or, at the very least, literally copying the `Strategy` interface and the `Broker` abstraction. It is the most efficient "stand on the shoulders of giants".
 
 ### 3.4 Freqtrade (★ ~30k, GPL-3.0)
 
-**Qué es:** El bot de cripto OSS más popular del planeta. No aplica directamente a IBKR/equities pero **es el único framework con Telegram + webUI + risk engine maduros y battle-tested para retail**.
+**What it is:** The most popular OSS crypto bot on the planet. Does not apply directly to IBKR/equities but **it is the only framework with mature, battle-tested Telegram + webUI + risk engine for retail**.
 
-**Patrón a robar (literal):**
-- Comandos Telegram: `/status`, `/profit`, `/balance`, `/forcebuy`, `/forcesell`, `/stop`, `/reload_config`, `/whitelist`, `/blacklist`. **Esto es exactamente el approval-gate UX que iguanatrader necesita**.
-- Modos: `dry-run` (paper), `live`, `backtesting`, `hyperopt` (Optuna). Diseño impecable para iterar.
-- FreqAI: módulo de ML opt-in con pipeline reproducible. Modelo a seguir si iguanatrader añade ML.
-- FreqUI: dashboard local servido por el propio bot. Pattern: "tu bot es también su propio servidor de UI".
+**Pattern to steal (literally):**
+- Telegram commands: `/status`, `/profit`, `/balance`, `/forcebuy`, `/forcesell`, `/stop`, `/reload_config`, `/whitelist`, `/blacklist`. **This is exactly the approval-gate UX iguanatrader needs**.
+- Modes: `dry-run` (paper), `live`, `backtesting`, `hyperopt` (Optuna). Impeccable design for iteration.
+- FreqAI: opt-in ML module with a reproducible pipeline. A model to follow if iguanatrader adds ML.
+- FreqUI: local dashboard served by the bot itself. Pattern: "your bot is also its own UI server".
 
-**Caveats:** GPL-3.0 → si forkeas, todo derivado debe ser GPL-3.0 (no SaaS cerrado fácil). Solo cripto, no equity. No usable como base, sí como referencia UX.
+**Caveats:** GPL-3.0 → if you fork, every derivative must be GPL-3.0 (closed SaaS is not easy). Crypto only, no equity. Not usable as a base, but yes as a UX reference.
 
-**Recomendación:** **Documentar e imitar el set de comandos Telegram, los modos dry/live, y el patrón webUI embebida**. No forkear (licencia + scope incorrecto).
+**Recommendation:** **Document and imitate the Telegram command set, the dry/live modes, and the embedded webUI pattern**. Do not fork (wrong license + wrong scope).
 
-### 3.5 NautilusTrader vs Lean — la decisión arquitectónica
+### 3.5 NautilusTrader vs Lean — the architectural decision
 
-| Eje | Lean | NautilusTrader |
+| Axis | Lean | NautilusTrader |
 |---|---|---|
-| Lenguaje primario | C# (94%) | Rust (core) + Python (control) |
-| Madurez | 12+ años, 13k commits, 300+ hedge funds | ~5 años, 2.7k★, growing fast |
-| Licencia para SaaS | Apache 2.0 (perfecto) | LGPL-3.0 (manejable) |
-| Determinismo backtest↔live | Bueno | Excelente (event time model único) |
-| Footprint para dev solo | Pesado | Medio |
-| IBKR adapter | Sí, maduro | Sí, completo (con caveat Python 3.14) |
-| Ecosistema community | Enorme | Mediano pero creciendo |
-| Encaja con LangGraph/LLM | Hay que pegarlo encima | Hay que pegarlo encima |
+| Primary language | C# (94%) | Rust (core) + Python (control) |
+| Maturity | 12+ years, 13k commits, 300+ hedge funds | ~5 years, 2.7k★, growing fast |
+| License for SaaS | Apache 2.0 (perfect) | LGPL-3.0 (manageable) |
+| Backtest↔live determinism | Good | Excellent (single event time model) |
+| Footprint for a solo dev | Heavy | Medium |
+| IBKR adapter | Yes, mature | Yes, complete (with Python 3.14 caveat) |
+| Community ecosystem | Huge | Medium but growing |
+| Fits with LangGraph/LLM | Has to be bolted on top | Has to be bolted on top |
 
-Ambos son técnicamente correctos. **Lean** es la elección "consensus / no me despiden por elegirlo". **Nautilus** es la apuesta a 3 años. **Ninguno resuelve el approval gate ni la observabilidad de coste LLM** — esos los escribe iguanatrader.
+Both are technically correct. **Lean** is the "consensus / I won't get fired for picking it" choice. **Nautilus** is the 3-year bet. **Neither solves the approval gate nor LLM cost observability** — iguanatrader writes those.
 
-### 3.6 Composer.trade (no OSS, pero benchmark obligado)
+### 3.6 Composer.trade (not OSS, but a mandatory benchmark)
 
-**Qué es:** SaaS no-code para crear "symphonies" (estrategias visuales tipo flowchart). Subyacente Alpaca para execution. Subscripción $40/mes para stocks, 0.2% crypto. Lanzaron "Trade With AI" en oct 2025: NL → estrategia. ~$X00M valuation.
+**What it is:** No-code SaaS for creating "symphonies" (visual flowchart-style strategies). Alpaca underneath for execution. Subscription $40/month for stocks, 0.2% crypto. They launched "Trade With AI" in Oct 2025: NL → strategy. ~$X00M valuation.
 
-**Por qué importa para iguanatrader:**
-- **Es el benchmark de pricing y UX del retail-quant SaaS**. $40/mes es el techo psicológico para retail no-pro.
-- Su DSL propio + AI generation es exactamente "LLM propone estrategia, humano aprueba". Es el patrón conceptual de iguanatrader, **pero cerrado y sin approval gate por trade**.
-- Demuestra que el mercado paga por: (a) backtest visual instantáneo, (b) execution managed (no quieren tocar TWS Gateway), (c) "trade with AI" como hook.
+**Why it matters for iguanatrader:**
+- **It is the pricing and UX benchmark of retail-quant SaaS**. $40/month is the psychological ceiling for non-pro retail.
+- Its proprietary DSL + AI generation is exactly "LLM proposes strategy, human approves". It is the conceptual pattern of iguanatrader, **but closed and without a per-trade approval gate**.
+- Demonstrates that the market pays for: (a) instant visual backtesting, (b) managed execution (users don't want to touch TWS Gateway), (c) "trade with AI" as a hook.
 
-**Lo que iguanatrader puede hacer mejor:**
-- Open core (Composer es cerrado total).
-- IBKR (Composer solo Alpaca).
-- Approval gate **por trade**, no solo por estrategia.
-- Cost observability de LLM (Composer no tiene LLMs en el hot path; tampoco los expone como coste).
+**What iguanatrader can do better:**
+- Open core (Composer is fully closed).
+- IBKR (Composer only Alpaca).
+- Approval gate **per trade**, not just per strategy.
+- LLM cost observability (Composer has no LLMs on the hot path; it doesn't expose them as a cost either).
 
 ---
 
-## 4. Sub-grupo: precedentes OSS + SaaS multi-tenant
+## 4. Sub-group: OSS + multi-tenant SaaS precedents
 
-| Empresa | OSS layer | SaaS layer | Cómo se split | Licencia que lo permite |
+| Company | OSS layer | SaaS layer | How it splits | License that enables it |
 |---|---|---|---|---|
-| **QuantConnect** | Lean (engine) | QC Cloud (datos, compute, hosting, equipos, marketplace de algos) | OSS = engine + adapters; SaaS = data feeds licenciados, compute managed, colaboración multi-user, alpha streams marketplace, soporte SLA | Apache 2.0 → permite QC monetizar todo el stack alrededor sin obligar a abrir el SaaS |
-| **Lumiwealth** | Lumibot | Cursos, bots gestionados, dashboards | OSS = framework; SaaS = "bots-as-a-service" + educación + signals | Apache 2.0 |
-| **Hummingbot Foundation** | Hummingbot core + Condor UI | NO hay SaaS; monetizan vía **exchange-fee-share** (los exchanges pagan rebates por volume generado por bots Hummingbot) | OSS 100% gratuito; revenue indirecto vía partnerships | Apache 2.0 |
-| **OctoBot** | OctoBot core | OctoBot.cloud (deploy hosted, packs de estrategias) | OSS = engine local; SaaS = hosting + estrategias premium | LGPL/GPL |
-| **Jesse** | jesse (core) | JesseGPT, dashboards, datasets premium | OSS = engine + backtest; SaaS = AI strategy assistant + datos | MIT |
-| **vectorbt** | vectorbt (research lib) | vectorbt PRO (private repo, Discord, features avanzadas) | OSS = "demo"; PRO = todo lo serio | Apache 2.0 + **Commons Clause** (impide vender el OSS como servicio) |
-| **Numerai** | Pequeñas libs python | Tournament + hedge fund | OSS = SDK; el negocio es el hedge fund que opera con la meta-model crowdsourced. Pagan en NMR token. | MIT (libs); el modelo no se replica fácil |
+| **QuantConnect** | Lean (engine) | QC Cloud (data, compute, hosting, teams, algo marketplace) | OSS = engine + adapters; SaaS = licensed data feeds, managed compute, multi-user collaboration, alpha streams marketplace, SLA support | Apache 2.0 → lets QC monetize the entire surrounding stack without being forced to open the SaaS |
+| **Lumiwealth** | Lumibot | Courses, managed bots, dashboards | OSS = framework; SaaS = "bots-as-a-service" + education + signals | Apache 2.0 |
+| **Hummingbot Foundation** | Hummingbot core + Condor UI | NO SaaS; they monetize via **exchange-fee-share** (exchanges pay rebates for volume generated by Hummingbot bots) | OSS 100% free; indirect revenue via partnerships | Apache 2.0 |
+| **OctoBot** | OctoBot core | OctoBot.cloud (hosted deploy, strategy packs) | OSS = local engine; SaaS = hosting + premium strategies | LGPL/GPL |
+| **Jesse** | jesse (core) | JesseGPT, dashboards, premium datasets | OSS = engine + backtest; SaaS = AI strategy assistant + data | MIT |
+| **vectorbt** | vectorbt (research lib) | vectorbt PRO (private repo, Discord, advanced features) | OSS = "demo"; PRO = anything serious | Apache 2.0 + **Commons Clause** (prevents selling the OSS as a service) |
+| **Numerai** | Small python libs | Tournament + hedge fund | OSS = SDK; the business is the hedge fund operating with the crowdsourced meta-model. They pay in NMR token. | MIT (libs); the model is not easily replicable |
 
-**Patrones repetibles para iguanatrader:**
+**Repeatable patterns for iguanatrader:**
 
-1. **OSS = engine + SDK; SaaS = todo lo "managed"** (datos, compute, multi-user, hosted dashboard, soporte). QC y Lumiwealth.
-2. **License moat**: Apache 2.0 puro permite replicación del SaaS por terceros. **Commons Clause** (vectorbt) o **AGPL** (backtesting.py) bloquean SaaS competidor pero ahuyentan algunos usuarios. Trade-off explícito.
-3. **Education-as-revenue** (Lumiwealth, QuantStart, Jesse): cursos y libros generan margen alto y embeden la herramienta.
-4. **Marketplace de estrategias** (QC Alpha Streams, Numerai meta-model): network effect raro pero defensible. Largo plazo.
-5. **Exchange-fee-share** (Hummingbot): solo aplica a cripto, no a equity. Ignorar para iguanatrader.
+1. **OSS = engine + SDK; SaaS = everything "managed"** (data, compute, multi-user, hosted dashboard, support). QC and Lumiwealth.
+2. **License moat**: pure Apache 2.0 allows third parties to replicate the SaaS. **Commons Clause** (vectorbt) or **AGPL** (backtesting.py) block competing SaaS but scare off some users. Explicit trade-off.
+3. **Education-as-revenue** (Lumiwealth, QuantStart, Jesse): courses and books generate high margins and embed the tool.
+4. **Strategy marketplace** (QC Alpha Streams, Numerai meta-model): rare but defensible network effect. Long term.
+5. **Exchange-fee-share** (Hummingbot): only applies to crypto, not to equity. Ignore for iguanatrader.
 
 ---
 
-## 5. Síntesis estratégica
+## 5. Strategic synthesis
 
-### (a) ¿Hay un OSS tan completo que iguanatrader debería usarlo en vez de construir?
+### (a) Is there an OSS so complete that iguanatrader should use it instead of building?
 
-**Respuesta honesta: NO, pero estás cerca.**
+**Honest answer: NO, but you're close.**
 
-- **Lean** cubre engine + brokers + backtest↔live perfectamente. No cubre LLM-orchestrated routines, approval gate, ni cost observability. Si iguanatrader fuera "yet another Python trading framework", la respuesta sería "use Lean y termina". Como NO lo es, Lean es **componente subyacente posible**, no el producto.
-- **Lumibot** es lo más cercano funcionalmente al MVP. Si tu objetivo fuese "lanzar mañana en vez de en 3 meses", **forkearías Lumibot y añadirías el approval gate + LLM layer encima**.
-- **NautilusTrader** es la apuesta a 3 años para el engine. Para MVP es overkill.
+- **Lean** covers engine + brokers + backtest↔live perfectly. It does not cover LLM-orchestrated routines, approval gate, or cost observability. If iguanatrader were "yet another Python trading framework", the answer would be "use Lean and you're done". Since it is NOT, Lean is **a possible underlying component**, not the product.
+- **Lumibot** is the closest functionally to the MVP. If your goal were "launch tomorrow instead of in 3 months", **you would fork Lumibot and add the approval gate + LLM layer on top**.
+- **NautilusTrader** is the 3-year bet for the engine. For MVP it is overkill.
 
-**Conclusión:** No abandonar el proyecto. Sí abandonar la idea de **escribir el engine de execution desde cero**. Wrappear `ib_async` en una capa fina y, cuando llegue el momento, migrar a Lean o Nautilus como engine subyacente.
+**Conclusion:** Don't abandon the project. Do abandon the idea of **writing the execution engine from scratch**. Wrap `ib_async` in a thin layer and, when the time comes, migrate to Lean or Nautilus as the underlying engine.
 
-### (b) Top candidatos para fork
+### (b) Top candidates to fork
 
-1. **Lumibot** — match más alto del MVP. Python puro, IBKR, backtest↔live, Apache (probable). Pega: comunidad pequeña, código menos pulido. Riesgo de heredar deuda técnica.
-2. **NautilusTrader** — apuesta técnica fuerte. Pega: LGPL es un ítem para auditar antes; Rust en el core eleva la barra de contribución externa.
-3. **Lean** — opción "industrial". Pega: C#-Python híbrido es pesado para dev solo; productividad penalizada en MVP.
+1. **Lumibot** — highest match to the MVP. Pure Python, IBKR, backtest↔live, Apache (likely). Downside: small community, less polished code. Risk of inheriting technical debt.
+2. **NautilusTrader** — strong technical bet. Downside: LGPL is an item to audit beforehand; Rust at the core raises the bar for external contribution.
+3. **Lean** — the "industrial" option. Downside: hybrid C#-Python is heavy for a solo dev; productivity penalty in MVP.
 
-**Recomendación operativa:** **No forkear ninguno en MVP**. Construir capa Python propia con `ib_async` directo. Mantener `BrokerInterface` abstracto desde el día 1 para poder enchufar Lumibot/Nautilus como adapter en v2. Esto es el "embrace pero no acoplar".
+**Operational recommendation:** **Fork none in the MVP**. Build a custom Python layer with `ib_async` directly. Keep a `BrokerInterface` abstract from day 1 so Lumibot/Nautilus can be plugged as adapters in v2. This is the "embrace but don't couple".
 
-### (c) ¿Qué gaps cubre iguanatrader que nadie más cubre?
+### (c) What gaps does iguanatrader cover that nobody else covers?
 
-**Validación de la hipótesis: en gran parte sí.**
+**Hypothesis validation: largely yes.**
 
-| Gap | Cubierto por OSS hoy | Cubierto por SaaS comercial hoy |
+| Gap | Covered by OSS today | Covered by commercial SaaS today |
 |---|---|---|
-| LLM-orchestrated routines (pre-market briefing, weekly review) | No (TradingAgents es demo, no production) | Composer "Trade With AI" parcialmente, Architect.co parcialmente |
-| Approval gate **por trade** vía Telegram + dashboard | Freqtrade comandos parciales (cripto) | No |
-| Backtest↔live parity en Python puro | Sí (Lean, Nautilus, Lumibot) | N/A |
-| Cost observability del propio LLM stack en USD | **No, en ningún sitio** | No |
-| IBKR retail con approval gate | No | No |
-| Risk caps (2%/5%/15%) con kill-switch automatizado | Parcial (Freqtrade, Lean tienen pieces) | Composer no expone esto al usuario |
+| LLM-orchestrated routines (pre-market briefing, weekly review) | No (TradingAgents is a demo, not production) | Composer "Trade With AI" partially, Architect.co partially |
+| Approval gate **per trade** via Telegram + dashboard | Freqtrade partial commands (crypto) | No |
+| Backtest↔live parity in pure Python | Yes (Lean, Nautilus, Lumibot) | N/A |
+| Cost observability of the LLM stack itself in USD | **No, nowhere** | No |
+| Retail IBKR with approval gate | No | No |
+| Risk caps (2%/5%/15%) with automated kill-switch | Partial (Freqtrade, Lean have pieces) | Composer doesn't expose this to the user |
 
-**El verdadero diferencial es la combinación**: *"LLM propone estrategia y trades → humano aprueba en Telegram → engine determinista ejecuta vía IBKR → cada API call de LLM y broker se loggea con su coste USD → kill-switch automático si excedo 5% diario"*. **Este flujo end-to-end no existe en OSS hoy**.
+**The real differentiator is the combination**: *"LLM proposes strategy and trades → human approves on Telegram → deterministic engine executes via IBKR → every LLM and broker API call is logged with its USD cost → automatic kill-switch if I exceed 5% daily"*. **This end-to-end flow does not exist in OSS today**.
 
-### (d) Panorama competitivo: ¿saturado, creciente, muriendo, nicho?
+### (d) Competitive landscape: saturated, growing, dying, niche?
 
-- **Mercado total**: $25-32B en 2026, CAGR 13-15%, retail = 38.5% del market share. **Crece fuerte**.
-- **Cripto bots OSS**: **saturado** — Freqtrade, Hummingbot, OctoBot, Jesse compiten sobre cripto. Tendencia: consolidación (Freqtrade gana long-tail; Hummingbot gana market-making; OctoBot gana low-code/UI).
-- **Equity/multi-asset OSS**: **menos saturado, dominado por Lean**. NautilusTrader y Lumibot son los retadores serios.
-- **Quant SaaS retail B2C**: **creciente y oportunista**. Composer ($40/mes, no-code, AI) está creciendo; QuantConnect Cloud cubre prosumer; pero el segmento "retail con cuenta IBKR pequeña/mediana que quiere algo más serio que Composer y menos pesado que QC" está **subatendido**.
-- **LLM-agent trading**: **explosión de hype 2025-2026**, mayoría son demos académicos (TradingAgents) o tutoriales Medium. **Ninguno production-grade con risk engine real y approval gate**. Aquí está la ventana.
+- **Total market**: $25-32B in 2026, CAGR 13-15%, retail = 38.5% of market share. **Growing strong**.
+- **OSS crypto bots**: **saturated** — Freqtrade, Hummingbot, OctoBot, Jesse all compete on crypto. Trend: consolidation (Freqtrade wins the long tail; Hummingbot wins market-making; OctoBot wins low-code/UI).
+- **OSS equity/multi-asset**: **less saturated, dominated by Lean**. NautilusTrader and Lumibot are the serious challengers.
+- **Retail B2C quant SaaS**: **growing and opportunistic**. Composer ($40/month, no-code, AI) is growing; QuantConnect Cloud covers the prosumer segment; but the "retail with a small/medium IBKR account that wants something more serious than Composer and less heavy than QC" segment is **underserved**.
+- **LLM-agent trading**: **2025-2026 hype explosion**, most are academic demos (TradingAgents) or Medium tutorials. **None production-grade with a real risk engine and approval gate**. The window is here.
 
-**Survivors clave y por qué siguen vivos:**
-- **Lean / QuantConnect**: efecto red + datos licenciados + financiación corporativa.
-- **Freqtrade**: comunidad enorme + maintainer dedicado + nicho cripto con monetización indirecta (cursos, signals).
-- **NautilusTrader**: backing corporativo (Nautech Systems Pty Ltd) + diferenciación técnica clara (Rust).
-- **Hummingbot**: Foundation con governance + revenue indirecto (exchange fees).
+**Key survivors and why they're still alive:**
+- **Lean / QuantConnect**: network effect + licensed data + corporate funding.
+- **Freqtrade**: huge community + dedicated maintainer + crypto niche with indirect monetization (courses, signals).
+- **NautilusTrader**: corporate backing (Nautech Systems Pty Ltd) + clear technical differentiation (Rust).
+- **Hummingbot**: Foundation with governance + indirect revenue (exchange fees).
 
-**Tendencia 2026:** **convergencia LLM + trading**. Quien lo haga bien primero (con risk engine serio + approval gate, no full-auto cowboy) define la categoría.
+**2026 trend:** **LLM + trading convergence**. Whoever does it well first (with a serious risk engine + approval gate, not full-auto cowboy) defines the category.
 
 ---
 
 ## 6. Ideas worth stealing
 
 ### UX
-- **Freqtrade Telegram commands**: `/status`, `/profit`, `/forcebuy`, `/forcesell`, `/stop`, `/reload_config`. Adaptar para iguanatrader: `/propose`, `/approve <trade_id>`, `/reject <trade_id>`, `/halt`, `/resume`, `/risk_status`, `/cost_today`.
-- **Freqtrade `dry-run` mode**: switch entre paper y live con un flag en config. Imitar.
-- **Composer "symphony" visual**: aunque iguanatrader no sea no-code, **un visualizador de la estrategia activa en el dashboard es oro**.
-- **QC backtest report HTML auto-generado**: imitar formato (equity curve, drawdown, trades, métricas Sharpe/Sortino/Calmar).
-- **Lumibot "BotSpot" idea**: módulo opt-in para inyectar señales LLM (sentiment, news). Idem patrón.
+- **Freqtrade Telegram commands**: `/status`, `/profit`, `/forcebuy`, `/forcesell`, `/stop`, `/reload_config`. Adapt for iguanatrader: `/propose`, `/approve <trade_id>`, `/reject <trade_id>`, `/halt`, `/resume`, `/risk_status`, `/cost_today`.
+- **Freqtrade `dry-run` mode**: switch between paper and live with a flag in config. Imitate.
+- **Composer "symphony" visual**: even if iguanatrader is not no-code, **a visualizer of the active strategy on the dashboard is gold**.
+- **QC auto-generated backtest HTML report**: imitate the format (equity curve, drawdown, trades, Sharpe/Sortino/Calmar metrics).
+- **Lumibot "BotSpot" idea**: opt-in module to inject LLM signals (sentiment, news). Same pattern.
 
-### Arquitectura
-- **NautilusTrader's `MessageBus` + separated engines** (`DataEngine`, `ExecutionEngine`, `RiskEngine`): replicable en Python con asyncio + queues. Limpieza arquitectónica que iguanatrader debería abrazar desde día 1.
-- **Lean's `BrokerageModel`**: abstracción que permite testear con un "ideal broker" en backtest y plug del real en live. Replicable.
-- **Freqtrade's strategy interface**: `populate_indicators`, `populate_entry_trend`, `populate_exit_trend` — separación clara de concerns. Adaptar a `propose_signals`, `request_approval`, `execute_approved`.
-- **QSTrader's modular schedule-based portfolio construction**: signal → portfolio construction → risk → execution, completamente desacoplado. Bueno como referencia.
-- **`ib_async`'s sync+async dual API**: usar async en hot path, sync en research scripts. Patrón a seguir.
+### Architecture
+- **NautilusTrader's `MessageBus` + separated engines** (`DataEngine`, `ExecutionEngine`, `RiskEngine`): replicable in Python with asyncio + queues. Architectural cleanliness that iguanatrader should embrace from day 1.
+- **Lean's `BrokerageModel`**: abstraction that lets you test with an "ideal broker" in backtest and plug in the real one in live. Replicable.
+- **Freqtrade's strategy interface**: `populate_indicators`, `populate_entry_trend`, `populate_exit_trend` — clear separation of concerns. Adapt to `propose_signals`, `request_approval`, `execute_approved`.
+- **QSTrader's modular schedule-based portfolio construction**: signal → portfolio construction → risk → execution, fully decoupled. Good as a reference.
+- **`ib_async`'s sync+async dual API**: use async on the hot path, sync in research scripts. Pattern to follow.
 
-### Monetización (visión a largo plazo)
-- **Composer's $40/mes flat** = techo psicológico para retail no-pro en este vertical. Pricing inicial sugerido: **$29-49/mes** tier individual, **$199-499/mes** tier "team" (3-5 seats).
-- **Freemium tier**: paper trading + 1 estrategia gratis (como QC free). Conversión cuando el usuario quiere live + risk caps + approval flow.
-- **Education flywheel** (Lumiwealth, QuantStart, Jesse): blog + curso de pago + bot premium. Margen alto, customer acquisition orgánico.
-- **No marketplace de estrategias en v1** — alta complejidad legal y operacional, requiere masa crítica que iguanatrader no tendrá año 1.
-- **Cost-pass-through del LLM**: cobrar margen sobre el coste de Anthropic/Perplexity API. iguanatrader tiene cost observability nativa, esto es defensible.
+### Monetization (long-term vision)
+- **Composer's $40/month flat** = psychological ceiling for non-pro retail in this vertical. Suggested initial pricing: **$29-49/month** individual tier, **$199-499/month** "team" tier (3-5 seats).
+- **Freemium tier**: paper trading + 1 free strategy (like QC free). Conversion when the user wants live + risk caps + approval flow.
+- **Education flywheel** (Lumiwealth, QuantStart, Jesse): blog + paid course + premium bot. High margin, organic customer acquisition.
+- **No strategy marketplace in v1** — high legal and operational complexity, requires a critical mass iguanatrader won't have in year 1.
+- **LLM cost-pass-through**: charge a margin on Anthropic/Perplexity API costs. iguanatrader has native cost observability, which is defensible.
 
 ### Community building
-- **Discord >> Slack** para retail quant (Freqtrade, NautilusTrader, vectorbt PRO todos en Discord).
-- **GitHub Discussions** activo para bug-reports estructurados (NautilusTrader lo hace bien).
-- **Newsletter mensual** (Hummingbot lo hace excelente — Substack mensual con métricas, releases, roadmap).
-- **Cohort-based course** (estilo Lumiwealth) cada trimestre: high-touch, high-margin, generates content + advocates.
-- **Open roadmap público** en GitHub (Freqtrade, NautilusTrader): transparencia atrae contributors.
+- **Discord >> Slack** for retail quant (Freqtrade, NautilusTrader, vectorbt PRO all on Discord).
+- **Active GitHub Discussions** for structured bug reports (NautilusTrader does it well).
+- **Monthly newsletter** (Hummingbot does this excellently — monthly Substack with metrics, releases, roadmap).
+- **Cohort-based course** (Lumiwealth style) every quarter: high-touch, high-margin, generates content + advocates.
+- **Public open roadmap** on GitHub (Freqtrade, NautilusTrader): transparency attracts contributors.
 
 ---
 
-## 7. Riesgos y pitfalls observados
+## 7. Risks and pitfalls observed
 
-### Por qué murieron proyectos
-- **Quantopian (RIP 2020)**: regalar todo y monetizar después con un fondo cuyo alpha falló. **Lección: monetizar pronto y modesto, no apostar la viabilidad a un único alpha**.
-- **Backtrader (dormant 2023+)**: **bus factor 1**. Maintainer dejó. Comunidad no organizó takeover. **Lección: bus factor ≥ 2 desde día 1; gobernanza explícita**.
-- **PyAlgoTrade (dormant)**: idem bus factor + Python 3 transition no completada a tiempo.
-- **Catalyst (Enigma)**: arrastrado por SEC enforcement contra Enigma (ICO ENG no registrado). **Lección: no atar trading platform a esquemas tokenizados/ICO speculative**.
-- **bt (abandoned)**: API limpia pero scope demasiado nicho (rebalancing portfolio); falta de live trading lo dejó sin pull commercial.
+### Why projects died
+- **Quantopian (RIP 2020)**: give everything away and monetize later via a fund whose alpha failed. **Lesson: monetize early and modestly, do not bet viability on a single alpha**.
+- **Backtrader (dormant 2023+)**: **bus factor 1**. Maintainer left. Community didn't organize a takeover. **Lesson: bus factor ≥ 2 from day 1; explicit governance**.
+- **PyAlgoTrade (dormant)**: same bus factor + Python 3 transition not completed in time.
+- **Catalyst (Enigma)**: dragged down by SEC enforcement against Enigma (unregistered ENG ICO). **Lesson: do not tie a trading platform to tokenized/ICO speculative schemes**.
+- **bt (abandoned)**: clean API but too niche a scope (portfolio rebalancing); lack of live trading left it without commercial pull.
 
-### Errores arquitectónicos comunes
-- **Backtest engine ≠ live engine**: cuando son código distinto cosido, paridad falla en producción. **Lean y Nautilus lo resolvieron usando un único event loop**. Imitar.
-- **LLM en el hot path**: latencia + coste + non-determinismo destruyen el risk engine. **Mantener LLM solo en research/orchestration, NUNCA en execution**. iguanatrader ya tiene esto correcto en su arquitectura de 3 capas.
-- **Multi-tenancy bolted on después**: imposible refactorizar a multi-tenant si SQLite + filesystem está hardcoded. **Diseñar el `tenant_id` como first-class desde día 1**, aunque MVP sea single-user.
-- **Risk engine como afterthought**: en Backtrader y PyAlgoTrade los risk caps eran opt-in y se olvidaban. **Risk engine debe ser obligatorio; estrategias proponen, risk engine aprueba/recorta/rechaza**.
-- **No tener `dry-run` desde día 1**: error fatal. Freqtrade lo tiene, y por eso retail no se quema en producción primer día.
+### Common architectural mistakes
+- **Backtest engine ≠ live engine**: when they are different code stitched together, parity fails in production. **Lean and Nautilus solved it by using a single event loop**. Imitate.
+- **LLM on the hot path**: latency + cost + non-determinism destroy the risk engine. **Keep LLM only in research/orchestration, NEVER in execution**. iguanatrader already has this right in its 3-layer architecture.
+- **Multi-tenancy bolted on later**: impossible to refactor to multi-tenant if SQLite + filesystem is hardcoded. **Design `tenant_id` as first-class from day 1**, even if the MVP is single-user.
+- **Risk engine as an afterthought**: in Backtrader and PyAlgoTrade risk caps were opt-in and easy to forget. **The risk engine must be mandatory; strategies propose, the risk engine approves/trims/rejects**.
+- **No `dry-run` from day 1**: fatal mistake. Freqtrade has it, and that's why retail doesn't get burned in production on day one.
 
-### Errores de monetización comunes
-- **Free forever sin path a paid**: Quantopian. Drena recursos sin retorno.
-- **Pago por feature en vez de por capacidad** (ej. cobrar por "número de estrategias"): retail churnea. Mejor pricing por **AUM gestionado** o **número de cuentas conectadas** o **flat tier con capacidad clara**.
-- **Token utility coin** (Numerai NMR, HBOT): sirve a Numerai porque hay un hedge fund detrás. Para iguanatrader sería distracción regulatoria.
-- **AGPL puede frenar adoption corporativa**: backtesting.py limita su upside porque corps tienen miedo de AGPL. **Apache 2.0 + Commons Clause es el sweet spot** si quieres bloquear SaaS competidor sin asustar a usuarios.
+### Common monetization mistakes
+- **Free forever with no path to paid**: Quantopian. Drains resources with no return.
+- **Pay-per-feature instead of per-capacity** (e.g. charging for "number of strategies"): retail churns. Better pricing by **AUM managed**, **number of connected accounts** or **flat tier with clear capacity**.
+- **Token utility coin** (Numerai NMR, HBOT): works for Numerai because there's a hedge fund behind it. For iguanatrader it would be a regulatory distraction.
+- **AGPL can stall corporate adoption**: backtesting.py limits its upside because corps fear AGPL. **Apache 2.0 + Commons Clause is the sweet spot** if you want to block a competing SaaS without scaring off users.
 
-### Riesgos regulatorios
-- **EE.UU. (SEC/FINRA)**: si das señales accionables a múltiples usuarios, puedes caer en "investment advisor". Approval gate por usuario individual mitiga (es el usuario quien decide), pero auditar.
-- **EU (MiFID II)**: distribuir software OSS es seguro; ofrecer SaaS gestionado en EU exige cuidado con definición de "investment service".
-- **Tax reporting**: si SaaS opera trades en nombre del usuario (incluso vía approval), puede convertirte en "broker" a efectos fiscales. **Mantener arquitectura "el usuario es quien tiene la cuenta IBKR; tú solo orquestas su software"** es defensible.
+### Regulatory risks
+- **US (SEC/FINRA)**: if you give actionable signals to multiple users, you may fall under "investment advisor". A per-user approval gate mitigates (the user decides), but audit it.
+- **EU (MiFID II)**: distributing OSS software is safe; offering a managed SaaS in the EU requires care with the definition of "investment service".
+- **Tax reporting**: if the SaaS executes trades on behalf of the user (even via approval), it may turn you into a "broker" for tax purposes. **Keep the architecture "the user owns the IBKR account; you only orchestrate their software"** — that is defensible.
 
 ---
 
-## 8. Recomendación para iguanatrader (veredicto honesto)
+## 8. Recommendation for iguanatrader (honest verdict)
 
-### MVP (corto plazo, próximos 3 meses)
+### MVP (short term, next 3 months)
 
-**Construir desde cero, NO forkear, pero pararse sobre hombros de gigantes.**
+**Build from scratch, DO NOT fork, but stand on the shoulders of giants.**
 
-1. **Engine de execution**: wrap fino sobre `ib_async` directamente. NO meter Lean/Nautilus en MVP — la complejidad de su API te frenará. Mantener una `BrokerInterface` abstracta para poder enchufar adapters en v2.
-2. **Backtest engine**: escribir uno simple event-driven propio para Donchian + ATR. Validar paridad con un único test: corre la misma estrategia en backtest y en paper trading sobre el mismo periodo, compara fills. Si Lean/Nautilus se sienten necesarios después, plug-in via adapter.
-3. **Research sandbox**: usar **vectorbt** (OSS, Apache + Commons Clause es OK para uso interno research) para grid-search de parámetros. Es exactamente para eso.
-4. **Telegram + dashboard**: copiar literal el set de comandos de Freqtrade adaptado: `/propose`, `/approve`, `/reject`, `/halt`, `/risk_status`, `/cost_today`. FastAPI local sirve dashboard.
-5. **Risk engine**: separado, obligatorio, kill-switch hardcoded a 5% daily / 15% weekly. Estrategias **proponen**, risk engine **filtra/recorta/rechaza** ANTES de que el approval gate vea el trade.
-6. **LangGraph orchestration**: para routines (pre-market briefing, weekly review). NO en hot path. Cada node loggea su `provider`, `model`, `tokens_in`, `tokens_out`, `usd_cost` a SQLite.
-7. **Cost observability**: tabla `llm_calls` en SQLite append-only. Comando `/cost_today` y `/cost_week` en Telegram.
+1. **Execution engine**: thin wrap over `ib_async` directly. DO NOT put Lean/Nautilus in the MVP — the complexity of their API will slow you down. Keep a `BrokerInterface` abstract so you can plug adapters in v2.
+2. **Backtest engine**: write a simple custom event-driven one for Donchian + ATR. Validate parity with a single test: run the same strategy in backtest and in paper trading over the same period, compare fills. If Lean/Nautilus feel necessary later, plug-in via adapter.
+3. **Research sandbox**: use **vectorbt** (OSS, Apache + Commons Clause is OK for internal research use) for parameter grid-search. That is exactly what it's for.
+4. **Telegram + dashboard**: literally copy Freqtrade's command set adapted: `/propose`, `/approve`, `/reject`, `/halt`, `/risk_status`, `/cost_today`. Local FastAPI serves the dashboard.
+5. **Risk engine**: separate, mandatory, kill-switch hardcoded at 5% daily / 15% weekly. Strategies **propose**, the risk engine **filters/trims/rejects** BEFORE the approval gate sees the trade.
+6. **LangGraph orchestration**: for routines (pre-market briefing, weekly review). NOT on the hot path. Each node logs its `provider`, `model`, `tokens_in`, `tokens_out`, `usd_cost` to SQLite.
+7. **Cost observability**: append-only `llm_calls` table in SQLite. `/cost_today` and `/cost_week` commands on Telegram.
 
-**Lo que NO hacer en MVP:**
-- No multi-asset (solo equity US vía IBKR).
-- No multi-strategy (solo Donchian+ATR v0).
-- No ML/RL (FinRL es para v3+).
-- No marketplace, no community features, no tier free.
-- No pre-market scanning del universo entero — solo watchlist manual.
+**What NOT to do in the MVP:**
+- No multi-asset (US equity only via IBKR).
+- No multi-strategy (only Donchian+ATR v0).
+- No ML/RL (FinRL is for v3+).
+- No marketplace, no community features, no free tier.
+- No pre-market scanning of the whole universe — manual watchlist only.
 
-### v2 (6-12 meses)
+### v2 (6-12 months)
 
-- Decidir engine subyacente: **Lumibot** si quieres velocidad de feature, **NautilusTrader** si quieres apostar técnico, **Lean** si quieres consensus. Migración con `BrokerInterface` que ya estará lista.
-- Multi-tenant readiness: `tenant_id` first-class, postgres en vez de sqlite (o sqlite per-tenant con tenant-router), object storage para parquets.
-- Approval gate vía Web (no solo Telegram) para usuarios non-techie.
+- Decide the underlying engine: **Lumibot** if you want feature velocity, **NautilusTrader** if you want a technical bet, **Lean** if you want consensus. Migration via the `BrokerInterface` that will already be ready.
+- Multi-tenant readiness: first-class `tenant_id`, postgres instead of sqlite (or per-tenant sqlite with tenant-router), object storage for parquets.
+- Approval gate via Web (not only Telegram) for non-techie users.
 
-### v3 / SaaS (12-24 meses)
+### v3 / SaaS (12-24 months)
 
-- Modelo: **OSS Apache-2.0 + Commons Clause** (bloquea SaaS competidor) + tier SaaS hosted ($29 individual / $199 team).
-- Education flywheel: blog técnico + curso cohort-based trimestral.
-- NO entrar en marketplace de estrategias hasta tener >1000 usuarios pagantes.
-- Considerar entrar en EU primero (regulación más clara para "user-owned-account orchestration") antes que US.
+- Model: **OSS Apache-2.0 + Commons Clause** (blocks competing SaaS) + hosted SaaS tier ($29 individual / $199 team).
+- Education flywheel: technical blog + quarterly cohort-based course.
+- DO NOT enter the strategy marketplace until you have >1000 paying users.
+- Consider entering the EU first (clearer regulation for "user-owned-account orchestration") before the US.
 
-### TL;DR del veredicto
+### TL;DR of the verdict
 
-> iguanatrader **NO es redundante** con la oferta OSS actual. Su diferencial — **LLM-orchestrated proposals + human approval gate + cost observability + IBKR retail** — no existe en ningún proyecto OSS hoy. Construir el MVP en Python puro sobre `ib_async`, **robar UX de Freqtrade**, **robar arquitectura modular de NautilusTrader**, **robar pricing/positioning de Composer**, y dejar la puerta abierta para que el engine de execution sea reemplazable por Lumibot/Lean/Nautilus en v2. La oportunidad de mercado es real, está creciendo, y la categoría "responsible LLM-orchestrated retail trading" está abierta.
+> iguanatrader is **NOT redundant** with today's OSS offering. Its differentiator — **LLM-orchestrated proposals + human approval gate + cost observability + retail IBKR** — does not exist in any OSS project today. Build the MVP in pure Python on top of `ib_async`, **steal UX from Freqtrade**, **steal modular architecture from NautilusTrader**, **steal pricing/positioning from Composer**, and leave the door open for the execution engine to be replaceable by Lumibot/Lean/Nautilus in v2. The market opportunity is real, growing, and the "responsible LLM-orchestrated retail trading" category is wide open.
 
 ---
 

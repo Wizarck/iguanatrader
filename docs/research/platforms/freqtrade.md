@@ -1,131 +1,131 @@
-# Freqtrade — Deep-dive técnico para iguanatrader
+# Freqtrade — Technical deep-dive for iguanatrader
 
-**Fecha:** 2026-04-27
+**Date:** 2026-04-27
 **Repo:** https://github.com/freqtrade/freqtrade
 **Docs:** https://www.freqtrade.io/en/stable/
-**Maintainer:** Comunidad + Matthias Voppichler (lead)
-**Branch default:** `develop`
-**Última actividad:** 2026-04-27 (commits hoy mismo)
-**Stars:** 49.440 ⚠️ (la research previa decía 30k — el más popular del ecosistema **por mucho**)
-**Licencia:** **GPL-3.0**
+**Maintainer:** Community + Matthias Voppichler (lead)
+**Default branch:** `develop`
+**Last activity:** 2026-04-27 (commits today)
+**Stars:** 49,440 ⚠️ (prior research said 30k — by far the most popular in the ecosystem)
+**License:** **GPL-3.0**
 
 ---
 
-## 1. Veredicto rápido (TL;DR)
+## 1. Quick verdict (TL;DR)
 
-Freqtrade es **la fuente más rica de patrones a robar** del ecosistema OSS, aunque sea cripto-only y GPL-3.0 (no usable como base para iguanatrader). Tres pilares oro: **(1)** el set completo de comandos Telegram (es la UX que iguanatrader necesita literal), **(2)** el sistema de **Protections** (risk management built-in modular y obligatorio), **(3)** el modelo `dry-run` desde día 1.
+Freqtrade is **the richest source of patterns to steal** in the OSS ecosystem, even though it is crypto-only and GPL-3.0 (not usable as a base for iguanatrader). Three golden pillars: **(1)** the full Telegram command set (it is literally the UX iguanatrader needs), **(2)** the **Protections** system (built-in, modular, mandatory risk management), **(3)** the `dry-run` model from day 1.
 
-**Para iguanatrader**: copiar el patrón Telegram **directo**, copiar la arquitectura de Protections **directo**, ignorar lo demás.
+**For iguanatrader**: copy the Telegram pattern **directly**, copy the Protections architecture **directly**, ignore the rest.
 
 ---
 
-## 2. Comandos Telegram — el catálogo completo
+## 2. Telegram commands — the full catalog
 
-Freqtrade expone **~30 comandos Telegram**, divididos en 5 categorías. Esto es **el catálogo más completo del ecosistema OSS**.
+Freqtrade exposes **~30 Telegram commands**, split into 5 categories. This is **the most complete catalog in the OSS ecosystem**.
 
-### Sistema
-| Comando | Args | Función |
+### System
+| Command | Args | Function |
 |---|---|---|
-| `/start` | — | Arranca el trader |
-| `/pause` (alias `/stopentry`) | — | Pausa nuevas entradas, mantiene gestión de trades abiertos |
-| `/stop` | — | Para el trader completo |
-| `/reload_config` | — | Recarga el config sin reiniciar el bot |
-| `/show_config` | — | Muestra parte de la config actual |
-| `/logs` | `[limit]` | Últimos N mensajes de log |
+| `/start` | — | Starts the trader |
+| `/pause` (alias `/stopentry`) | — | Pauses new entries, keeps managing open trades |
+| `/stop` | — | Stops the trader completely |
+| `/reload_config` | — | Reloads the config without restarting the bot |
+| `/show_config` | — | Shows part of the current config |
+| `/logs` | `[limit]` | Last N log messages |
 | `/help` | — | Help |
-| `/version` | — | Versión del bot |
+| `/version` | — | Bot version |
 
 ### Status & info
-| Comando | Args | Función |
+| Command | Args | Function |
 |---|---|---|
-| `/status` | `[trade_id]` | Lista trades abiertos (todos o uno específico) |
-| `/status table` | — | Tabla de trades abiertos con marca de pending |
-| `/order` | `<trade_id>` | Lista de órdenes de un trade |
-| `/trades` | `[limit]` | Últimos N trades cerrados |
-| `/count` | — | Trades abiertos / disponibles |
-| `/locks` | — | Pares actualmente locked |
-| `/unlock` | `<pair or lock_id>` | Quita lock |
-| `/marketdir` | `[long\|short\|even\|none]` | Muestra/cambia dirección de mercado |
+| `/status` | `[trade_id]` | Lists open trades (all or a specific one) |
+| `/status table` | — | Table of open trades with pending marker |
+| `/order` | `<trade_id>` | List of orders for a trade |
+| `/trades` | `[limit]` | Last N closed trades |
+| `/count` | — | Open / available trades |
+| `/locks` | — | Currently locked pairs |
+| `/unlock` | `<pair or lock_id>` | Removes lock |
+| `/marketdir` | `[long\|short\|even\|none]` | Shows/changes market direction |
 
-### Modificación de trades
-| Comando | Args | Función | Restricción |
+### Trade modification
+| Command | Args | Function | Restriction |
 |---|---|---|---|
-| `/forceexit` (alias `/fx`) | `<trade_id>` o `all` | Cierra trade(s) ignorando `minimum_roi` | — |
-| `/forcelong` | `<pair> [rate]` | Compra inmediata | `force_entry_enable: true` |
-| `/forceshort` | `<pair> [rate]` | Venta corta inmediata | Solo non-spot, `force_entry_enable: true` |
-| `/delete` | `<trade_id>` | Borra trade de la DB | Manual exchange handling |
-| `/reload_trade` | `<trade_id>` | Recarga trade desde exchange | Solo live |
-| `/cancel_open_order` (alias `/coo`) | `<trade_id>` | Cancela orden abierta |
+| `/forceexit` (alias `/fx`) | `<trade_id>` or `all` | Closes trade(s) ignoring `minimum_roi` | — |
+| `/forcelong` | `<pair> [rate]` | Immediate buy | `force_entry_enable: true` |
+| `/forceshort` | `<pair> [rate]` | Immediate short sell | Non-spot only, `force_entry_enable: true` |
+| `/delete` | `<trade_id>` | Deletes trade from DB | Manual exchange handling |
+| `/reload_trade` | `<trade_id>` | Reloads trade from exchange | Live only |
+| `/cancel_open_order` (alias `/coo`) | `<trade_id>` | Cancels open order |
 
-### Performance & finanzas
-| Comando | Args | Función |
+### Performance & finance
+| Command | Args | Function |
 |---|---|---|
-| `/profit` | `[n]` (días) | Resumen P&L de trades cerrados |
-| `/profit_long` / `/profit_short` | `[n]` | Idem solo long / solo short |
-| `/performance` | — | P&L por par (símbolo) |
-| `/balance` | `[full]` | Balance gestionado o full por currency |
-| `/daily` | `[n=7]` | P&L por día últimos N días |
-| `/weekly` | `[n=8]` | P&L por semana |
-| `/monthly` | `[n=6]` | P&L por mes |
-| `/stats` (alias `/exits`, `/entries`) | — | Wins/losses por exit reason + holding durations |
+| `/profit` | `[n]` (days) | P&L summary of closed trades |
+| `/profit_long` / `/profit_short` | `[n]` | Same, long-only / short-only |
+| `/performance` | — | P&L per pair (symbol) |
+| `/balance` | `[full]` | Managed or full balance per currency |
+| `/daily` | `[n=7]` | P&L per day over last N days |
+| `/weekly` | `[n=8]` | P&L per week |
+| `/monthly` | `[n=6]` | P&L per month |
+| `/stats` (alias `/exits`, `/entries`) | — | Wins/losses per exit reason + holding durations |
 
 ### Pair management
-| Comando | Args | Función |
+| Command | Args | Function |
 |---|---|---|
-| `/whitelist` | `[sorted] [baseonly]` | Whitelist actual |
-| `/blacklist` | `[pair]` | Muestra blacklist o añade un par |
+| `/whitelist` | `[sorted] [baseonly]` | Current whitelist |
+| `/blacklist` | `[pair]` | Shows blacklist or adds a pair |
 
-### Mecánicas clave
-- **Custom keyboard buttons**: comandos predefinidos como botones inline (sin args).
-- **`authorized_users`**: lista de user IDs Telegram autorizados; rechaza el resto.
-- **`notification_settings`**: granularidad de qué eventos disparan notificación.
-- **`/reload_config`**: hot-reload sin reiniciar — patrón valioso.
+### Key mechanics
+- **Custom keyboard buttons**: predefined commands as inline buttons (no args).
+- **`authorized_users`**: list of authorized Telegram user IDs; rejects everyone else.
+- **`notification_settings`**: granularity over which events fire notifications.
+- **`/reload_config`**: hot-reload without restart — valuable pattern.
 
 ---
 
-## 3. Mapping Freqtrade → iguanatrader (set propuesto)
+## 3. Mapping Freqtrade → iguanatrader (proposed set)
 
-iguanatrader no necesita los 30 comandos. Mapping recomendado:
+iguanatrader does not need all 30 commands. Recommended mapping:
 
-| Freqtrade | iguanatrader equivalente | Función en iguanatrader |
+| Freqtrade | iguanatrader equivalent | Function in iguanatrader |
 |---|---|---|
-| `/start` | `/start` | Arranca routines (no trades — los trades requieren approval) |
-| `/stop` | `/stop` | Para todo |
-| `/pause` | `/pause` | Para nuevas propuestas, mantiene posiciones abiertas |
-| `/reload_config` | `/reload_config` | Hot-reload de risk caps, watchlist, etc. |
-| — | **`/propose <strategy> <symbol>`** | Fuerza generación de una propuesta manual (research mode) |
-| `/forcelong` | **`/approve <proposal_id>`** | Aprueba una propuesta pending (botón inline) |
-| — | **`/reject <proposal_id>`** | Rechaza una propuesta (botón inline) |
-| `/forceexit` | **`/forceexit <trade_id>`** | Cierra posición abierta (con confirmación) |
-| `/status` | `/status` | Posiciones abiertas + propuestas pending |
+| `/start` | `/start` | Starts routines (no trades — trades require approval) |
+| `/stop` | `/stop` | Stops everything |
+| `/pause` | `/pause` | Stops new proposals, keeps open positions |
+| `/reload_config` | `/reload_config` | Hot-reload of risk caps, watchlist, etc. |
+| — | **`/propose <strategy> <symbol>`** | Forces generation of a manual proposal (research mode) |
+| `/forcelong` | **`/approve <proposal_id>`** | Approves a pending proposal (inline button) |
+| — | **`/reject <proposal_id>`** | Rejects a proposal (inline button) |
+| `/forceexit` | **`/forceexit <trade_id>`** | Closes open position (with confirmation) |
+| `/status` | `/status` | Open positions + pending proposals |
 | `/balance` | `/balance` | Cash + holdings + total equity |
-| `/profit` | `/profit [days=1]` | P&L del día/periodo |
-| `/daily` | `/daily [n=7]` | P&L por día |
-| `/weekly` | `/weekly [n=4]` | P&L por semana |
-| `/performance` | `/performance` | P&L por símbolo |
-| `/trades` | `/trades [limit=10]` | Últimos N trades cerrados |
-| `/logs` | `/logs [limit=20]` | Últimas N entradas de log |
-| — | **`/risk_status`** | Estado actual de risk caps (cuánto consumido del 5% diario, 15% semanal) |
-| — | **`/cost_today`** y `/cost_week` | Coste LLM acumulado |
-| — | **`/halt`** | Activa kill-switch (escribe `.killswitch` file) |
-| — | **`/resume`** | Quita kill-switch |
-| `/version` | `/version` | Versión del bot |
+| `/profit` | `/profit [days=1]` | P&L for the day/period |
+| `/daily` | `/daily [n=7]` | P&L per day |
+| `/weekly` | `/weekly [n=4]` | P&L per week |
+| `/performance` | `/performance` | P&L per symbol |
+| `/trades` | `/trades [limit=10]` | Last N closed trades |
+| `/logs` | `/logs [limit=20]` | Last N log entries |
+| — | **`/risk_status`** | Current state of risk caps (how much of the 5% daily, 15% weekly consumed) |
+| — | **`/cost_today`** and `/cost_week` | Cumulative LLM cost |
+| — | **`/halt`** | Activates kill-switch (writes `.killswitch` file) |
+| — | **`/resume`** | Removes kill-switch |
+| `/version` | `/version` | Bot version |
 | `/help` | `/help` | Help |
 
-**Total: ~17 comandos**. Suficientes para cubrir el flow approval-gate + observabilidad de iguanatrader.
+**Total: ~17 commands**. Enough to cover the approval-gate flow + observability for iguanatrader.
 
-**Botones inline (Telegram callback queries)** para cada propuesta:
+**Inline buttons (Telegram callback queries)** for each proposal:
 ```
-🟢 Aprobar (botón) | 🔴 Rechazar (botón) | ✏️ Modificar (botón)
+🟢 Approve (button) | 🔴 Reject (button) | ✏️ Modify (button)
 ```
 
-**Mismo set sobre WhatsApp** vía Hermes/Meta API. La capa `ApprovalChannel` traduce el comando text-based a la API correspondiente.
+**Same set over WhatsApp** via Hermes/Meta API. The `ApprovalChannel` layer translates the text-based command to the corresponding API.
 
 ---
 
-## 4. `IStrategy` interface — vectorizada (no event-driven)
+## 4. `IStrategy` interface — vectorized (not event-driven)
 
-A diferencia de Lumibot/Nautilus/Lean (event-driven), Freqtrade es **vectorizado sobre pandas DataFrames**:
+Unlike Lumibot/Nautilus/Lean (event-driven), Freqtrade is **vectorized over pandas DataFrames**:
 
 ```python
 class AwesomeStrategy(IStrategy):
@@ -154,31 +154,31 @@ class AwesomeStrategy(IStrategy):
         return dataframe
 ```
 
-### Tres métodos mandatory
-- `populate_indicators(df, metadata)` — añade indicadores técnicos al df.
-- `populate_entry_trend(df, metadata)` — setea `enter_long` / `enter_short` columns (1 ó 0).
-- `populate_exit_trend(df, metadata)` — setea `exit_long` / `exit_short` columns.
+### Three mandatory methods
+- `populate_indicators(df, metadata)` — adds technical indicators to the df.
+- `populate_entry_trend(df, metadata)` — sets `enter_long` / `enter_short` columns (1 or 0).
+- `populate_exit_trend(df, metadata)` — sets `exit_long` / `exit_short` columns.
 
-### Atributos clave
-- `minimal_roi`: **time-based ROI dict** — *"a los 0min sal con 4%, a los 20min con 2%, a los 30min con 1%, a los 40min sal sí o sí"*. Patrón muy elegante — ROI degradado en el tiempo.
-- `stoploss`: porcentaje base.
+### Key attributes
+- `minimal_roi`: **time-based ROI dict** — *"at 0min exit at 4%, at 20min at 2%, at 30min at 1%, at 40min exit no matter what"*. A very elegant pattern — ROI decayed over time.
+- `stoploss`: base percentage.
 
-### Callbacks (override de comportamiento por trade)
-- `custom_entry_price()` — pricing inteligente vs proposed rate.
-- `custom_exit_price()` — idem para exits.
-- `custom_stake_amount()` — sizing dinámico (ej. menos riesgo si más trades abiertos).
-- `custom_stoploss()` — trailing stops o stoploss dinámico.
-- `leverage()` — para futuros.
-- `confirm_trade_entry()` — **gate booleano antes de entrar** (orderbook check, etc.). **Esto es exactamente el patrón approval-gate, pero implementado con código en vez de humano**.
-- `confirm_trade_exit()` — gate booleano antes de salir.
+### Callbacks (per-trade behavior override)
+- `custom_entry_price()` — smart pricing vs proposed rate.
+- `custom_exit_price()` — same for exits.
+- `custom_stake_amount()` — dynamic sizing (e.g. less risk if more open trades).
+- `custom_stoploss()` — trailing stops or dynamic stoploss.
+- `leverage()` — for futures.
+- `confirm_trade_entry()` — **boolean gate before entering** (orderbook check, etc.). **This is exactly the approval-gate pattern, but implemented with code instead of a human.**
+- `confirm_trade_exit()` — boolean gate before exiting.
 
-**`confirm_trade_entry` es el insertion point natural para meter approval humano en una integración con Freqtrade**. Pero como Freqtrade es cripto + GPL, mejor robar el concepto y reimplementar.
+**`confirm_trade_entry` is the natural insertion point for plugging human approval into a Freqtrade integration**. But since Freqtrade is crypto + GPL, better to steal the concept and reimplement.
 
 ---
 
-## 5. Protections — risk management built-in modular
+## 5. Protections — built-in modular risk management
 
-Freqtrade tiene una **arquitectura de Protections** declarativa via config:
+Freqtrade has a **declarative Protections architecture** via config:
 
 ```json
 {
@@ -201,16 +201,16 @@ Freqtrade tiene una **arquitectura de Protections** declarativa via config:
 }
 ```
 
-**Protections built-in**:
-| Protection | Función |
+**Built-in protections**:
+| Protection | Function |
 |---|---|
-| **StoplossGuard** | Pausa entries tras N stoploss consecutivos en lookback window |
-| **MaxDrawdown** | Pausa si drawdown excede threshold |
-| **CooldownPeriod** | Tiempo mínimo entre trades del mismo par |
-| **LowProfitPairs** | Bloquea pares que no rinden en lookback |
-| **ProfitExitGuard** | Customiza behavior de exit en profit targets |
+| **StoplossGuard** | Pauses entries after N consecutive stoplosses in lookback window |
+| **MaxDrawdown** | Pauses if drawdown exceeds threshold |
+| **CooldownPeriod** | Minimum time between trades on the same pair |
+| **LowProfitPairs** | Blocks pairs that underperform in lookback |
+| **ProfitExitGuard** | Customizes exit behavior on profit targets |
 
-**Implicación para iguanatrader**: la **arquitectura declarativa de protections** es exactamente lo que iguanatrader necesita para risk caps:
+**Implication for iguanatrader**: the **declarative protections architecture** is exactly what iguanatrader needs for risk caps:
 
 ```yaml
 # config/risk.yaml
@@ -227,27 +227,27 @@ protections:
     max: 5
 ```
 
-Cada protection es una clase pluggable, `enable_protections: true` es un kill-switch maestro. **Patrón a copiar literal**.
+Each protection is a pluggable class, `enable_protections: true` is a master kill-switch. **Pattern to copy verbatim.**
 
 ---
 
-## 6. Modes operativos — `dry-run` desde día 1
+## 6. Operating modes — `dry-run` from day 1
 
-Freqtrade tiene 4 modos:
-- `dry-run` (paper) — simula fills contra precios reales.
+Freqtrade has 4 modes:
+- `dry-run` (paper) — simulates fills against real prices.
 - `live` (real money).
-- `backtesting` — corre histórico.
+- `backtesting` — runs against history.
 - `hyperopt` — parameter sweeps via Optuna.
 
-**Switch via single config flag**: `"dry_run": true/false`. **Patrón crítico** — research previa lo destacó como antídoto a "muerte por exposición prematura a live".
+**Switch via a single config flag**: `"dry_run": true/false`. **Critical pattern** — prior research highlighted it as the antidote to "death by premature exposure to live".
 
-Para iguanatrader: `iguana paper` y `iguana live` deben ser **el mismo binario**, mismo código, distinto flag. **Nunca dos código bases**.
+For iguanatrader: `iguana paper` and `iguana live` must be **the same binary**, same code, different flag. **Never two codebases.**
 
 ---
 
 ## 7. Hyperopt (Optuna)
 
-Parameters opcionales declarables en la Strategy:
+Optional parameters declarable in the Strategy:
 ```python
 from freqtrade.strategy import IntParameter, RealParameter, BooleanParameter, CategoricalParameter
 
@@ -260,69 +260,69 @@ class OptimizedStrategy(IStrategy):
 
 Run: `freqtrade hyperopt --strategy OptimizedStrategy --spaces buy`.
 
-**Implicación para iguanatrader**: cuando hagas grid-search sobre DonchianATR (lookback period, ATR multiplier), este patrón declarativo es replicable trivialmente con `optuna`. iguanatrader puede usar `vectorbt` para sweeps masivos (research) y `optuna` para optimización dirigida — ambos compatibles.
+**Implication for iguanatrader**: when you grid-search over DonchianATR (lookback period, ATR multiplier), this declarative pattern is trivially replicable with `optuna`. iguanatrader can use `vectorbt` for massive sweeps (research) and `optuna` for directed optimization — both compatible.
 
 ---
 
-## 8. Anti-patterns documentados ("Looking into the future")
+## 8. Documented anti-patterns ("Looking into the future")
 
-Freqtrade documenta explícitamente los pitfalls de backtest leakage:
-- `shift(-1)` → leak directo de futuro.
-- `.iloc[-1]` en populate → varía según runmode.
-- `.mean()` sobre el df entero → incluye futuro.
-- `.resample()` sin `label='right'` → leak.
+Freqtrade explicitly documents backtest leakage pitfalls:
+- `shift(-1)` → direct future leak.
+- `.iloc[-1]` in populate → varies by runmode.
+- `.mean()` over the entire df → includes the future.
+- `.resample()` without `label='right'` → leak.
 
-**Patrón a robar**: documentar estos anti-patterns en `docs/strategies/leakage-checklist.md` de iguanatrader como **checklist obligatorio** antes de aceptar cualquier estrategia nueva.
-
----
-
-## 9. Persistencia y multi-tenant
-
-- **SQLAlchemy** con SQLite por default (Postgres opcional).
-- **Schema**: `Trade`, `Order`, `PairLock`. Append + update (no append-only puro).
-- **Multi-tenant**: NO. Single-instance por design. Para multi-user se corre un proceso por user (típicamente Docker container).
-
-**Implicación para iguanatrader**: el modelo "1 proceso por user" en containers es **el patrón realista** para cripto-trading SaaS. Hummingbot lo hace igual. iguanatrader puede ir directo a este modelo en v2 SaaS sin reescribir el core.
+**Pattern to steal**: document these anti-patterns in iguanatrader's `docs/strategies/leakage-checklist.md` as a **mandatory checklist** before accepting any new strategy.
 
 ---
 
-## 10. Governance y bus factor
+## 9. Persistence and multi-tenancy
 
-- **Maintainer principal**: Matthias Voppichler. Comunidad activa de contributors.
-- **Stars**: 49.440 (el más popular del ecosistema).
-- **Bus factor estimado**: medio-alto. Aunque hay un lead claro, hay >300 contributors y la comunidad activa indica que un takeover en caso de salida sería viable.
-- **Roadmap**: público en GitHub Discussions.
-- **License GPL-3.0**: bloquea SaaS comercial cerrado encima.
+- **SQLAlchemy** with SQLite by default (Postgres optional).
+- **Schema**: `Trade`, `Order`, `PairLock`. Append + update (not pure append-only).
+- **Multi-tenant**: NO. Single-instance by design. For multi-user, one process per user is run (typically a Docker container).
 
----
-
-## 11. **5 patrones a ROBAR** para iguanatrader
-
-1. **Set completo de comandos Telegram** — copiar literal el catálogo (ver §3 mapping). Especialmente `/reload_config` para hot-reload de risk caps, `/forceexit` para emergency, `/pause` para parar nuevas entradas sin abandonar gestión.
-2. **Protections como arquitectura declarativa** — kill-switch maestro `enable_protections: true` + lista de protections pluggables en yaml. Risk caps de iguanatrader (`DailyLossCap`, `WeeklyLossCap`, `PerTradeRisk`, `MaxOpenPositions`) implementadas como clases que cumplen una interface común.
-3. **`dry-run` mode como flag único** — mismo binario, mismo código, `paper: true/false` switch. Inviolable.
-4. **`confirm_trade_entry()` callback** — gate booleano antes de entrar. iguanatrader usa exactamente esto pero con humano-en-Telegram en lugar de código (`if not approval_received(): return False`).
-5. **Anti-pattern checklist documentado** — los "Looking into the future" pitfalls (shift, iloc, mean, resample). Documentar en `docs/strategies/leakage-checklist.md` como obligatorio para cualquier strategy review.
-
-## 12. **3 anti-patrones a EVITAR**
-
-1. **Vectorizado pandas como modelo principal** — Freqtrade usa DataFrames vectorizados (rápido para backtests, raro para event-driven). iguanatrader necesita event-driven puro (cada bar/news/halt es un evento). El modelo Lumibot/Nautilus es correcto, no el de Freqtrade.
-2. **Acoplamiento a CCXT** — Freqtrade asume cripto exchanges via CCXT. Su `Trade` model tiene fields cripto-specific (base/quote currency). iguanatrader sobre IBKR equity tiene un modelo más simple — no copiar el schema cripto.
-3. **GPL-3.0 license** — bloquea SaaS comercial. Mismo punto que con Lumibot. iguanatrader = Apache-2.0 + Commons Clause.
+**Implication for iguanatrader**: the "1 process per user" model in containers is **the realistic pattern** for crypto-trading SaaS. Hummingbot does the same. iguanatrader can go straight to this model in v2 SaaS without rewriting the core.
 
 ---
 
-## 13. Verdict honesto para iguanatrader
+## 10. Governance and bus factor
 
-**¿Forkear?** **NO**. Cripto-only + GPL-3.0 + arquitectura vectorizada incompatible con tu enfoque event-driven equity.
+- **Lead maintainer**: Matthias Voppichler. Active community of contributors.
+- **Stars**: 49,440 (most popular in the ecosystem).
+- **Estimated bus factor**: medium-high. Even with a clear lead, there are >300 contributors and an active community, indicating a takeover in case of departure would be viable.
+- **Roadmap**: public on GitHub Discussions.
+- **GPL-3.0 license**: blocks closed commercial SaaS on top.
 
-**¿Copiar interfaces?** **MUY SÍ**. **Tres patrones obligatorios robar**:
-1. El catálogo Telegram completo (mapping en §3).
-2. La arquitectura de Protections declarativa.
-3. `confirm_trade_entry` como gate booleano.
+---
 
-**¿Como referencia UX?** **OBLIGADO**. Es el único OSS con UX battle-tested para retail-bot por Telegram. Cualquier feature que dudas si añadir o no, mira si Freqtrade lo tiene — si sí, hay razón empírica.
+## 11. **5 patterns to STEAL** for iguanatrader
 
-**Decisión operativa para el PRD**:
-- ADR-006: "iguanatrader implementará Protections como arquitectura declarativa siguiendo el patrón Freqtrade. Risk caps (per-trade, daily, weekly) son protections individuales pluggables vía yaml. Kill-switch maestro `enable_protections: true`."
-- ADR-007: "El catálogo de comandos Telegram de iguanatrader replica el set Freqtrade adaptado al flow approval-gate (mapping documentado en `docs/research/platforms/freqtrade.md` §3). El mismo catálogo se expone sobre WhatsApp via Hermes."
+1. **Full set of Telegram commands** — copy the catalog verbatim (see §3 mapping). Especially `/reload_config` for hot-reload of risk caps, `/forceexit` for emergencies, `/pause` to stop new entries without abandoning management.
+2. **Protections as declarative architecture** — master kill-switch `enable_protections: true` + list of pluggable protections in yaml. iguanatrader's risk caps (`DailyLossCap`, `WeeklyLossCap`, `PerTradeRisk`, `MaxOpenPositions`) implemented as classes that conform to a common interface.
+3. **`dry-run` mode as a single flag** — same binary, same code, `paper: true/false` switch. Inviolable.
+4. **`confirm_trade_entry()` callback** — boolean gate before entering. iguanatrader uses exactly this but with a human-in-Telegram instead of code (`if not approval_received(): return False`).
+5. **Documented anti-pattern checklist** — the "Looking into the future" pitfalls (shift, iloc, mean, resample). Document in `docs/strategies/leakage-checklist.md` as mandatory for any strategy review.
+
+## 12. **3 anti-patterns to AVOID**
+
+1. **Vectorized pandas as the main model** — Freqtrade uses vectorized DataFrames (fast for backtests, awkward for event-driven). iguanatrader needs pure event-driven (each bar/news/halt is an event). The Lumibot/Nautilus model is the right one, not Freqtrade's.
+2. **Coupling to CCXT** — Freqtrade assumes crypto exchanges via CCXT. Its `Trade` model has crypto-specific fields (base/quote currency). iguanatrader on IBKR equity has a simpler model — do not copy the crypto schema.
+3. **GPL-3.0 license** — blocks commercial SaaS. Same point as Lumibot. iguanatrader = Apache-2.0 + Commons Clause.
+
+---
+
+## 13. Honest verdict for iguanatrader
+
+**Fork it?** **NO.** Crypto-only + GPL-3.0 + vectorized architecture incompatible with your event-driven equity focus.
+
+**Copy interfaces?** **VERY MUCH YES.** **Three mandatory patterns to steal**:
+1. The full Telegram catalog (mapping in §3).
+2. The declarative Protections architecture.
+3. `confirm_trade_entry` as a boolean gate.
+
+**As a UX reference?** **MANDATORY.** It is the only OSS with battle-tested UX for retail bots over Telegram. Any feature you doubt whether to add or not, check if Freqtrade has it — if it does, there is empirical justification.
+
+**Operational decision for the PRD**:
+- ADR-006: "iguanatrader will implement Protections as a declarative architecture following the Freqtrade pattern. Risk caps (per-trade, daily, weekly) are individual pluggable protections via yaml. Master kill-switch `enable_protections: true`."
+- ADR-007: "iguanatrader's Telegram command catalog replicates the Freqtrade set adapted to the approval-gate flow (mapping documented in `docs/research/platforms/freqtrade.md` §3). The same catalog is exposed over WhatsApp via Hermes."

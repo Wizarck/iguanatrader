@@ -1,0 +1,19 @@
+# co-edit-pairs.yaml — iguanatrader
+#
+# Declarative manifest of (code, doc) tuples that MUST move together.
+# Read by .ai-playbook/scripts/check_doc_drift.py at PR time.
+# Schema contract: .ai-playbook/docs/rules/doc-drift-enforcement.rule.md (v1.0.0).
+#
+# Initially empty — add a pair whenever a canonical project script gains a
+# paired spec doc. Entries are additive; changing the tier of an existing
+# entry is BREAKING (bump version major).
+version: "1.0.0"
+manifest_version: "2026-05-26.1"
+pairs:
+  - id: alembic-migrations-data-model
+    tier: 1
+    code: apps/api/src/iguanatrader/migrations/versions/*.py
+    doc: docs/data-model.md
+    reason: Every schema migration MUST update the data-model snapshot so the doc reflects current production shape.
+    introduced_in: v0.19.6
+

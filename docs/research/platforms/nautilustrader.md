@@ -1,42 +1,42 @@
-# NautilusTrader — Deep-dive técnico para iguanatrader
+# NautilusTrader — Technical deep-dive for iguanatrader
 
-**Fecha:** 2026-04-27
+**Date:** 2026-04-27
 **Repo:** https://github.com/nautechsystems/nautilus_trader
 **Docs:** https://nautilustrader.io/docs/latest/
-**Maintainer:** Nautech Systems Pty Ltd (corporación australiana)
-**Branch default:** `develop`
-**Última actividad:** 2026-04-27 (commits hoy mismo)
-**Stars:** 22.288 ⚠️ (la research previa decía 2.7k — error de un orden de magnitud; **es más popular que Lean**)
-**Licencia:** **LGPL-3.0**
+**Maintainer:** Nautech Systems Pty Ltd (Australian corporation)
+**Default branch:** `develop`
+**Last activity:** 2026-04-27 (commits today)
+**Stars:** 22,288 ⚠️ (previous research said 2.7k — off by an order of magnitude; **more popular than Lean**)
+**License:** **LGPL-3.0**
 
 ---
 
-## 1. Veredicto rápido (TL;DR)
+## 1. Quick verdict (TL;DR)
 
-NautilusTrader es **el engine más serio del ecosistema Python OSS** en 2026: Rust-native core, determinismo nanosecond-resolution, MessageBus + engines separados, RiskEngine con pre-trade checks built-in, IBKR adapter completo. **Más popular que Lean** (22k vs 18k stars). Modelo de 3 tiers comercial (OSS / Pro / Cloud).
+NautilusTrader is **the most serious engine in the Python OSS ecosystem** in 2026: Rust-native core, nanosecond-resolution determinism, MessageBus + separate engines, RiskEngine with built-in pre-trade checks, full IBKR adapter. **More popular than Lean** (22k vs 18k stars). 3-tier commercial model (OSS / Pro / Cloud).
 
-**Para iguanatrader**: arquitectura **a robar agresivamente** (MessageBus + engines separados es el oro del proyecto). Como base de código, **overkill para el MVP single-user** pero **candidato fuerte como engine subyacente para v2 multi-tenant SaaS**. La LGPL-3.0 es manejable (linking dinámico permite SaaS comercial cerrado encima).
+**For iguanatrader**: architecture **to steal aggressively** (MessageBus + separate engines is the project's gold). As a codebase, **overkill for the single-user MVP** but a **strong candidate as the underlying engine for v2 multi-tenant SaaS**. The LGPL-3.0 is manageable (dynamic linking allows closed-source commercial SaaS on top).
 
 ---
 
-## 2. Arquitectura general — el patrón maestro
+## 2. General architecture — the master pattern
 
-La arquitectura es **el value-add principal** del proyecto. 6 componentes separados que se comunican por message bus:
+The architecture is **the project's main value-add**. 6 separate components communicating over a message bus:
 
-| Componente | Rol |
+| Component | Role |
 |---|---|
-| **NautilusKernel** | Orquestador central. Inicializa componentes, configura messaging, gestiona lifecycle. |
-| **DataEngine** | Procesa y rutea market data (quotes, trades, bars, order books, custom data) a consumers. |
-| **ExecutionEngine** | Lifecycle completo de órdenes — routing a adapters, tracking de orders/positions, coordina risk checks, maneja execution reports y fills. |
+| **NautilusKernel** | Central orchestrator. Initializes components, configures messaging, manages lifecycle. |
+| **DataEngine** | Processes and routes market data (quotes, trades, bars, order books, custom data) to consumers. |
+| **ExecutionEngine** | Full order lifecycle — routing to adapters, tracking orders/positions, coordinating risk checks, handling execution reports and fills. |
 | **RiskEngine** | **Pre-trade risk checks + validation**. Position monitoring + real-time risk calc. |
-| **Cache** | "High-performance in-memory storage" — instruments, accounts, orders, positions. **Crítico**: actualizado ANTES de que handlers se ejecuten (ordering guarantee). |
-| **MessageBus** | Backbone de comunicación inter-componente. Pub/Sub, Request/Response, Command/Event. Soporte opcional Redis para durabilidad cross-restart. |
+| **Cache** | "High-performance in-memory storage" — instruments, accounts, orders, positions. **Critical**: updated BEFORE handlers run (ordering guarantee). |
+| **MessageBus** | Inter-component communication backbone. Pub/Sub, Request/Response, Command/Event. Optional Redis support for cross-restart durability. |
 
-**Filosofía**: *"Data corruption is worse than no data"* — fail-fast en validación, rejection inmediata antes de mandar al venue.
+**Philosophy**: *"Data corruption is worse than no data"* — fail-fast on validation, immediate rejection before sending to the venue.
 
 ---
 
-## 3. Path de ejecución (signal → fill)
+## 3. Execution path (signal → fill)
 
 ```
 Strategy.submit_order(order)
@@ -63,143 +63,143 @@ RiskEngine.check_pre_trade()
         Venue response: Accepted | Filled | Canceled | Rejected | Expired
             │
             ▼
-        ExecutionEngine actualiza Cache
+        ExecutionEngine updates Cache
             │
             ▼
         MessageBus event → Strategy handler (on_order_filled, etc.)
 ```
 
-**Lo crítico para iguanatrader**: el RiskEngine es **un engine separado, no un mixin opcional dentro de Strategy**. Estrategias proponen, RiskEngine filtra de manera **no-bypaseable**. Exactamente lo que iguanatrader necesita para risk caps 2/5/15.
+**The critical point for iguanatrader**: the RiskEngine is **a separate engine, not an optional mixin inside Strategy**. Strategies propose, RiskEngine filters in a **non-bypassable** way. Exactly what iguanatrader needs for risk caps 2/5/15.
 
 ---
 
-## 4. Determinismo backtest↔live
+## 4. Backtest↔live determinism
 
-El verdadero diferencial técnico:
+The real technical differentiator:
 
-- **Nanosecond-resolution clock** consistente entre backtest y live.
-- **Deterministic event-driven core**: el orden de eventos es reproducible.
-- **Single-threaded kernel** → no hay race conditions ocultas.
-- **Cache-before-handler**: cuando `on_quote_tick(quote)` se ejecuta, `self.cache.quote_tick(instrument_id)` ya devuelve esa misma quote (ordering guarantee explícito).
-- **Mismo runtime**: backtest y live usan el mismo `NautilusKernel` con distinto `Clock` y distinto `ExecutionClient`. **No son dos engines distintos cosidos**.
+- **Nanosecond-resolution clock** consistent between backtest and live.
+- **Deterministic event-driven core**: event order is reproducible.
+- **Single-threaded kernel** → no hidden race conditions.
+- **Cache-before-handler**: when `on_quote_tick(quote)` runs, `self.cache.quote_tick(instrument_id)` already returns that same quote (explicit ordering guarantee).
+- **Same runtime**: backtest and live use the same `NautilusKernel` with a different `Clock` and a different `ExecutionClient`. **They are not two different engines stitched together.**
 
-**Implicación**: en Lumibot/Lean tienes "mismo código" pero "engines distintos detrás de la abstracción". En Nautilus tienes **mismo runtime real** — el determinismo es de otro nivel.
+**Implication**: in Lumibot/Lean you have "same code" but "different engines behind the abstraction". In Nautilus you have **the same real runtime** — determinism is on another level.
 
 ---
 
 ## 5. Strategy interface — Python first-class
 
-Aunque el core es Rust, **el usuario escribe estrategias 100% en Python** sin tocar Rust nunca. Lifecycle (parcial, basado en docs):
+Although the core is Rust, **the user writes strategies 100% in Python** without ever touching Rust. Lifecycle (partial, based on docs):
 
-| Hook | Cuándo |
+| Hook | When |
 |---|---|
-| `on_start()` | Activación de la estrategia |
-| `on_quote_tick(quote)` | Cada quote tick subscrito |
-| `on_trade_tick(trade)` | Cada trade tick |
-| `on_bar(bar)` | Cada bar agregado |
-| `on_event(event)` | Eventos custom del MessageBus |
-| `on_order_accepted/filled/canceled/rejected/expired` | Lifecycle de órdenes |
-| `on_order_denied` | Rejected por RiskEngine |
-| `on_stop()` | Shutdown limpio |
+| `on_start()` | Strategy activation |
+| `on_quote_tick(quote)` | Each subscribed quote tick |
+| `on_trade_tick(trade)` | Each trade tick |
+| `on_bar(bar)` | Each aggregated bar |
+| `on_event(event)` | Custom MessageBus events |
+| `on_order_accepted/filled/canceled/rejected/expired` | Order lifecycle |
+| `on_order_denied` | Rejected by RiskEngine |
+| `on_stop()` | Clean shutdown |
 
-**API de submit**: `self.submit_order(order)` (igual que Lumibot/Lean).
+**Submit API**: `self.submit_order(order)` (same as Lumibot/Lean).
 
-**Acceso al estado**: `self.cache.<entity>(id)` (positions, orders, instruments, accounts).
-
----
-
-## 6. Boundary Rust ↔ Python
-
-- **Rust**: hot paths críticos — MessageBus dispatch, Cache accesses, time/clock, parsing de market data, serialization.
-- **Python**: Strategy API, configuración, integración con ML/AI frameworks, ejemplos.
-- **PyO3** como pegamento (binding Rust → Python).
-
-**Para el dev solo Python**: nunca tocas Rust. Pero **debugging de bugs profundos requiere leer Rust**, y eso eleva la barra de contribución externa.
+**State access**: `self.cache.<entity>(id)` (positions, orders, instruments, accounts).
 
 ---
 
-## 7. Adapter IBKR
+## 6. Rust ↔ Python boundary
 
-Mencionado como integración primera (junto a Binance, Bybit, Kraken, OKX, Betfair, BitMEX, Deribit, dYdX, Hyperliquid, Deutsche Börse, Tardis.dev). No tuve tiempo de auditar el código del adapter en este pase, pero es **adapter nativo del proyecto** (no community-maintained). Calidad esperada alta dado el rigor del core.
+- **Rust**: critical hot paths — MessageBus dispatch, Cache accesses, time/clock, market data parsing, serialization.
+- **Python**: Strategy API, configuration, integration with ML/AI frameworks, examples.
+- **PyO3** as the glue (Rust → Python binding).
 
-**Caveat conocido**: el research previa mencionó issues con Python 3.14. Verificar antes de adoptar.
-
----
-
-## 8. Persistencia, Cache y multi-tenant
-
-- **Cache in-memory** primaria (rápida).
-- **Redis opcional** para durabilidad cross-restart del MessageBus.
-- **Catalog**: persistencia de market data en Parquet (research-driven).
-- **Multi-tenancy**: NO out-of-box. El kernel asume single-tenant. Para SaaS multi-tenant habría que correr **un kernel por tenant** (proceso aislado o container) o reescribir Cache + MessageBus con tenant-aware routing.
-
-**Implicación para iguanatrader v2 SaaS**: el modelo "1 kernel por user" en containers k8s es factible y limpio. Mejor que intentar refactorizar el kernel a multi-tenant interno.
+**For the Python-only dev**: you never touch Rust. But **debugging deep bugs requires reading Rust**, and that raises the bar for external contribution.
 
 ---
 
-## 9. HITL / approval gate — **NO existe**
+## 7. IBKR adapter
 
-No hay hooks nativos para approval humano por trade. **Insertion point natural en Nautilus**: meter un componente custom suscrito al MessageBus que intercepte el evento `SubmitOrder` ANTES de que llegue al RiskEngine. El componente:
+Mentioned as a first-class integration (alongside Binance, Bybit, Kraken, OKX, Betfair, BitMEX, Deribit, dYdX, Hyperliquid, Deutsche Börse, Tardis.dev). I didn't have time to audit the adapter code in this pass, but it is a **native project adapter** (not community-maintained). Expected high quality given the core's rigor.
 
-1. Publica un evento `ApprovalRequested(order)` al MessageBus.
-2. Espera (con timeout) un evento `ApprovalGranted(order_id)` o `ApprovalRejected(order_id)`.
-3. Si granted → republica `SubmitOrder` para que siga el flow normal.
-4. Si rejected/timeout → publica `OrderDenied` con razón.
-
-**Esto es un pattern limpio gracias al MessageBus**. En Lumibot tendrías que monkey-patchear `submit_order()`, que es feo. En Nautilus es un componente más.
+**Known caveat**: previous research mentioned issues with Python 3.14. Verify before adoption.
 
 ---
 
-## 10. Modelo comercial — 3 tiers
+## 8. Persistence, Cache, and multi-tenancy
 
-| Tier | Qué es | Para quién |
+- **In-memory Cache** as primary (fast).
+- **Optional Redis** for cross-restart MessageBus durability.
+- **Catalog**: market data persistence in Parquet (research-driven).
+- **Multi-tenancy**: NOT out-of-the-box. The kernel assumes single-tenant. For multi-tenant SaaS you'd have to run **one kernel per tenant** (isolated process or container) or rewrite Cache + MessageBus with tenant-aware routing.
+
+**Implication for iguanatrader v2 SaaS**: the "1 kernel per user" model in k8s containers is feasible and clean. Better than trying to refactor the kernel to internal multi-tenancy.
+
+---
+
+## 9. HITL / approval gate — **does not exist**
+
+There are no native hooks for per-trade human approval. **Natural insertion point in Nautilus**: drop in a custom component subscribed to the MessageBus that intercepts the `SubmitOrder` event BEFORE it reaches the RiskEngine. The component:
+
+1. Publishes an `ApprovalRequested(order)` event to the MessageBus.
+2. Waits (with timeout) for an `ApprovalGranted(order_id)` or `ApprovalRejected(order_id)` event.
+3. If granted → republishes `SubmitOrder` so it follows the normal flow.
+4. If rejected/timeout → publishes `OrderDenied` with reason.
+
+**This is a clean pattern thanks to the MessageBus.** In Lumibot you'd have to monkey-patch `submit_order()`, which is ugly. In Nautilus it's just another component.
+
+---
+
+## 10. Commercial model — 3 tiers
+
+| Tier | What it is | For whom |
 |---|---|---|
-| **Open Source** | LGPL-3.0 en GitHub. Todo el engine + adapters. | Devs, prosumer, hedge funds que quieren control total. |
-| **Pro** | "Production-grade, user-controlled infrastructure". | Hedge funds que quieren soporte + features pro. |
-| **Cloud Platform** | "Managed cloud trading infrastructure". | Quants que no quieren operar infra. |
+| **Open Source** | LGPL-3.0 on GitHub. Full engine + adapters. | Devs, prosumers, hedge funds that want full control. |
+| **Pro** | "Production-grade, user-controlled infrastructure". | Hedge funds that want support + pro features. |
+| **Cloud Platform** | "Managed cloud trading infrastructure". | Quants who don't want to operate infra. |
 
-Pricing no público. Competidor directo de QuantConnect Cloud.
+Pricing not public. Direct competitor of QuantConnect Cloud.
 
-**Implicación para iguanatrader**: el modelo OSS+Pro+Cloud es **el template a seguir** si la trayectoria SaaS se materializa. Más limpio que Lumiwealth (educación-driven) o Lumibot (sin tiers definidos).
-
----
-
-## 11. Governance y bus factor
-
-- **Maintainer**: Nautech Systems Pty Ltd (corp australiana). Bus factor estimado **alto** — corp con incentivo financiero claro.
-- **Ritmo**: releases bi-semanales. Commits diarios.
-- **Comunidad**: 22.288 stars. Discord activo.
-- **API stability**: aún "becoming more stable". Admiten breaking changes entre releases. **Riesgo real para un MVP que quiere estabilidad**.
-- **License**: LGPL-3.0. Para SaaS comercial cerrado encima de Nautilus → **debes usar dynamic linking** (no static) y permitir al usuario reemplazar la librería. Manejable pero no tan libre como Apache.
+**Implication for iguanatrader**: the OSS+Pro+Cloud model is **the template to follow** if the SaaS trajectory materializes. Cleaner than Lumiwealth (education-driven) or Lumibot (no defined tiers).
 
 ---
 
-## 12. **5 patrones a ROBAR** para iguanatrader
+## 11. Governance and bus factor
 
-1. **MessageBus + Engines separados** (`DataEngine`, `ExecutionEngine`, `RiskEngine`, `Cache`). Implementable en Python con `asyncio.Queue` + pub/sub interno. **El RiskEngine como componente NO bypaseable es el patrón clave** para iguanatrader (caps 2/5/15 que las estrategias no pueden saltar).
-2. **Cache-before-handler ordering guarantee**: cuando un evento se entrega al handler, el Cache ya está actualizado con el dato del evento. Evita "lecturas stale" desde la Strategy.
-3. **Approval gate como componente MessageBus-suscrito** (no como monkey-patch de submit_order). Limpio, testeable, opt-in via config.
-4. **Single-threaded kernel + nanosecond clock** para determinismo. Para MVP suficiente con asyncio single-event-loop + clock con resolución microsecond (Python time.perf_counter_ns).
-5. **Modelo comercial 3-tier OSS/Pro/Cloud** como template para iguanatrader v3 SaaS. Más claro que el modelo "education-flywheel" de Lumiwealth/QuantStart.
-
-## 13. **3 anti-patrones a EVITAR**
-
-1. **Rust core en MVP** — overkill brutal para iguanatrader single-user. Python puro es suficiente para el throughput de un retail con DonchianATR sobre <50 tickers. La complejidad de mantener Rust no se amortiza hasta multi-tenant SaaS con cientos de cuentas.
-2. **API breaking changes entre releases** — Nautilus admite que rompe entre minor versions. iguanatrader debe pinear versiones agresivamente (poetry lock + dependabot manual) y NO depender de "última versión" para nada en producción.
-3. **LGPL-3.0 para tu propio engine** — manejable pero introduce fricción legal en cada update del SaaS. iguanatrader debe usar **Apache-2.0 + Commons Clause** para no pelear esa batalla.
+- **Maintainer**: Nautech Systems Pty Ltd (Australian corp). Estimated bus factor **high** — corp with a clear financial incentive.
+- **Cadence**: bi-weekly releases. Daily commits.
+- **Community**: 22,288 stars. Active Discord.
+- **API stability**: still "becoming more stable". They admit breaking changes between releases. **Real risk for an MVP that wants stability.**
+- **License**: LGPL-3.0. For closed-source commercial SaaS on top of Nautilus → **you must use dynamic linking** (not static) and allow the user to replace the library. Manageable but not as free as Apache.
 
 ---
 
-## 14. Verdict honesto para iguanatrader
+## 12. **5 patterns to STEAL** for iguanatrader
 
-**¿Forkear en MVP?** **NO**. Overkill técnico (Rust), API inestable, complejidad de setup.
+1. **MessageBus + separate Engines** (`DataEngine`, `ExecutionEngine`, `RiskEngine`, `Cache`). Implementable in Python with `asyncio.Queue` + internal pub/sub. **The RiskEngine as a NON-bypassable component is the key pattern** for iguanatrader (caps 2/5/15 that strategies cannot skip).
+2. **Cache-before-handler ordering guarantee**: when an event is delivered to the handler, the Cache is already updated with the event's data. Avoids "stale reads" from the Strategy.
+3. **Approval gate as a MessageBus-subscribed component** (not as a monkey-patch of submit_order). Clean, testable, opt-in via config.
+4. **Single-threaded kernel + nanosecond clock** for determinism. For the MVP, a single asyncio event loop + microsecond-resolution clock (Python time.perf_counter_ns) is enough.
+5. **3-tier OSS/Pro/Cloud commercial model** as a template for iguanatrader v3 SaaS. Clearer than the "education-flywheel" model of Lumiwealth/QuantStart.
 
-**¿Copiar arquitectura?** **SÍ, agresivamente**. El MessageBus + RiskEngine separado + Cache-before-handler son patrones que iguanatrader debe replicar en su capa Python pura desde día 1. **Esto es la lección arquitectónica más valiosa del ecosistema OSS**.
+## 13. **3 anti-patterns to AVOID**
 
-**¿Como engine subyacente en v2?** **CANDIDATO FUERTE**. Cuando iguanatrader llegue a multi-tenant SaaS y el throughput de un Python puro no llegue, migrar el engine a Nautilus (manteniendo la API de Strategy de iguanatrader como wrapper sobre Nautilus.Strategy) es una jugada limpia. La LGPL es manejable con dynamic linking.
+1. **Rust core in the MVP** — brutal overkill for single-user iguanatrader. Pure Python is enough for the throughput of a retail user with DonchianATR over <50 tickers. The complexity of maintaining Rust doesn't pay off until multi-tenant SaaS with hundreds of accounts.
+2. **API breaking changes between releases** — Nautilus admits to breaking between minor versions. iguanatrader must pin versions aggressively (poetry lock + manual dependabot) and NOT depend on "latest version" for anything in production.
+3. **LGPL-3.0 for your own engine** — manageable but introduces legal friction on every SaaS update. iguanatrader should use **Apache-2.0 + Commons Clause** to avoid fighting that battle.
 
-**¿Aprender de su modelo comercial?** **SÍ**. El 3-tier OSS/Pro/Cloud es lo que iguanatrader v3 SaaS debe imitar (más claro que Lumiwealth o Jesse).
+---
 
-**Decisión operativa para el PRD**:
-- ADR-002: "iguanatrader replicará la arquitectura MessageBus + Engines separados de NautilusTrader en Python puro para el MVP. Migración a Nautilus como engine subyacente queda en backlog v2."
-- ADR-003: "iguanatrader usará Apache-2.0 + Commons Clause como licencia, NO LGPL ni GPL. Razón: preservar opcionalidad de SaaS comercial cerrado en v3."
+## 14. Honest verdict for iguanatrader
+
+**Fork in MVP?** **NO**. Technical overkill (Rust), unstable API, setup complexity.
+
+**Copy the architecture?** **YES, aggressively.** MessageBus + separate RiskEngine + Cache-before-handler are patterns iguanatrader must replicate in its pure-Python layer from day 1. **This is the most valuable architectural lesson from the OSS ecosystem.**
+
+**As underlying engine in v2?** **STRONG CANDIDATE**. When iguanatrader reaches multi-tenant SaaS and pure-Python throughput no longer cuts it, migrating the engine to Nautilus (keeping iguanatrader's Strategy API as a wrapper over Nautilus.Strategy) is a clean play. The LGPL is manageable with dynamic linking.
+
+**Learn from its commercial model?** **YES.** The 3-tier OSS/Pro/Cloud is what iguanatrader v3 SaaS should imitate (clearer than Lumiwealth or Jesse).
+
+**Operational decision for the PRD**:
+- ADR-002: "iguanatrader will replicate NautilusTrader's MessageBus + separate Engines architecture in pure Python for the MVP. Migration to Nautilus as the underlying engine is deferred to the v2 backlog."
+- ADR-003: "iguanatrader will use Apache-2.0 + Commons Clause as its license, NOT LGPL or GPL. Reason: preserve the optionality of closed-source commercial SaaS in v3."
