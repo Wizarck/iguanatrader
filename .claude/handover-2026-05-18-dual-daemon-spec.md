@@ -1,102 +1,110 @@
-# Handover — 2026-05-18 — dual-daemon spec + IBKR hardening
+# Handover — last updated 2026-05-25
 
-> **For pasting into a fresh Claude Code conversation.** Drop the contents below as your first message so the new session has full context.
+> Paste into fresh Claude Code session. Drop as first message.
 
----
+## State
 
-## Project state
+- Repo `c:\Projects\iguanatrader`, branch `main`, clean.
+- Dual-daemon foundation **shipped** (PR #265). All Phase 1-7 tasks done. Spec archived → `openspec/changes/archive/2026-05-18-dual-daemon-mode-toggle-and-reconcile/`.
+- 4 follow-up slices (O5/O6/O7 + O1/O3 ops) still `proposed`, not started.
 
-- Repo: `c:\Projects\iguanatrader` (Wizarck/iguanatrader on GitHub)
-- Operator: Arturo Ramírez
-- Current branch: `slice/dual-daemon-mode-toggle-and-reconcile` (don't switch off without committing)
-- Main is at commit `b91f276` (PR #260 merged 2026-05-17)
+## Shipped since spec landed
 
-## Open PRs (in merge order)
+| PR | Slice |
+|---|---|
+| #261 | gnzsnz digest pin + MCP token in SOPS + roadmap-ops |
+| #262 | dual-daemon OpenSpec change |
+| #265 | dual-daemon impl (paper+live + toggle + reconcile + chips) |
+| #266 | dual-daemon Phase 2.5 + Phase 6 follow-ups |
+| #267 | A2 risk-review persistence |
+| #268 | SOPS IBKR creds hardening (Task 19) |
+| #269 | roadmap flips A0-A3 + Task 19 |
+| #270 | U-next-2 trade timeline + variant fix |
+| #271 | U-next-2 roadmap flip |
 
-1. **PR #261** — https://github.com/Wizarck/iguanatrader/pull/261
-   `ops/ibgateway-digest-mcp-token-sops` → main
-   - Pins `gnzsnz/ib-gateway` by `sha256:a9a771b0...` (audit verdict: SAFE, EV cert from DigiCert with subject `O=IBG LLC`)
-   - Adds `IGUANATRADER_MCP_TOKEN` (256-bit hex) to `.secrets/{paper,live}.env.enc`
-   - Wires `IGUANATRADER_MCP_TOKEN` + `IGUANATRADER_MCP_TENANT_SLUG` in `compose/mvp.yml` api service
-   - New `docs/roadmap-ops.md` (O1 sops-decrypt-at-boot, O2 IB Gateway prod cutover, O3 quarterly digest refresh)
-   - §0 Security pre-bring-up checklist in `docs/runbooks/ibkr-gateway-bringup.md` (9 hardening items, applies to paper AND live)
-   - Status: ready for review; CI probably running
+## Pending — operational (high impact, do first)
 
-2. **PR #262** — https://github.com/Wizarck/iguanatrader/pull/262
-   `slice/dual-daemon-mode-toggle-and-reconcile` → `ops/ibgateway-digest-mcp-token-sops`
-   - Specs-only PR (no code). Opens OpenSpec change `2026-05-18-dual-daemon-mode-toggle-and-reconcile/`
-   - Contains `proposal.md` (200 lines), `design.md` (10 architectural decisions, 201 lines), `tasks.md` (44 numbered tasks, 8 phases)
-   - Adds O4-O7 to roadmap-ops.md, U-next-1 to U-next-3 to roadmap-ui.md
-   - Base will need retarget to main after #261 merges
-   - Status: ready for review; awaits human approval (Gate E in OpenSpec workflow)
+1. **VPS deploy** — all merged code sits on main, not yet on cx43. roadmap rows say "pending VPS deploy". Bring-up runbook: `docs/runbooks/ibkr-gateway-bringup.md` §0 + §1.
+2. **Live IBKR creds** — `.secrets/live.env.enc` still placeholder. Populate before flipping live daemon `enabled=true` via UI chip.
+3. **`IGUANATRADER_MCP_TENANT_SLUG`** — empty in both SOPS envs. MCP routes return 503 until populated. No Hermes consumer yet → not urgent.
+4. **Image digest cert** — gnzsnz pin expires when IBKR rotates EV cert (~2026-08-04, auto). Re-pin manually quarterly (O3 cron not built).
 
-## What was decided this session (don't re-litigate)
+## Pending — slices (proposed, not arrancadas)
 
-1. **Dual-daemon split**: `trading_daemon_paper` + `trading_daemon_live` run in parallel, each with its own `ib-gateway` container.
-2. **Research/ingest is shared** (mode-agnostic); strategies/proposals/risk are mode-scoped.
-3. **`tenant_trading_modes(tenant_id, mode, enabled, last_toggled_*)`** is the toggle mechanism. NOT docker container start/stop (security blast radius).
-4. **Drain semantics**: toggle-off rejects `pending_approval` proposals with `rejection_reason='daemon_drained'`; IBKR-side orders untouched (IBKR is authoritative — operator phrase).
-5. **Reconcile-on-resume is MANDATORY** when re-enabling a daemon; also exposed as on-demand button in `/settings`.
-6. **Password re-entry required for `mode=live` toggle**; not for paper.
-7. **Color = risk-fixed, brightness = active**: paper chip always yellow, live chip always red. Red doesn't mean "down" — it means "real money is at risk."
-8. **Default-off live** on migration 0020 (paper.enabled=true, live.enabled=false seeded).
-9. **Live IBKR account confirmed approved** (operator answered yes 2026-05-18). Paper account is `DUR071858`.
-10. **Shadow mode IN scope of follow-up O7** (operator approved after roundtable clarified it ≠ paper).
-11. **Per-mode strategy gating IN scope of follow-up O5** (operator approved — enables paper→live promotion workflow).
-12. **Strategy health observability IN scope of follow-up O6** (operator approved — all 3 layers B1+B2+B3 in one slice).
+| Slice | Where | Notes |
+|---|---|---|
+| **O5** per-mode strategy gating | `docs/roadmap-ops.md:111` | adds `Strategy.enabled_modes`. Enables paper→live promotion workflow. ~250 LOC + 1 migration. |
+| **O6** strategy health observability | `docs/roadmap-ops.md:123` | last_run_at, last_error_text, signals_today, win_rate, sharpe. B1+B2+B3 bundled. ~400 LOC + 1 migration. **Should ship before live cutover** — today no UI signal if strategy silently broken. |
+| **O7** trades-filters + shadow mode | `docs/roadmap-ops.md:137` | generic filter component + `Trade.state='shadow'` + shadow daemon variant. ~500 LOC + 1 migration. Prereq: O4 (done). |
+| **O1/O8** sops-decrypt-at-boot | `docs/roadmap-ops.md` | container entrypoint shim. Removes manual env exports. ~150 LOC. |
+| **O3** quarterly digest refresh workflow | `docs/roadmap-ops.md:85` | GH Actions cron on 1st of Jan/Apr/Jul/Oct. ~30 LOC. |
+| **U-next-3** trades filters panel | folded into O7 | |
 
-## Follow-up slices captured in roadmaps (DO NOT start without operator sign-off)
+## Pending — residual from archived spec
 
-- **O5** per-mode strategy gating (`Strategy.enabled_modes`)
-- **O6** strategy health observability (last_run_at, last_error, win_rate, sharpe, etc. — addresses "estrategia silenciosa falla y no lo ves" gap)
-- **O7** trades-filters + shadow mode (generic filter component for `/trades` `/proposals` `/orders` + `Trade.state='shadow'` extension)
-- **U-next-2** trade Order timeline (fixes the variants.ts 3-color bug + Order substate visualization on `/trades/[id]`)
+- **Task 35 only**: Playwright e2e for daemon-chip. **Deferred** — no Playwright runner exists yet in `apps/web/`. Standalone slice when runner lands.
 
-## Operator preferences in force (from memory)
+## Locked decisions (don't re-litigate)
 
-- ISO 8601 dates ONLY everywhere (code, docs, logs)
-- No menus for clear decisions; don't convert declared positions to A/B/C
-- Never `git add -A` (sweeps `.claude/worktrees/` — 15k+ files); always stage explicit paths
-- Don't disable things — delete them (KISS, DRY, no residue tecnico)
-- /ultrareview before final merge if requested (multi-agent cloud review, user-triggered)
+1. Dual-daemon = two processes, not one multi-mode. Failure isolation.
+2. DB flag (`tenant_trading_modes`) not docker-control. Security blast radius.
+3. Drain: reject pending_approval, leave IBKR-side orders. **IBKR siempre manda**.
+4. Reconcile-on-resume MANDATORY. Also on-demand button in `/settings`.
+5. Password re-entry for live toggle. Not for paper.
+6. Color = risk-fixed (paper=yellow, live=red). Brightness = active.
+7. Live defaults `enabled=false` on migration 0020.
+8. Shadow mode = scope of O7. Per-mode gating = scope of O5. Strategy health = scope of O6.
 
-## Anti-patterns from THIS session — avoid repeating
+## Operator preferences (memory)
 
-- SOPS on Windows: `SOPS_AGE_KEY_FILE=C:/Users/Arturo/.config/sops/age/keys.txt` must be set. Key not at default `AppData/Roaming/sops/age/keys.txt`.
-- SOPS 3.7.3 has no `set` subcommand; use decrypt → edit → encrypt cycle with explicit `--age age10nqq3zd2t88nzym3wr95ju5rt0la9m3363sdnm8xfx44davzg4hqk0qh00`.
-- Docker Desktop not running locally — use Docker Hub registry API for digest lookups: `curl https://hub.docker.com/v2/repositories/<image>/tags/<tag>`.
-- `gdcdyn.interactivebrokers.com` is legitimate IBKR — verified via DigiCert EV cert (subject `O=IBG LLC, Greenwich, Connecticut`). The `Xdcdyn` naming is IBKR's regional gateway-discovery family (g=Europe, n=North America, c=Asia).
+- ISO 8601 dates everywhere.
+- No A/B/C menus for declared positions.
+- Never `git add -A` → sweeps `.claude/worktrees/`. Stage explicit paths.
+- Delete don't disable. KISS, DRY.
+- `/ultrareview` user-triggered only.
 
-## Next concrete action when resuming
+## Anti-patterns recordadas
 
-1. Wait for PR #261 to merge (or merge it).
-2. Retarget PR #262 base from `ops/ibgateway-digest-mcp-token-sops` to `main`.
-3. After PR #262 approval (Gate E): run `/opsx:apply 2026-05-18-dual-daemon-mode-toggle-and-reconcile` to start implementation on a new `feat/dual-daemon-...` branch.
-4. Implementation tracked in `openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/tasks.md` (44 tasks, 8 phases, ~5-6 days estimated).
+- SOPS Windows: `SOPS_AGE_KEY_FILE=C:/Users/Arturo/.config/sops/age/keys.txt`. Default path Windows wrong.
+- SOPS 3.7.3 no `set` subcommand → decrypt-edit-encrypt cycle. `--age age10nqq3zd2t88nzym3wr95ju5rt0la9m3363sdnm8xfx44davzg4hqk0qh00` explicit.
+- Docker Desktop down → Docker Hub API: `curl https://hub.docker.com/v2/repositories/<image>/tags/<tag>`.
+- `gdcdyn.interactivebrokers.com` legítimo. DigiCert EV `O=IBG LLC, Greenwich, Connecticut`. `Xdcdyn` = regional family (g=EU, n=NA, c=Asia).
 
-## Pending but not blocking
+## Concrete next actions (pick one)
 
-- `IGUANATRADER_MCP_TENANT_SLUG` is empty in both SOPS .env files — operator must populate before MCP routes leave 503.
-- Live IBKR account credentials in `.secrets/live.env.enc` still placeholder — populate before flipping live daemon enabled=true.
-- O3 quarterly image-digest refresh workflow not yet automated.
-- IBKR EV cert expires 2026-08-04 — IBKR will auto-rotate; no operator action needed.
+A) **Deploy actual a cx43** — bring-up runbook + populate live creds + flip live chip. Validate paper-only operation 1-2 semanas before live.
 
-## Key files to read first (in this order)
+B) **Arrancar O6** strategy health — independent, no prereq, must-have antes de live. `/opsx:propose strategy-health-observability`.
 
-1. `openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/proposal.md` — what+why
-2. `openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/design.md` — 10 architectural decisions
-3. `openspec/changes/2026-05-18-dual-daemon-mode-toggle-and-reconcile/tasks.md` — execution plan
-4. `docs/roadmap-ops.md` (only exists in PR #261 / PR #262 branches, not main yet)
-5. `docs/runbooks/ibkr-gateway-bringup.md` — §0 has the security pre-bring-up checklist
+C) **Arrancar O1** sops-decrypt-at-boot — quality-of-life pre-deploy. `/opsx:propose sops-decrypt-at-boot`.
 
-## Memory entries that might be relevant
+D) **Arrancar O5** per-mode strategy gating — unlocks paper→live promotion. Prereq O4 ✅.
 
-Already in memory (`C:\Users\Arturo\.claude\projects\c--Projects-iguanatrader\memory\`):
-- `project_vps_deployment_state.md` — cx43 VPS, ssh alias, compose paths
-- `project_ci_pytest_collect_only.md` — CI runs --collect-only, green CI ≠ tests pass
-- `feedback_never_git_add_dash_A.md` — always stage explicit paths
-- `feedback_date_format_preference.md` — ISO 8601 only
-- `feedback_no_menus_for_clear_decisions.md` — don't convert positions to A/B/C
+## Key files
 
-Should be added after slice merges (tasks.md #39):
-- `project_dual_daemon_architecture.md` — summary of the dual-daemon shape so future sessions don't re-derive from compose files
+- `openspec/changes/archive/2026-05-18-dual-daemon-mode-toggle-and-reconcile/{proposal,design,tasks}.md` — reference, archived.
+- `docs/roadmap-ops.md` — O1-O8.
+- `docs/roadmap-ui.md` — U-next-1 (merged), U-next-2 (merged), U-next-3 (folded into O7).
+- `docs/runbooks/ibkr-gateway-bringup.md` — §0 security checklist + §1-7 bring-up.
+- `.secrets/{paper,live}.env.enc` — credentials.
+- `docker-compose.{mvp,ibgateway}.yml` — compose stack.
+
+## Memory entries
+
+Existing (`C:\Users\Arturo\.claude\projects\c--Projects-iguanatrader\memory\`):
+- `project_vps_deployment_state.md` — cx43 + ssh alias + paths.
+- `project_ci_pytest_collect_only.md` — CI --collect-only ≠ tests pass.
+- `feedback_never_git_add_dash_A.md`.
+- `feedback_date_format_preference.md`.
+- `feedback_no_menus_for_clear_decisions.md`.
+- `project_dual_daemon_architecture.md` (added post-merge per Task 39).
+
+## Verification before trusting this doc
+
+```bash
+git log --oneline -10
+gh pr list --state open
+ls openspec/changes/  # active slices, if any
+```
+
+If recent commits ≠ what's listed in "Shipped" above, doc is stale.
