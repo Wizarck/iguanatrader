@@ -122,6 +122,18 @@ class BriefSynthesisShortError(IguanaError):
     default_status: ClassVar[int] = 502
 
 
+class InsufficientPriceDataError(ValidationError):
+    """Synthesis blocked because close_price is missing from the feature bundle.
+
+    The LLM cannot produce a coherent recommendation without a current-price
+    anchor. Callers should ingest price bars before retrying.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:insufficient-price-data"
+    default_title: ClassVar[str] = "Insufficient Price Data"
+    default_status: ClassVar[int] = 422
+
+
 class ConfigError(IguanaError):
     """Adapter failed init due to missing/malformed configuration (slice R2).
 
@@ -139,6 +151,7 @@ class ConfigError(IguanaError):
 __all__ = [
     "BriefSynthesisShortError",
     "ConfigError",
+    "InsufficientPriceDataError",
     "InvalidCitationError",
     "MissingProvenanceError",
     "RateLimitedError",

@@ -142,6 +142,16 @@ def _check_recommendation_coherence(
     return coherent
 
 
+def _patch_action_to_hold(body_markdown: str) -> str:
+    """Downgrade the Action line from BUY or AVOID to HOLD.
+
+    Called when the coherence checker flags an incoherent brief. The
+    prompt already instructs the LLM to downgrade, but when it doesn't
+    comply this deterministic patch enforces the constraint.
+    """
+    return _ACTION_RE.sub(r"**Action**: HOLD", body_markdown, count=1)
+
+
 @dataclass(frozen=True, slots=True)
 class SynthesizedBrief:
     """Synthesizer return — caller persists in a transaction."""
@@ -255,21 +265,28 @@ class Synthesizer:
 
             # Recommendation-coherence check (slice llm-brief-coherence).
             # Parses Action + Target from the brief markdown, compares with
-            # close_price + analyst_target_price from the feature bundle.
-            # On incoherence (e.g. BUY with target below current price)
-            # logs a warning + emits partial=True so the UI surfaces the
-            # "low confidence" banner. The brief itself ships unmodified —
-            # operators reviewing the audit trail can see what the LLM
-            # produced and what the deterministic check flagged.
-            if (
-                _check_recommendation_coherence(
-                    symbol=symbol,
-                    body_markdown=body_markdown,
-                    feature_bundle=feature_bundle,
-                )
-                is False
-            ):
+            # close_price from the feature bundle. On incoherence (e.g. BUY
+            # with target below current price): downgrade Action to HOLD +
+            # set partial=True so the UI surfaces the "low confidence"
+            # banner. When close_price is missing the checker returns None
+            # (can't validate); we still defensively flag partial because
+            # the LLM may have fabricated a wrong base price.
+            coherence = _check_recommendation_coherence(
+                symbol=symbol,
+                body_markdown=body_markdown,
+                feature_bundle=feature_bundle,
+            )
+            if coherence is False:
+                body_markdown = _patch_action_to_hold(body_markdown)
                 partial = True
+            elif coherence is None:
+                close_pair = feature_bundle.values.get("close_price")
+                if not close_pair or close_pair[0] is None:
+                    partial = True
+                    logger.warning(
+                        "research.synth.coherence_check_skipped_no_close_price",
+                        extra={"symbol": symbol},
+                    )
 
             pillars_decimals = {
                 name: pillar.score for name, pillar in methodology_result.pillars.items()
@@ -545,4 +562,5 @@ __all__ = [
     "PROMPT_DIR",
     "SynthesizedBrief",
     "Synthesizer",
+    "_patch_action_to_hold",
 ]
