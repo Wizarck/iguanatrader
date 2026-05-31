@@ -77,6 +77,24 @@ def no_sleep() -> Iterable[None]:
         yield
 
 
+def test_fetch_rejects_malformed_symbol_without_issuing_request() -> None:
+    """#24: a symbol outside the ticker allow-list (here a path-traversal
+    attempt) yields nothing and issues NO HTTP request — it can never be
+    interpolated into the sidecar URL path."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"symbol": "x"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    source = OpenBBSidecarSource(base_url="http://test", client=client)
+
+    drafts = list(source.fetch("../../etc/passwd", since=None))
+    assert drafts == []
+    assert calls == []  # no request was issued for the malformed symbol
+
+
 def test_fetch_yields_three_drafts_on_happy_path() -> None:
     transport = _make_mock_transport(
         {

@@ -38,7 +38,13 @@ from iguanatrader.contexts.research.scraping.errors import (
     ScrapeNotImplementedError,
 )
 from iguanatrader.contexts.research.scraping.robots_check import is_robots_allowed
+from iguanatrader.contexts.research.scraping.url_guard import assert_url_allowed
 from iguanatrader.contexts.research.scraping.user_agent import UserAgentRotation
+
+#: #13: cap on redirect hops the Tier-1 fetch follows manually. Each hop is
+#: re-validated against the SSRF guard + robots before the next request,
+#: so a public URL cannot redirect into a private address.
+_MAX_REDIRECTS = 5
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +86,40 @@ async def fetch_tier1(
 ) -> ScrapeResult:
     """Tier-1 webfetch via :mod:`httpx`. Honours robots.txt."""
     ua = user_agents.next()
-    if not is_robots_allowed(url, ua):
-        raise ScrapeBlockedError(detail=f"robots.txt forbids fetch of {url} for UA {ua!r}")
-
     request_headers: dict[str, str] = {"User-Agent": ua}
     if headers:
         request_headers.update({k: str(v) for k, v in headers.items()})
 
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        response = await client.get(url, headers=request_headers)
+    # #13: redirects are followed MANUALLY so every hop is re-validated by
+    # the SSRF guard + robots before the next request. ``follow_redirects``
+    # stays off so httpx can never silently chase a Location into a private
+    # address. ``assert_url_allowed`` raises ``UnsafeUrlError`` (not a
+    # ScrapeBlockedError) so the ladder does not escalate-and-retry a
+    # dangerous URL.
+    current_url = url
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+        for _hop in range(_MAX_REDIRECTS + 1):
+            assert_url_allowed(current_url)
+            if not is_robots_allowed(current_url, ua):
+                raise ScrapeBlockedError(
+                    detail=f"robots.txt forbids fetch of {current_url} for UA {ua!r}"
+                )
+            response = await client.get(current_url, headers=request_headers)
+            if response.is_redirect:
+                location = response.headers.get("location")
+                if not location:
+                    break
+                # Resolve relative redirects against the current URL.
+                current_url = str(response.url.join(location))
+                continue
+            break
+        else:
+            raise ScrapeBlockedError(detail=f"tier-1 exceeded {_MAX_REDIRECTS} redirects for {url}")
 
     if response.status_code in {403, 429, 503}:
-        raise ScrapeBlockedError(detail=f"tier-1 blocked at {url} (status={response.status_code})")
+        raise ScrapeBlockedError(
+            detail=f"tier-1 blocked at {current_url} (status={response.status_code})"
+        )
     response.raise_for_status()
     return ScrapeResult(
         body=response.text,
