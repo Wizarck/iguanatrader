@@ -67,6 +67,7 @@ from iguanatrader.contexts.trading.ports import (
     Proposal,
     StrategyConfigSnapshot,
     StrategyPort,
+    derive_client_order_id,
 )
 from iguanatrader.contexts.trading.repository import (
     EquitySnapshotRepository,
@@ -511,7 +512,20 @@ class TradingService:
             opened_at=opened_at,
         )
         await trade_repo.add(trade)
+        # The Trade is the parent of the Order's ``trade_id`` FK. With no ORM
+        # ``relationship`` between the two mappers, the unit-of-work does NOT
+        # order the inserts by FK, so a combined flush emits the child Order
+        # before its parent Trade and trips the constraint (rolling the whole
+        # ledger write back). Flush the parent rows — the proposal state change
+        # + the Trade — now so the later Order insert satisfies the FK.
+        # (Unit-of-work boundary COMMITS are the #2/#27/#29 follow-up; this
+        # only fixes the insert ORDERING within the flush.)
+        await trade_repo.session.flush()
 
+        # Audit #6 (minimal): thread the proposal's protective stop + target
+        # into the order instead of discarding them. Audit #7: derive a
+        # deterministic client_order_id from the proposal so a retry/reconcile
+        # of this same logical entry dedupes broker-side.
         new_order = NewOrder(
             tenant_id=event.tenant_id,
             trade_id=trade_id,
@@ -519,7 +533,11 @@ class TradingService:
             side=proposal_row.side,
             quantity=proposal_row.quantity,
             order_type="market",
-            client_order_id=uuid4(),
+            stop_price=proposal_row.stop_price,
+            target_price=proposal_row.target_price,
+            client_order_id=derive_client_order_id(
+                event.tenant_id, "entry", event.proposal_id
+            ),
             algo_kind=self._execution_algo,
         )
 
@@ -579,6 +597,39 @@ class TradingService:
                 exc_info=True,
             )
 
+        if rejection_reason == "timeout":
+            # Audit #7: a submission that TIMED OUT may still be live at the
+            # broker — marking it terminally 'rejected' would orphan a real
+            # position while the DB claimed it never happened. Persist a
+            # NON-terminal, reconcilable order keyed by the deterministic
+            # client_order_id; the Trade stays 'open' and fill reconciliation
+            # (or a manual sweep, once the adapter echoes order_ref) resolves
+            # it. No OrderRejected is published — the order is not rejected.
+            timeout_order = Order(
+                id=order_id,
+                tenant_id=event.tenant_id,
+                trade_id=trade_id,
+                broker="ibkr",
+                broker_order_id=None,
+                client_order_id=new_order.client_order_id,
+                order_type=new_order.order_type,
+                side=new_order.side,
+                quantity=new_order.quantity,
+                limit_price=None,
+                stop_price=new_order.stop_price,
+                target_price=new_order.target_price,
+                state="timeout_pending",
+            )
+            await order_repo.add(timeout_order)
+            log.warning(
+                "trading.execute.timeout_pending_reconcile",
+                order_id=str(order_id),
+                client_order_id=str(new_order.client_order_id),
+                proposal_id=str(event.proposal_id),
+                tenant_id=str(event.tenant_id),
+            )
+            return
+
         if rejection_reason is not None:
             rejected_order = Order(
                 id=order_id,
@@ -586,11 +637,13 @@ class TradingService:
                 trade_id=trade_id,
                 broker="ibkr",
                 broker_order_id=None,
+                client_order_id=new_order.client_order_id,
                 order_type=new_order.order_type,
                 side=new_order.side,
                 quantity=new_order.quantity,
                 limit_price=None,
-                stop_price=None,
+                stop_price=new_order.stop_price,
+                target_price=new_order.target_price,
                 state="rejected",
             )
             await order_repo.add(rejected_order)
@@ -609,11 +662,13 @@ class TradingService:
             trade_id=trade_id,
             broker="ibkr",
             broker_order_id=broker_order_id,
+            client_order_id=new_order.client_order_id,
             order_type=new_order.order_type,
             side=new_order.side,
             quantity=new_order.quantity,
             limit_price=None,
-            stop_price=None,
+            stop_price=new_order.stop_price,
+            target_price=new_order.target_price,
             state="submitted",
             submitted_at=utc_now(),
         )
@@ -979,6 +1034,10 @@ class TradingService:
             )
 
         opposite_side = "sell" if trade.side == "buy" else "buy"
+        # Audit #7: deterministic client_order_id for the exit leg, keyed by
+        # the trade (distinct 'exit' role so it never collides with the entry
+        # order's key on the per-tenant UNIQUE constraint). A retried close
+        # after a transient broker hang dedupes broker-side.
         new_order = NewOrder(
             tenant_id=trade.tenant_id,
             trade_id=trade_id,
@@ -986,7 +1045,7 @@ class TradingService:
             side=opposite_side,
             quantity=trade.quantity,
             order_type="market",
-            client_order_id=uuid4(),
+            client_order_id=derive_client_order_id(trade.tenant_id, "exit", trade_id),
             algo_kind=self._execution_algo,
         )
         # Slice ``order-timeout-restart-reconcile``: bail on a hung
@@ -1008,6 +1067,7 @@ class TradingService:
             trade_id=trade_id,
             broker="ibkr",
             broker_order_id=broker_order_id,
+            client_order_id=new_order.client_order_id,
             order_type=new_order.order_type,
             side=opposite_side,
             quantity=trade.quantity,

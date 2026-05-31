@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal, NewType, Protocol, runtime_checkable
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from iguanatrader.shared.ports import Port
 
@@ -50,6 +50,14 @@ class NewOrder:
     order_type: str
     limit_price: Decimal | None = None
     stop_price: Decimal | None = None
+    # Audit #6 (minimal): the strategy's protective take-profit target,
+    # threaded from ``TradeProposal.target_price`` at execute time. A plain
+    # market entry order does not transmit it to the broker yet (native
+    # bracket/OCO is the #6-bracket follow-up that needs live IBKR), but the
+    # entry order row records it so the protective intent is auditable and
+    # the adapter can attach the bracket child once that lands. ``None``
+    # when the proposal did not commit to a target.
+    target_price: Decimal | None = None
     # Slice T2 (ibkr-adapter-resilient) — caller-supplied idempotency key.
     # When set (UUIDv4), the broker adapter dedupes a duplicate
     # ``place_order`` against the same ``client_order_id`` and returns the
@@ -338,6 +346,33 @@ class MarketDataPort(Protocol):
         ...
 
 
+# ----------------------------------------------------------------------
+# Deterministic client_order_id (audit #7)
+# ----------------------------------------------------------------------
+
+#: Fixed UUIDv5 namespace for client_order_id derivation. Frozen forever —
+#: changing it would re-key every order's idempotency identity and defeat
+#: broker-side dedup across an app upgrade.
+_CLIENT_ORDER_ID_NAMESPACE = UUID("c1d0a7de-0000-4000-8000-000000000007")
+
+
+def derive_client_order_id(tenant_id: UUID, role: str, *parts: object) -> UUID:
+    """Derive a deterministic ``client_order_id`` for a logical order.
+
+    Audit #7: a timed-out or reconnect-retried submission of the SAME
+    logical order (same proposal for an entry; same trade for an exit)
+    MUST carry the SAME ``client_order_id`` so the broker adapter dedupes
+    the re-submission instead of doubling the position. UUIDv5 over a fixed
+    namespace + the order's logical identity gives that determinism without
+    persisting a mapping table.
+
+    ``role`` discriminates entry vs exit so an entry and a later exit on the
+    same trade never collide on the per-tenant UNIQUE constraint.
+    """
+    seed = ":".join((str(tenant_id), role, *(str(p) for p in parts)))
+    return uuid5(_CLIENT_ORDER_ID_NAMESPACE, seed)
+
+
 __all__ = [
     "Bar",
     "BarHistory",
@@ -351,4 +386,5 @@ __all__ = [
     "Proposal",
     "StrategyConfigSnapshot",
     "StrategyPort",
+    "derive_client_order_id",
 ]

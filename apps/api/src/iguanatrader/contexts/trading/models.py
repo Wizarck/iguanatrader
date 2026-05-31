@@ -49,6 +49,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     Text,
+    UniqueConstraint,
     Uuid,
     event,
     func,
@@ -336,6 +337,16 @@ class Order(Base):
     quantity: Mapped[Any] = mapped_column(Numeric(18, 8), nullable=False)
     limit_price: Mapped[Any | None] = mapped_column(Numeric(18, 8), nullable=True)
     stop_price: Mapped[Any | None] = mapped_column(Numeric(18, 8), nullable=True)
+    # Audit #6 (minimal): protective take-profit target copied from the
+    # originating proposal at submit time (NULL when the proposal had no
+    # target). Auditable record of the protective intent — see ``NewOrder``.
+    target_price: Mapped[Any | None] = mapped_column(Numeric(18, 8), nullable=True)
+    # Audit #7: deterministic caller-supplied idempotency key (see
+    # ``ports.derive_client_order_id``). Persisted so a timed-out / reconnect
+    # submission stays correlatable to its broker order without re-submitting.
+    # UNIQUE per tenant — see ``uq_orders_tenant_client_order_id``. Immutable
+    # post-INSERT (NOT on the append-only whitelist).
+    client_order_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     state: Mapped[str] = mapped_column(Text, nullable=False)
     submitted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -591,11 +602,23 @@ Order.__table_args__ = (
         name="ck_orders_order_type_allowed",
     ),
     CheckConstraint("side IN ('buy','sell')", name="ck_orders_side_allowed"),
+    # Audit #7: ``timeout_pending`` is a NON-terminal state — a submission
+    # that timed out may still be live at the broker, so it is held for
+    # reconciliation rather than marked terminally ``rejected``.
     CheckConstraint(
-        "state IN ('new','submitted','partially_filled','filled','canceled','rejected')",
+        "state IN ('new','submitted','partially_filled','filled',"
+        "'canceled','rejected','timeout_pending')",
         name="ck_orders_state_allowed",
     ),
     CheckConstraint("quantity > 0", name="ck_orders_quantity_positive"),
+    # Audit #7: client_order_id is unique per tenant (NULLs are distinct,
+    # so legacy rows without one do not collide). Guards against two orders
+    # claiming the same idempotency key within a tenant.
+    UniqueConstraint(
+        "tenant_id",
+        "client_order_id",
+        name="uq_orders_tenant_client_order_id",
+    ),
 )
 Fill.__table_args__ = (
     CheckConstraint(

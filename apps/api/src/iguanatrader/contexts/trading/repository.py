@@ -378,14 +378,28 @@ class OrderRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return cast("Order | None", result.scalars().first())
 
+    async def get_by_client_order_id(self, client_order_id: UUID) -> Order | None:
+        """Resolve an order by its deterministic ``client_order_id`` (audit #7).
+
+        Reconciliation correlates a broker order the adapter echoed back via
+        ``order_ref`` to a locally-persisted ``timeout_pending`` / submitted
+        order — without re-submitting and doubling the position. Tenant
+        filter is automatic via the slice-3 ``tenant_listener``.
+        """
+        stmt = select(Order).where(Order.client_order_id == client_order_id)
+        result = await self.session.execute(stmt)
+        return cast("Order | None", result.scalars().first())
+
     async def list_open_for_tenant(self) -> list[Order]:
         """List orders in an open state for the current tenant.
 
-        ``state in {'new', 'submitted', 'partially_filled'}``, ordered
-        ``created_at DESC``. Tenant filter is automatic via the
-        slice-3 ``tenant_listener``.
+        ``state in {'new', 'submitted', 'partially_filled', 'timeout_pending'}``,
+        ordered ``created_at DESC``. Tenant filter is automatic via the
+        slice-3 ``tenant_listener``. ``timeout_pending`` (audit #7) is an
+        in-flight, unresolved order needing reconciliation — it surfaces as
+        open so the operator/reconcile sweep can act on it.
         """
-        open_states = ("new", "submitted", "partially_filled")
+        open_states = ("new", "submitted", "partially_filled", "timeout_pending")
         stmt = select(Order).where(Order.state.in_(open_states)).order_by(Order.created_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
