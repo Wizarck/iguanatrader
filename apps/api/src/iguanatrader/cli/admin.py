@@ -132,11 +132,15 @@ async def _bootstrap_tenant_async(
         user_id = uuid4()
         hashed = hash_password(password)
 
-        async with sessionmaker() as session:
-            session.add(Tenant(id=tenant_id, name=slug, feature_flags={}))
-            await session.commit()
-
+        # #16: create the Tenant AND its admin User in ONE transaction. The
+        # previous two-commit version could crash after committing the
+        # tenant but before the user, leaving an orphaned tenant with no
+        # admin — a permanent lockout (login impossible, and a re-run of
+        # bootstrap refuses because the tenant already exists). SQLAlchemy
+        # orders the inserts by the User→Tenant FK, so a single commit is
+        # safe; a failure rolls back both.
         async with with_tenant_context(tenant_id), sessionmaker() as session:
+            session.add(Tenant(id=tenant_id, name=slug, feature_flags={}))
             session.add(
                 User(
                     id=user_id,

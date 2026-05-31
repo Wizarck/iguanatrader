@@ -50,7 +50,7 @@ from __future__ import annotations
 
 import hmac
 import os
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 import structlog
@@ -76,23 +76,30 @@ router = APIRouter(prefix="/mcp", tags=["mcp"])
 class MCPNotConfiguredError(IguanaError):
     """Raised when the MCP token / tenant slug env vars are unset."""
 
-    status_code = 503
-    code = "mcp-not-configured"
+    # #9: IguanaError renders the RFC 7807 problem from these ClassVars
+    # (type_uri/default_title/default_status). The previous
+    # ``status_code``/``code`` attributes were never read, so every MCP
+    # error rendered as a generic 500 instead of 503/401/404.
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:mcp-not-configured"
+    default_title: ClassVar[str] = "MCP Not Configured"
+    default_status: ClassVar[int] = 503
 
 
 class MCPUnauthorizedError(IguanaError):
     """Raised when the bearer token check fails."""
 
-    status_code = 401
-    code = "mcp-unauthorized"
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:mcp-unauthorized"
+    default_title: ClassVar[str] = "MCP Unauthorized"
+    default_status: ClassVar[int] = 401
 
 
 class MCPNotFoundError(IguanaError):
     """Raised when the requested resource doesn't exist for the
     configured tenant."""
 
-    status_code = 404
-    code = "mcp-not-found"
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:mcp-not-found"
+    default_title: ClassVar[str] = "MCP Not Found"
+    default_status: ClassVar[int] = 404
 
 
 # ---------------------------------------------------------------------------

@@ -14,14 +14,18 @@ the APScheduler ``misfire_grace_time`` setting.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
+
+import structlog
 
 from iguanatrader.contexts.orchestration.scheduler import JobSpec
 
 if TYPE_CHECKING:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+
+log = structlog.get_logger("iguanatrader.contexts.orchestration.apscheduler_adapter")
 
 _DEFAULT_TIMEZONE = ZoneInfo("America/New_York")
 _DEFAULT_MISFIRE_GRACE_SECONDS = 300
@@ -44,15 +48,47 @@ class APSchedulerAdapter:
 
     def _ensure(self) -> AsyncIOScheduler:
         if self._scheduler is None:
+            from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
             self._scheduler = AsyncIOScheduler(
                 jobstores={"default": SQLAlchemyJobStore(url=self._jobstore_url)},
                 timezone=self._timezone,
-                job_defaults={"misfire_grace_time": _DEFAULT_MISFIRE_GRACE_SECONDS},
+                job_defaults={
+                    "misfire_grace_time": _DEFAULT_MISFIRE_GRACE_SECONDS,
+                    # #21: keep ``max_instances=1`` — the daemon shares a
+                    # single AsyncSession (#29), so two overlapping runs of
+                    # the same job would corrupt each other's pending state.
+                    # ``coalesce`` collapses a backlog of missed ticks into
+                    # one catch-up run instead of a thundering herd.
+                    "max_instances": 1,
+                    "coalesce": True,
+                },
             )
+            # #21: a run skipped because the previous one was still going
+            # (or one that raised) used to vanish silently. Surface both so
+            # an operator sees a sweep that is consistently overrunning its
+            # interval.
+            self._scheduler.add_listener(self._on_job_missed, EVENT_JOB_MISSED)
+            self._scheduler.add_listener(self._on_job_error, EVENT_JOB_ERROR)
         return self._scheduler
+
+    @staticmethod
+    def _on_job_missed(event: Any) -> None:
+        log.warning(
+            "orchestration.scheduler.job_missed",
+            job_id=getattr(event, "job_id", None),
+            scheduled_run_time=str(getattr(event, "scheduled_run_time", None)),
+        )
+
+    @staticmethod
+    def _on_job_error(event: Any) -> None:
+        log.error(
+            "orchestration.scheduler.job_error",
+            job_id=getattr(event, "job_id", None),
+            exception=str(getattr(event, "exception", None)),
+        )
 
     def add_job(self, spec: JobSpec) -> None:
         scheduler = self._ensure()

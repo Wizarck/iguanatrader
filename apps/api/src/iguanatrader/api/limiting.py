@@ -21,6 +21,7 @@ the middleware + 429 handler).
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -35,6 +36,44 @@ log = structlog.get_logger("iguanatrader.api.limiting")
 
 LOGIN_PATH: str = "/api/v1/auth/login"
 
+#: #17: how many trusted reverse-proxy hops sit in front of the app. When
+#: ``> 0`` the client IP is read from ``X-Forwarded-For`` (the address
+#: ``hops`` positions from the right — the last hop the trusted proxies
+#: did NOT add). Default ``0`` means "no trusted proxy": use the socket
+#: peer and IGNORE ``X-Forwarded-For`` entirely, so a client cannot spoof
+#: the header to dodge the per-IP login cap.
+_TRUSTED_PROXY_HOPS_ENV = "IGUANATRADER_TRUSTED_PROXY_HOPS"
+
+
+def _trusted_proxy_hops() -> int:
+    raw = os.environ.get(_TRUSTED_PROXY_HOPS_ENV)
+    if not raw:
+        return 0
+    try:
+        return max(0, int(raw.strip()))
+    except ValueError:
+        return 0
+
+
+def _client_ip(request: Request) -> str:
+    """Resolve the caller's IP, honouring trusted proxies only on opt-in.
+
+    Behind a reverse proxy the socket peer is the proxy, so without this
+    every login shares one rate-limit key. We trust ``X-Forwarded-For``
+    ONLY when :data:`_TRUSTED_PROXY_HOPS_ENV` is set — taking the address
+    ``hops`` from the right (the client beyond our own trusted proxies) so
+    a forged left-hand XFF entry cannot impersonate another client.
+    """
+    hops = _trusted_proxy_hops()
+    if hops > 0:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            parts = [p.strip() for p in xff.split(",") if p.strip()]
+            if parts:
+                idx = max(0, len(parts) - hops)
+                return parts[idx]
+    return get_remote_address(request)
+
 
 def _login_key_func(request: Request) -> str:
     """Compose the rate-limit key from ``(ip, email)``.
@@ -46,7 +85,7 @@ def _login_key_func(request: Request) -> str:
     effectively per-IP, which is fine because no other route uses this
     limiter today).
     """
-    ip = get_remote_address(request)
+    ip = _client_ip(request)
     email = getattr(request.state, "login_email", "") or ""
     return f"{ip}:{email}"
 

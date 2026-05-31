@@ -196,6 +196,43 @@ async def _production_adapter_lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
 
+#: #18: env vars deployers use to set the worker/process count. Any of
+#: these > 1 means the process-local state (slowapi login limiter, budget
+#: WARN_80 dedup cache, LLM throttle, the #12 per-tenant budget lock) is
+#: duplicated per worker, so every limit is silently multiplied by the
+#: worker count — a money cap or a brute-force login cap that does not
+#: actually hold.
+_WORKER_COUNT_ENV_VARS = ("WEB_CONCURRENCY", "GUNICORN_WORKERS", "UVICORN_WORKERS")
+_ALLOW_MULTIWORKER_ENV = "IGUANATRADER_ALLOW_MULTIWORKER"
+
+
+def _assert_single_worker_or_opted_in() -> None:
+    """#18: refuse to boot with >1 worker while limits live in memory.
+
+    The escape hatch ``IGUANATRADER_ALLOW_MULTIWORKER=true`` is for when a
+    shared store (Redis/DB) backs those limits — set it only once the
+    process-local state has actually been externalised. Default-deny so a
+    casual ``--workers 4`` cannot quietly defeat the caps.
+    """
+    if os.environ.get(_ALLOW_MULTIWORKER_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
+        return
+    for var in _WORKER_COUNT_ENV_VARS:
+        raw = os.environ.get(var)
+        if not raw:
+            continue
+        try:
+            count = int(raw.strip())
+        except ValueError:
+            continue
+        if count > 1:
+            raise RuntimeError(
+                f"{var}={count} requests multiple workers, but rate-limit / budget / "
+                "throttle state is process-local — running >1 worker multiplies every "
+                f"limit by the worker count. Set {_ALLOW_MULTIWORKER_ENV}=true ONLY after "
+                "moving that state to a shared store (Redis/DB), or run a single worker."
+            )
+
+
 def create_app() -> FastAPI:
     """Build and return the FastAPI app.
 
@@ -205,6 +242,7 @@ def create_app() -> FastAPI:
     process boundaries; for in-test resets see the integration test
     fixtures under ``apps/api/tests/integration/conftest.py``).
     """
+    _assert_single_worker_or_opted_in()
     _configure_structlog()
 
     app = FastAPI(

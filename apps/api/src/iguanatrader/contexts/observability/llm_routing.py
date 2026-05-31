@@ -19,6 +19,7 @@ The routing decision is logged via structlog
 
 from __future__ import annotations
 
+import asyncio
 from enum import StrEnum
 from uuid import UUID
 
@@ -28,6 +29,26 @@ from iguanatrader.contexts.observability.budget import BudgetStatus, check_budge
 from iguanatrader.contexts.observability.errors import BudgetExceededError
 
 log = structlog.get_logger("iguanatrader.contexts.observability.llm_routing")
+
+#: #12: per-tenant locks serialising the budget gate within one process.
+#: ``check_budget`` is a read-decide that two concurrent coroutines could
+#: both pass on a stale SUM (TOCTOU) and both spend, overshooting the cap.
+#: Serialising per tenant removes the in-process race. This is an MVP
+#: mitigation only: it does NOT bound spend across multiple worker
+#: processes (``--workers > 1``) — a real money cap needs a transactional
+#: ``pg_advisory_xact_lock`` + a SUM re-check inside the cost-event commit.
+#: Tracked alongside #18 (process-local state hardening).
+_tenant_budget_locks: dict[UUID, asyncio.Lock] = {}
+_locks_guard = asyncio.Lock()
+
+
+async def _budget_lock_for(tenant_id: UUID) -> asyncio.Lock:
+    async with _locks_guard:
+        lock = _tenant_budget_locks.get(tenant_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _tenant_budget_locks[tenant_id] = lock
+        return lock
 
 
 class TaskClass(StrEnum):
@@ -96,48 +117,51 @@ async def route_llm(
         )
         return base_tier
 
-    state = await check_budget(tenant_id)
+    # #12: serialise the budget gate per tenant so two concurrent
+    # coroutines can't both read a stale SUM and both slip past the cap.
+    async with await _budget_lock_for(tenant_id):
+        state = await check_budget(tenant_id)
 
-    if state.status is BudgetStatus.BLOCK_100:
-        log.warning(
-            "observability.llm.route_chosen",
-            task_class=task_class.value,
-            tier=base_tier.value,
-            reason="block_100",
-            tenant_id=str(tenant_id),
-            percent_used=state.percent_used,
-        )
-        raise BudgetExceededError(
-            detail=(
-                f"Tenant {tenant_id} exceeded the monthly LLM budget cap "
-                f"of {state.cap_usd} USD ({state.percent_used}% used). "
-                "Raise the cap via `iguanatrader admin set-budget` "
-                "(slice O2) or wait for next-month rollover."
-            ),
-        )
+        if state.status is BudgetStatus.BLOCK_100:
+            log.warning(
+                "observability.llm.route_chosen",
+                task_class=task_class.value,
+                tier=base_tier.value,
+                reason="block_100",
+                tenant_id=str(tenant_id),
+                percent_used=state.percent_used,
+            )
+            raise BudgetExceededError(
+                detail=(
+                    f"Tenant {tenant_id} exceeded the monthly LLM budget cap "
+                    f"of {state.cap_usd} USD ({state.percent_used}% used). "
+                    "Raise the cap via `iguanatrader admin set-budget` "
+                    "(slice O2) or wait for next-month rollover."
+                ),
+            )
 
-    if state.status is BudgetStatus.WARN_80:
-        downgraded = _DOWNGRADE_TABLE.get(base_tier, base_tier)
+        if state.status is BudgetStatus.WARN_80:
+            downgraded = _DOWNGRADE_TABLE.get(base_tier, base_tier)
+            log.info(
+                "observability.llm.route_chosen",
+                task_class=task_class.value,
+                tier=downgraded.value,
+                reason="warn_80_downgrade",
+                tenant_id=str(tenant_id),
+                base_tier=base_tier.value,
+                percent_used=state.percent_used,
+            )
+            return downgraded
+
         log.info(
             "observability.llm.route_chosen",
             task_class=task_class.value,
-            tier=downgraded.value,
-            reason="warn_80_downgrade",
+            tier=base_tier.value,
+            reason="ok",
             tenant_id=str(tenant_id),
-            base_tier=base_tier.value,
             percent_used=state.percent_used,
         )
-        return downgraded
-
-    log.info(
-        "observability.llm.route_chosen",
-        task_class=task_class.value,
-        tier=base_tier.value,
-        reason="ok",
-        tenant_id=str(tenant_id),
-        percent_used=state.percent_used,
-    )
-    return base_tier
+        return base_tier
 
 
 __all__ = [
