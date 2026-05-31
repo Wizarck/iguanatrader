@@ -45,6 +45,9 @@ class ApprovalProposalApproved(Event):
     telegram/whatsapp (where ``decided_by_sender_id`` is populated
     instead — the bus event keeps user_id only for forensics, channel
     is the canonical actor field).
+
+    ``tenant_id`` (#3) is carried explicitly so SSE consumers on the
+    shared singleton bus can drop frames belonging to other tenants.
     """
 
     proposal_id: UUID | None = None
@@ -52,6 +55,7 @@ class ApprovalProposalApproved(Event):
     decided_at: datetime | None = None
     decided_by_user_id: UUID | None = None
     decided_via_channel: str | None = None
+    tenant_id: UUID | None = None
 
 
 @dataclass
@@ -63,6 +67,7 @@ class ApprovalProposalRejected(Event):
     decided_at: datetime | None = None
     reason: str | None = None
     decided_via_channel: str | None = None
+    tenant_id: UUID | None = None
 
 
 @dataclass
@@ -72,6 +77,7 @@ class ApprovalProposalTimedOut(Event):
     proposal_id: UUID | None = None
     request_id: UUID | None = None
     expired_at: datetime | None = None
+    tenant_id: UUID | None = None
 
 
 __all__ = [

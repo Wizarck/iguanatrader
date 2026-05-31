@@ -84,6 +84,11 @@ class OrchestrationRepository(BaseRepository):
         """Update a routine_runs row to a terminal status."""
         import json
 
+        # #34: raw SQL bypasses the ORM tenant listener, so the tenant
+        # predicate MUST be added explicitly — without it an update by id
+        # alone could mutate another tenant's routine_run. ``insert_routine_run``
+        # already stamps the tenant; the matching ``AND tenant_id`` here
+        # keeps the write tenant-scoped end to end.
         await self._session.execute(
             sa.text(
                 "UPDATE routine_runs SET "
@@ -93,7 +98,7 @@ class OrchestrationRepository(BaseRepository):
                 "digest_payload = :digest, "
                 "cost_usd = :cost_usd, "
                 "error_message = :error_message "
-                "WHERE id = :id"
+                "WHERE id = :id AND tenant_id = :tid"
             ),
             {
                 "status": status,
@@ -103,6 +108,7 @@ class OrchestrationRepository(BaseRepository):
                 "cost_usd": cost_usd,
                 "error_message": error_message,
                 "id": str(run_id),
+                "tid": self._tenant_id_str(),
             },
         )
 
