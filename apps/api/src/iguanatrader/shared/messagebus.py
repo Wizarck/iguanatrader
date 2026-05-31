@@ -41,7 +41,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar, cast
 
+import structlog
+
 EventT = TypeVar("EventT", bound="Event")
+
+log = structlog.get_logger("iguanatrader.shared.messagebus")
 
 
 @dataclass
@@ -93,14 +97,16 @@ class Subscription(Generic[EventT]):
 class MessageBus:
     """In-process pub/sub with per-subscriber FIFO queues.
 
-    .. caution:: handler exceptions kill the worker task
+    .. note:: handler exceptions are logged and swallowed
 
-       The internal worker task does NOT catch exceptions raised by a
-       handler. If a handler raises, its worker task terminates and
-       that subscriber stops receiving events. Slice 2 has no logging
-       wired up (slice O1 lands ``structlog``); until then, callers
-       SHOULD wrap their handler bodies in a ``try/except`` and decide
-       whether to log + swallow or let the failure propagate.
+       The internal worker wraps each ``handler(event)`` call in
+       ``try/except``: a handler that raises is logged via ``structlog``
+       (``messagebus.handler_failed``) and the worker continues draining
+       its queue. One poison event can never silently decommission a
+       subscriber. ``asyncio.CancelledError`` is re-raised so shutdown
+       still cancels the worker promptly. Handlers that need their own
+       transactional unit-of-work should still open/commit their own
+       session (see the daemon composition root).
     """
 
     def __init__(self) -> None:
@@ -192,13 +198,31 @@ class MessageBus:
         self._subscriptions.clear()
 
     async def _worker(self, sub: Subscription[Event]) -> None:
-        """Drain ``sub.queue`` in FIFO order, invoking the handler."""
+        """Drain ``sub.queue`` in FIFO order, invoking the handler.
+
+        Handler exceptions are logged and swallowed so a single bad event
+        can never decommission the subscriber. Previously an unhandled
+        exception terminated this worker task and the subscriber silently
+        stopped receiving ALL future events (the caution in the class
+        docstring). The idempotency key is recorded only after a clean
+        handler return, so a failed delivery is eligible for redelivery
+        (at-least-once on the failure path).
+        """
         while True:
             event = await sub.queue.get()
             try:
                 await sub.handler(event)
                 if sub.idempotent and event.idempotency_key is not None:
                     sub._record_key(event.idempotency_key)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception(
+                    "messagebus.handler_failed",
+                    event_type=type(event).__name__,
+                    handler=getattr(sub.handler, "__qualname__", repr(sub.handler)),
+                    idempotency_key=event.idempotency_key,
+                )
             finally:
                 sub.queue.task_done()
 
