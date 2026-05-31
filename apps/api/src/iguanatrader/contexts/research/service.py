@@ -153,6 +153,18 @@ class BriefService:
             methodology=methodology,
             since=utc_now(),
         )
+
+        close_pair = feature_bundle.values.get("close_price")
+        if not close_pair or close_pair[0] is None:
+            from iguanatrader.contexts.research.errors import InsufficientPriceDataError
+
+            raise InsufficientPriceDataError(
+                detail=(
+                    f"close_price missing for {symbol}; "
+                    f"ingest price bars before synthesis"
+                ),
+            )
+
         score_fn = METHODOLOGY_REGISTRY[methodology]
         methodology_result = score_fn(feature_bundle.values_only())
 

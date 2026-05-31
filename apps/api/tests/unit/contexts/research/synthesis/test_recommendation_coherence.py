@@ -17,6 +17,7 @@ from iguanatrader.contexts.research.feature_provider.base import (
 )
 from iguanatrader.contexts.research.synthesis.synthesizer import (
     _check_recommendation_coherence,
+    _patch_action_to_hold,
 )
 
 
@@ -217,3 +218,35 @@ def test_buy_with_comma_separated_target_parses() -> None:
         feature_bundle=_bundle(Decimal("1000.00")),
     )
     assert res is True
+
+
+# ---------------------------------------------------------------------------
+# _patch_action_to_hold — deterministic Action downgrade
+# ---------------------------------------------------------------------------
+
+
+def test_patch_buy_to_hold() -> None:
+    body = _brief("BUY", "164.50")
+    patched = _patch_action_to_hold(body)
+    assert "**Action**: HOLD" in patched
+    assert "**Action**: BUY" not in patched
+
+
+def test_patch_avoid_to_hold() -> None:
+    body = _brief("AVOID", "50.00")
+    patched = _patch_action_to_hold(body)
+    assert "**Action**: HOLD" in patched
+    assert "**Action**: AVOID" not in patched
+
+
+def test_patch_preserves_rest_of_brief() -> None:
+    body = _brief("BUY", "164.50")
+    patched = _patch_action_to_hold(body)
+    assert "**Target price**: $164.50" in patched
+    assert "elevated multiples" in patched
+
+
+def test_patch_hold_is_noop() -> None:
+    body = _brief("HOLD", "100.00")
+    patched = _patch_action_to_hold(body)
+    assert "**Action**: HOLD" in patched
