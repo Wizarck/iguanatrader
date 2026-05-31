@@ -37,7 +37,10 @@ from iguanatrader.contexts.approval.channels.types import (
     ApprovalRequestRow,
     ChannelKind,
 )
-from iguanatrader.contexts.approval.errors import ApprovalNotFoundError
+from iguanatrader.contexts.approval.errors import (
+    ApprovalExpiredError,
+    ApprovalNotFoundError,
+)
 from iguanatrader.contexts.approval.events import (
     ApprovalProposalApproved,
     ApprovalProposalRejected,
@@ -54,6 +57,21 @@ _DEFAULT_APPROVAL_CHANNELS = "telegram,dashboard"
 _DEFAULT_APPROVAL_TIMEOUT_SECONDS = 300
 _TIMEOUT_MIN_SECONDS = 1
 _TIMEOUT_MAX_SECONDS = 86400
+
+
+def _as_aware_utc(value: datetime) -> datetime:
+    """Coerce ``value`` to a tz-aware UTC datetime.
+
+    #30: ``DateTime(timezone=True)`` columns round-trip tz-aware on
+    Postgres but **naive** on SQLite/aiosqlite. Comparing a naive
+    ``expires_at`` against the tz-aware :func:`utc_now` raises
+    ``TypeError`` — and the pre-existing latency subtraction had the same
+    latent fragility (no SQLite round-trip test exercised the granted
+    path). Treat a naive value as already-UTC.
+    """
+    from iguanatrader.shared.time import UTC
+
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _parse_approval_channels(raw: str | None) -> list[str]:
@@ -150,9 +168,25 @@ class ApprovalService:
                 detail=f"No approval request found for id={request_id}.",
             )
         decided_at = utc_now()
+        # #30: a human decision (granted/rejected) that lands at or after
+        # ``expires_at`` races the timeout sweeper — both would persist a
+        # decision and the bus would emit BOTH the approve/reject event AND
+        # ``approval_timeout`` for the same proposal (double execution / split
+        # state). Reject the late decision deterministically with 410. The
+        # sweeper's own timeout path calls the repository directly (not this
+        # method), so it is exempt; ``outcome == "timeout"`` is likewise
+        # never gated here.
+        if outcome in ("granted", "rejected") and decided_at >= _as_aware_utc(request.expires_at):
+            raise ApprovalExpiredError(
+                detail=(
+                    f"Approval request {request_id} expired at "
+                    f"{request.expires_at.isoformat()}; a {outcome!r} decision at "
+                    f"{decided_at.isoformat()} is too late to record."
+                ),
+            )
         latency_ms = int(
             max(
-                (decided_at - request.created_at).total_seconds() * 1000,
+                (decided_at - _as_aware_utc(request.created_at)).total_seconds() * 1000,
                 0.0,
             )
         )
@@ -224,6 +258,7 @@ class ApprovalService:
                     proposal_id=request.proposal_id,
                     request_id=request.id,
                     expired_at=request.expires_at,
+                    tenant_id=request.tenant_id,
                 )
             )
             decisions.append(decision)
@@ -247,6 +282,7 @@ class ApprovalService:
                 decided_at=decided_at,
                 decided_by_user_id=decision.decided_by_user_id,
                 decided_via_channel=decision.decided_via_channel,
+                tenant_id=request.tenant_id,
             )
         elif outcome == "rejected":
             event = ApprovalProposalRejected(
@@ -255,12 +291,14 @@ class ApprovalService:
                 decided_at=decided_at,
                 reason=reason,
                 decided_via_channel=decision.decided_via_channel,
+                tenant_id=request.tenant_id,
             )
         else:
             event = ApprovalProposalTimedOut(
                 proposal_id=request.proposal_id,
                 request_id=request.id,
                 expired_at=request.expires_at,
+                tenant_id=request.tenant_id,
             )
         await self._message_bus.publish(event)
 

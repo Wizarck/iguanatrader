@@ -27,13 +27,17 @@ def _make_incoming(
     *,
     role: str = "user",
     request_id: Any = None,
+    tenant_id: Any = None,
 ) -> IncomingCommand:
+    # #39: the in-process dedup cache is tenant-keyed, so a "duplicate"
+    # must share a tenant_id to collapse. Callers that exercise dedup
+    # pass an explicit, shared tenant_id; everyone else gets a fresh one.
     return IncomingCommand(
         command_name=command,
         raw_args="",
         sender_external_id="ext-123",
         channel="telegram",
-        tenant_id=uuid4(),
+        tenant_id=tenant_id if tenant_id is not None else uuid4(),
         request_id=request_id,
         role=role,  # type: ignore[arg-type]
     )
@@ -79,6 +83,7 @@ async def test_dispatch_unknown_command_returns_unknown_command() -> None:
 @pytest.mark.asyncio
 async def test_dispatch_dedups_duplicate_approve_via_in_process_cache() -> None:
     request_id = uuid4()
+    tenant_id = uuid4()  # #39: a real duplicate is same-tenant.
     service = AsyncMock()
     service.record_decision = AsyncMock(
         return_value=type(
@@ -87,8 +92,8 @@ async def test_dispatch_dedups_duplicate_approve_via_in_process_cache() -> None:
             {"id": uuid4(), "created_at": __import__("datetime").datetime.now()},
         )()
     )
-    incoming1 = _make_incoming("/approve", request_id=request_id)
-    incoming2 = _make_incoming("/approve", request_id=request_id)
+    incoming1 = _make_incoming("/approve", request_id=request_id, tenant_id=tenant_id)
+    incoming2 = _make_incoming("/approve", request_id=request_id, tenant_id=tenant_id)
     r1 = await dispatch(
         incoming1,
         service=service,
@@ -106,3 +111,66 @@ async def test_dispatch_dedups_duplicate_approve_via_in_process_cache() -> None:
     # Second call short-circuits via the in-process cache → service
     # was called exactly once.
     assert service.record_decision.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_does_not_dedup_same_request_across_tenants() -> None:
+    """#39: the dedup cache is tenant-keyed — an identical request_id in a
+    different tenant must NOT be suppressed by another tenant's command."""
+    request_id = uuid4()
+    service = AsyncMock()
+    service.record_decision = AsyncMock(
+        return_value=type(
+            "DecisionStub",
+            (),
+            {"id": uuid4(), "created_at": __import__("datetime").datetime.now()},
+        )()
+    )
+    incoming_a = _make_incoming("/approve", request_id=request_id, tenant_id=uuid4())
+    incoming_b = _make_incoming("/approve", request_id=request_id, tenant_id=uuid4())
+    await dispatch(incoming_a, service=service, message_bus=AsyncMock(), repository=AsyncMock())
+    await dispatch(incoming_b, service=service, message_bus=AsyncMock(), repository=AsyncMock())
+    # Two distinct tenants → no cross-tenant dedup → both reach the handler.
+    assert service.record_decision.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_dispatch_denies_approve_when_approvals_paused(monkeypatch: Any) -> None:
+    """#31: a trade-actuating command is denied while ``approvals_paused``
+    reads True for the tenant — even for an authorised caller."""
+    import iguanatrader.contexts.approval.channels.command_handler as ch
+
+    async def _paused(_tenant_id: Any) -> bool:
+        return True
+
+    monkeypatch.setattr(ch, "_approvals_paused", _paused)
+    service = AsyncMock()
+    result = await dispatch(
+        _make_incoming("/approve", request_id=uuid4()),
+        service=service,
+        message_bus=AsyncMock(),
+        repository=AsyncMock(),
+    )
+    assert result.status == "denied"
+    assert "paused" in result.message.lower()
+    service.record_decision.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_allows_reject_when_approvals_paused(monkeypatch: Any) -> None:
+    """#31: resolving commands (/reject) still flow while paused — a paused
+    operator can clear the backlog; only trade-actuating commands gate."""
+    import iguanatrader.contexts.approval.channels.command_handler as ch
+
+    async def _paused(_tenant_id: Any) -> bool:
+        return True
+
+    monkeypatch.setattr(ch, "_approvals_paused", _paused)
+    result = await dispatch(
+        _make_incoming("/reject", request_id=uuid4()),
+        service=AsyncMock(),
+        message_bus=AsyncMock(),
+        repository=AsyncMock(),
+    )
+    # /reject is not blocked_when_paused → it reaches its handler (status ok).
+    assert result.status != "denied"

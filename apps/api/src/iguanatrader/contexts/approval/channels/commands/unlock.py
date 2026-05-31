@@ -12,19 +12,19 @@ from iguanatrader.contexts.approval.channels.types import (
 
 
 async def _handle(ctx: CommandContext) -> CommandResult:
+    # #31: clear the pause for real; report failures instead of a
+    # misleading "ok" (see lock.py for the rationale).
     try:
         tenant_admin = importlib.import_module("iguanatrader.contexts.observability.tenant_admin")
-        set_flag = getattr(tenant_admin, "set_feature_flag", None)
-        if set_flag is None:
-            return CommandResult(
-                status="ok",
-                message="Feature-flag admin unavailable.",
-            )
-        await set_flag("approvals_paused", False)
-    except ModuleNotFoundError:
+        await tenant_admin.set_feature_flag(
+            "approvals_paused",
+            False,
+            tenant_id=ctx.incoming.tenant_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — report, never silently succeed.
         return CommandResult(
-            status="ok",
-            message="Observability context not yet installed; unlock is a no-op.",
+            status="error",
+            message=f"Failed to resume approvals: {exc}",
         )
     return CommandResult(status="ok", message="Approvals resumed.")
 

@@ -138,6 +138,13 @@ class CommandSpec:
     required_role: RequiredRole
     idempotency_key_source: IdempotencyKeySource
     description_md: str
+    #: #31: when True, the dispatcher denies this command while the
+    #: tenant's ``approvals_paused`` feature flag is set (operator
+    #: ``/lock``). Set on the trade-actuating commands (/approve,
+    #: /override) only — resolving commands like /reject still flow so a
+    #: paused operator can clear the backlog. Defaults False so every
+    #: existing spec is unaffected.
+    blocked_when_paused: bool = False
 
 
 @dataclass

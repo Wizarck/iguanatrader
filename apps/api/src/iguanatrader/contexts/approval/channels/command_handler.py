@@ -74,21 +74,51 @@ def _resolve_caller_role(incoming: IncomingCommand) -> str:
     return incoming.role
 
 
+async def _approvals_paused(tenant_id: Any) -> bool:
+    """Return True only when the tenant's ``approvals_paused`` flag reads True.
+
+    #31: lazily resolves ``observability.tenant_admin.get_feature_flag``
+    (late import keeps the dispatcher free of an import-time
+    approval→observability dependency, matching the ``/lock`` handler).
+    Any failure — module absent, no active session, missing tenant —
+    yields False (not paused) and is logged: the gate must never wedge
+    the normal approve path shut because it could not read state.
+    """
+    try:
+        tenant_admin = importlib.import_module("iguanatrader.contexts.observability.tenant_admin")
+        flag = await tenant_admin.get_feature_flag(
+            "approvals_paused",
+            False,
+            tenant_id=tenant_id,
+        )
+        return bool(flag)
+    except Exception as exc:  # noqa: BLE001 — fail-open + log, never wedge.
+        log.warning("approval.command.pause_check_failed", error=str(exc))
+        return False
+
+
 def _idempotency_check(spec: CommandSpec, incoming: IncomingCommand) -> str | None:
     """Return the resolved idempotency key, or ``None`` if not applicable."""
     if spec.idempotency_key_source == "none":
         return None
+    # #39: every key is prefixed with the tenant id. The cache is a
+    # single process-global structure shared across tenants; without the
+    # prefix a key like ``/halt:<sender>:<bucket>`` (or a non-UUID
+    # sender_external_id that two tenants happen to share) could let one
+    # tenant's command suppress another tenant's command. The DB UNIQUE on
+    # ``approval_decisions.request_id`` is the canonical guard; this keeps
+    # the fast-path correct under multi-tenant load.
     if spec.idempotency_key_source == "request_id":
         if incoming.request_id is None:
             return None
-        return f"{spec.name}:{incoming.request_id}"
+        return f"{incoming.tenant_id}:{spec.name}:{incoming.request_id}"
     # payload-keyed: combine command, sender, and minute-bucket so
     # rapid retries dedupe but legitimate "halt then halt 30 seconds
     # later" do not.
     from iguanatrader.shared.time import now as utc_now
 
     minute_bucket = int(utc_now().timestamp() // 30)
-    return f"{spec.name}:{incoming.sender_external_id}:{minute_bucket}"
+    return f"{incoming.tenant_id}:{spec.name}:{incoming.sender_external_id}:{minute_bucket}"
 
 
 def _record_key(key: str) -> None:
@@ -151,6 +181,24 @@ async def dispatch(
         return CommandResult(
             status="denied",
             message="This command requires admin role.",
+        )
+
+    # #31: operator pause gate. While ``approvals_paused`` is set for the
+    # tenant, trade-actuating commands (/approve, /override) are denied —
+    # even for an authorised caller. Read positively: only a confirmed
+    # True pauses; any failure to read the flag (no session, missing
+    # tenant) is treated as "not paused" so the dashboard/test paths that
+    # lack a daemon session are unaffected, and logged for visibility.
+    if spec.blocked_when_paused and await _approvals_paused(incoming.tenant_id):
+        log.warning(
+            "approval.command.paused_denied",
+            command=spec.name,
+            channel=incoming.channel,
+            tenant_id=str(incoming.tenant_id),
+        )
+        return CommandResult(
+            status="denied",
+            message="Approvals are paused (/lock active). Use /unlock to resume.",
         )
 
     dedup_key = _idempotency_check(spec, incoming)

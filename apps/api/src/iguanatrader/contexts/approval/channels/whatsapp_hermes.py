@@ -29,6 +29,7 @@ from iguanatrader.contexts.approval.channels.types import (
     IncomingCommand,
 )
 from iguanatrader.contexts.approval.repository import ApprovalRepository
+from iguanatrader.shared.contextvars import with_tenant_context
 
 log = structlog.get_logger("iguanatrader.contexts.approval.channels.whatsapp_hermes")
 
@@ -116,14 +117,20 @@ class HermesWhatsAppChannel(ChannelPort):
             request_id=inbound.request_id,
             sender_db_id=sender_db_id,
             user_db_id=None,
-            role=inbound.role,
+            # #32: pin bot-channel role to "user" — never trust the
+            # transport-supplied role (privilege-escalation surface).
+            # Admin commands flow only through the JWT dashboard channel.
+            role="user",
         )
-        await dispatch(
-            normalised,
-            service=self._service,
-            message_bus=self._message_bus,
-            repository=self._repository,
-        )
+        # #33: bind the bot-token's tenant for the dispatch so repository
+        # reads+writes are tenant-scoped (no request scope sets it here).
+        async with with_tenant_context(self._tenant_id):
+            await dispatch(
+                normalised,
+                service=self._service,
+                message_bus=self._message_bus,
+                repository=self._repository,
+            )
 
 
 __all__ = ["HermesWhatsAppChannel"]

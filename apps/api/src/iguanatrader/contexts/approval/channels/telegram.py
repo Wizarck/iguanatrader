@@ -24,6 +24,7 @@ from iguanatrader.contexts.approval.channels.types import (
     IncomingCommand,
 )
 from iguanatrader.contexts.approval.repository import ApprovalRepository
+from iguanatrader.shared.contextvars import with_tenant_context
 
 log = structlog.get_logger("iguanatrader.contexts.approval.channels.telegram")
 
@@ -128,14 +129,26 @@ class TelegramChannel(ChannelPort):
             request_id=inbound.request_id,
             sender_db_id=sender_db_id,
             user_db_id=None,
-            role=inbound.role,
+            # #32: role is NOT taken from the transport-supplied inbound
+            # command — a crafted Telegram message could otherwise claim
+            # role="admin" and run admin-only commands (/halt, /override).
+            # Bot channels are pinned to "user"; admin commands flow only
+            # through the JWT-backed dashboard channel (gotcha #50). A DB
+            # `authorized_senders.role` column can later raise a verified
+            # sender to admin, but never the wire payload.
+            role="user",
         )
-        await dispatch(
-            normalised,
-            service=self._service,
-            message_bus=self._message_bus,
-            repository=self._repository,
-        )
+        # #33: bind the bot-token's tenant for the whole dispatch so the
+        # get_request / record_decision reads+writes are tenant-scoped by
+        # the persistence listener (the inbound path has no request scope
+        # that would otherwise set tenant_id_var).
+        async with with_tenant_context(self._tenant_id):
+            await dispatch(
+                normalised,
+                service=self._service,
+                message_bus=self._message_bus,
+                repository=self._repository,
+            )
 
 
 __all__ = ["TelegramChannel"]

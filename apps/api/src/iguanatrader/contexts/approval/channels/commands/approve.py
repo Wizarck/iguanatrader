@@ -59,4 +59,6 @@ SPEC: CommandSpec = CommandSpec(
     required_role="user",
     idempotency_key_source="request_id",
     description_md="Approve the active proposal. Idempotent via DB UNIQUE.",
+    # #31: /approve actuates a trade — denied while approvals are paused.
+    blocked_when_paused=True,
 )
