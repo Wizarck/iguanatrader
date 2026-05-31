@@ -7,7 +7,30 @@ from iguanatrader.contexts.trading.brokers.ibkr_brokerage_model import (
     SUPPORTED_ORDER_TYPES_DEFAULT,
     IBKRBrokerageModel,
     UnsupportedOrderTypeError,
+    translate_order_type,
 )
+
+
+@pytest.mark.parametrize(
+    ("domain", "ibkr"),
+    [
+        ("market", "MKT"),
+        ("limit", "LMT"),
+        ("stop", "STP"),
+        ("stop_limit", "STP LMT"),
+        # Idempotent: already-IBKR codes pass through unchanged.
+        ("MKT", "MKT"),
+        ("STP LMT", "STP LMT"),
+        ("TRAIL", "TRAIL"),
+    ],
+)
+def test_translate_order_type_maps_domain_to_ibkr(domain: str, ibkr: str) -> None:
+    assert translate_order_type(domain) == ibkr
+
+
+def test_translate_order_type_rejects_unknown() -> None:
+    with pytest.raises(UnsupportedOrderTypeError):
+        translate_order_type("teleport")
 
 
 def test_paper_default_uses_port_7497() -> None:

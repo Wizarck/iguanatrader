@@ -172,6 +172,66 @@ def test_sweep_emits_close_on_long_stop_hit() -> None:
     assert event.reason == "stop"
 
 
+class _FakeAuditRepo:
+    """#28: returns a single tightened stop for any trade."""
+
+    def __init__(self, new_stop: Decimal | None) -> None:
+        self._new_stop = new_stop
+
+    async def get_latest_for_trade(self, _trade_id: UUID) -> Any:
+        if self._new_stop is None:
+            return None
+        return type("AuditRow", (), {"new_stop": self._new_stop})()
+
+
+def test_sweep_enforces_tightened_trailing_stop() -> None:
+    """#28: a long trade whose close sits above the ORIGINAL proposal stop
+    but at/below the trailing-tightened stop must still fire a stop close —
+    proving the close loop reads ``trailing_stop_audit``, not just the
+    proposal stop."""
+    trade = _OpenTrade(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        symbol="NVDA",
+        side="buy",
+        stop_price=Decimal("400"),  # original stop — NOT hit by close=420
+        target_price=Decimal("500"),
+    )
+    bus = _RecordingBus()
+    service = StopHitSweepService(
+        session=_FakeSession([trade]),  # type: ignore[arg-type]
+        market_data_port=_FakeMarketData({"NVDA": Decimal("420")}),
+        bus=bus,  # type: ignore[arg-type]
+        trailing_audit_repo=_FakeAuditRepo(Decimal("425")),  # type: ignore[arg-type]
+    )
+    result = _run(service.sweep())
+
+    # close 420 <= tightened stop 425 → stop hit (would be a miss at 400).
+    assert result.stop_hits_emitted == 1
+    assert bus.published[0].reason == "stop"
+
+
+def test_sweep_without_audit_repo_uses_proposal_stop() -> None:
+    """Control: same setup, no audit repo → original stop (400) governs, so
+    close=420 does NOT fire."""
+    trade = _OpenTrade(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        symbol="NVDA",
+        side="buy",
+        stop_price=Decimal("400"),
+        target_price=Decimal("500"),
+    )
+    bus = _RecordingBus()
+    service = StopHitSweepService(
+        session=_FakeSession([trade]),  # type: ignore[arg-type]
+        market_data_port=_FakeMarketData({"NVDA": Decimal("420")}),
+        bus=bus,  # type: ignore[arg-type]
+    )
+    result = _run(service.sweep())
+    assert result.stop_hits_emitted == 0
+
+
 def test_sweep_emits_close_on_short_target_hit() -> None:
     trade = _OpenTrade(
         id=uuid4(),

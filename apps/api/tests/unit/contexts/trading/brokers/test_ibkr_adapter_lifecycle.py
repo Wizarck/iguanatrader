@@ -117,6 +117,28 @@ async def test_place_order_rejects_unsupported_order_type(
 
 
 @pytest.mark.asyncio
+async def test_place_order_translates_domain_order_type(
+    adapter_factory: tuple[IBKRAdapter, FakeIBClient],
+) -> None:
+    """Regression for #1: the service submits the lowercase domain
+    ``order_type="market"`` (the ORM CHECK vocabulary). The adapter must
+    translate it to the IBKR code ``MKT`` so the whitelist passes and the
+    ib_async translator can build the order — previously every real order
+    raised :class:`UnsupportedOrderTypeError`."""
+    adapter, fake = adapter_factory
+    await adapter.connect()
+    try:
+        order = _new_order(order_type="market")
+        broker_order_id = await adapter.place_order(order)
+        assert broker_order_id is not None
+        assert len(fake.placed_orders) == 1
+        _contract, ib_order = fake.placed_orders[0]
+        assert ib_order.order_type == "MKT"
+    finally:
+        await adapter.disconnect()
+
+
+@pytest.mark.asyncio
 async def test_get_account_equity_extracts_known_tags(
     adapter_factory: tuple[IBKRAdapter, FakeIBClient],
 ) -> None:

@@ -577,11 +577,13 @@ def test_unsupported_algo_kind_raises_not_implemented() -> None:
     from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
     from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
 
+    # ``vwap``/``arrival_price`` ARE wired now (see ``_attach_algo``); use a
+    # genuinely-unsupported strategy so the test still pins the failure path.
     order = IBOrder(
         action="BUY",
         total_quantity=Decimal("10"),
         order_type="MKT",
-        algo_kind="vwap",  # not wired in this slice
+        algo_kind="iceberg",  # not wired
     )
-    with pytest.raises(NotImplementedError, match="algo_kind='vwap'"):
+    with pytest.raises(NotImplementedError, match="algo_kind='iceberg'"):
         _to_order(order)

@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import typer
 
@@ -59,11 +59,35 @@ def run(
         "--tenant",
         help="Tenant slug; defaults to the first tenant if single-tenant.",
     ),
+    confirm_live: bool = typer.Option(
+        False,
+        "--confirm-live",
+        help="Required to start the LIVE (real-money) daemon. Ignored in paper mode.",
+    ),
 ) -> None:
     """Run the iguanatrader trading daemon (long-running)."""
     if mode not in _VALID_MODES:
         typer.echo(f"Invalid mode {mode!r}; expected one of {_VALID_MODES}")
         raise typer.Exit(code=2)
+
+    # #15: live mode places real-money orders. Refuse to start it without an
+    # explicit confirmation — the ``--confirm-live`` flag, or the
+    # ``IGUANATRADER_CONFIRM_LIVE`` env truthy for non-interactive (k8s /
+    # systemd) deploys. Paper mode is unaffected.
+    if mode == "live":
+        env_confirm = os.environ.get("IGUANATRADER_CONFIRM_LIVE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if not (confirm_live or env_confirm):
+            typer.echo(
+                "Refusing to start the LIVE trading daemon without confirmation. "
+                "Re-run with --confirm-live (or set IGUANATRADER_CONFIRM_LIVE=true) "
+                "once you understand this places real-money orders."
+            )
+            raise typer.Exit(code=2)
 
     asyncio.run(_run_daemon(mode=mode, tenant=tenant))
 
@@ -190,11 +214,22 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
                 f"IGUANATRADER_ORDER_TIMEOUT_SECS must be a float, got {order_timeout_raw!r}"
             ) from exc
 
+        # Slice #5: wire the authoritative kill-switch reader so the
+        # execute-on-approval boundary re-checks the DB cache before
+        # placing a live order (the in-memory flag is never set in
+        # production because ``halt_handler`` is unsubscribed). Reads the
+        # same per-tenant cache ``RiskService.evaluate_proposal`` uses.
+        async def _kill_switch_reader(check_tenant_id: UUID) -> bool:
+            return await RiskRepository(session=session).load_kill_switch_state(
+                check_tenant_id
+            )
+
         trading_service = TradingService(
             bus=bus,
             broker=broker,
             strategy_resolver=_make_strategy_resolver(session_factory=sessionmaker),
             order_timeout_secs=order_timeout_secs,
+            kill_switch_reader=_kill_switch_reader,
         )
         trading_service.register_subscriptions()
 
@@ -338,11 +373,33 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # breaches and publishes CloseTradeRequested. Closes the
         # auto-close loop that K1's stoploss_guard depends on.
         from iguanatrader.contexts.risk.stop_hit_sweep import StopHitSweepService
+        from iguanatrader.contexts.risk.trailing_stop_repository import (
+            TrailingStopAuditRepository,
+        )
+        from iguanatrader.contexts.risk.trailing_stop_sweep import TrailingStopSweepService
+
+        # Shared audit repo over the daemon session — written by the
+        # trailing sweep (#38) and read by the stop-hit sweep (#28).
+        trailing_audit_repo = TrailingStopAuditRepository(session)
 
         stop_hit_sweep_service = StopHitSweepService(
             session=session,
             market_data_port=market_data_port,
             bus=bus,
+            # #28: enforce the tightened trailing stop at close, not just
+            # the proposal's original stop.
+            trailing_audit_repo=trailing_audit_repo,
+        )
+
+        # #38: construct + register the trailing-stop sweep. It is inert by
+        # construction until a tenant sets ``trail_trigger_pct`` (the
+        # ``compute_trailing_stop`` short-circuit), so wiring it is safe;
+        # before this it was never built, so trailing stops never ratcheted.
+        trailing_stop_sweep_service = TrailingStopSweepService(
+            session=session,
+            audit_repo=trailing_audit_repo,
+            risk_caps_provider=risk_service.load_caps,
+            market_data_port=market_data_port,
         )
 
         # Slice ``dual-daemon-mode-toggle-and-reconcile``: per-daemon
@@ -385,6 +442,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             ingestion_service=ingestion_service,
             equity_snapshot_sweep_service=equity_snapshot_sweep_service,
             stop_hit_sweep_service=stop_hit_sweep_service,
+            trailing_stop_sweep_service=trailing_stop_sweep_service,
             daemon_mode=mode,
             daemon_tenant_id=tenant_id,
             trading_mode_repo=trading_mode_repo,
@@ -554,8 +612,13 @@ async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter
     """
     from iguanatrader.contexts.trading.brokers.client_protocol import IBClient
     from iguanatrader.contexts.trading.brokers.ibkr_adapter import IBKRAdapter
+    from iguanatrader.contexts.trading.brokers.ibkr_brokerage_model import (
+        IBKRBrokerageModel,
+    )
 
-    return IBKRAdapter(  # type: ignore[call-arg]
+    brokerage = IBKRBrokerageModel.from_env(cast('Literal["paper", "live"]', mode))
+    return IBKRAdapter(
+        brokerage=brokerage,
         client_factory=lambda: cast("IBClient", ib_client),
     )
 

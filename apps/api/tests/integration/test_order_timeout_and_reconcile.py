@@ -365,3 +365,82 @@ async def test_startup_reconcile_falls_back_to_24h_window_when_db_empty(
     age = utc_now() - captured_since[0]
     # Default fallback is 24h; allow 5s of drift
     assert timedelta(hours=24) - timedelta(seconds=5) <= age <= timedelta(hours=24, seconds=5)
+
+
+@pytest.mark.asyncio
+async def test_execute_on_approval_rejected_when_kill_switch_active(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """#5: a proposal approved around a kill-switch trip must NOT place a
+    live order. The execute boundary re-reads the authoritative
+    kill-switch state and publishes ``OrderRejected(reason="kill_switch")``
+    without contacting the broker."""
+    tenant_id = await _seed_tenant(schema_session_factory, "t-killswitch")
+    _sc_id, proposal_id = await _seed_proposal(schema_session_factory, tenant_id=tenant_id)
+
+    placed: list[NewOrder] = []
+
+    class _RecordingBroker(_HangingBroker):
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            placed.append(order)
+            return BrokerOrderId("SHOULD-NOT-HAPPEN")
+
+    broker = _RecordingBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async def _halted(_tid: UUID) -> bool:
+        return True
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+            kill_switch_reader=_halted,
+        )
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+
+    assert placed == []  # broker never contacted
+    rejections = [e for e in bus.published if isinstance(e, OrderRejected)]
+    assert len(rejections) == 1
+    assert rejections[0].reason == "kill_switch"
+    assert rejections[0].proposal_id == proposal_id
+
+
+@pytest.mark.asyncio
+async def test_execute_on_approval_generic_broker_error_is_caught(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """#8: a non-timeout/non-auth/non-budget broker error must not escape
+    the handler (which pre-WS0 killed the bus worker). It yields a
+    persisted rejected Order + ``OrderRejected(reason="broker_other")``."""
+    from iguanatrader.shared.errors import IntegrationError
+
+    tenant_id = await _seed_tenant(schema_session_factory, "t-broker-err")
+    _sc_id, proposal_id = await _seed_proposal(schema_session_factory, tenant_id=tenant_id)
+
+    class _ErroringBroker(_HangingBroker):
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            raise IntegrationError(detail="client not connected")
+
+    broker = _ErroringBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+        )
+        # Must NOT raise out of the handler.
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+
+    rejections = [e for e in bus.published if isinstance(e, OrderRejected)]
+    assert len(rejections) == 1
+    assert rejections[0].reason == "broker_other"
