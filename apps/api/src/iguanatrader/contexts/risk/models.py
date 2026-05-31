@@ -128,7 +128,8 @@ class RiskCaps(BaseModel):
     #: layer reads, even when the consumer is the stop-management
     #: service rather than the pre-trade engine.
     trail_trigger_pct: Decimal | None = Field(default=None)
-    #: Multiplier on Wilder ATR for the trailing-stop distance below
+    #: Multiplier on the mean true range (simple ATR; #42) for the
+    #: trailing-stop distance below
     #: the highest post-entry close. ``1.5`` is the Freqtrade default;
     #: lower = tighter trail (faster stop-out on pullbacks), higher =
     #: looser. Read only when :attr:`trail_trigger_pct` is set.

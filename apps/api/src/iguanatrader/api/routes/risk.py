@@ -37,6 +37,7 @@ from iguanatrader.api.dtos.risk import (
 from iguanatrader.contexts.risk.repository import RiskRepository
 from iguanatrader.contexts.risk.service import RiskService
 from iguanatrader.persistence import User
+from iguanatrader.shared.errors import ForbiddenError
 from iguanatrader.shared.time import now as utc_now
 
 log = structlog.get_logger("iguanatrader.api.routes.risk")
@@ -134,12 +135,26 @@ async def post_override(
     multi-seat RBAC lands (post-MVP), this route will require the
     ``tenant_user`` role explicitly via ``Depends(requires_role(Role.tenant_user))``.
     """
+    # #11: the override audit author MUST be the authenticated principal,
+    # never a value supplied in the request body (which would let a caller
+    # attribute a risk override to a different user). Reject a mismatched
+    # body value loudly rather than silently overriding it, so an honest
+    # client learns the field is server-derived.
+    if body.authorised_by_user_id != user.id:
+        raise ForbiddenError(
+            detail=(
+                "authorised_by_user_id must match the authenticated user; "
+                "the override author is derived server-side and cannot be "
+                "set to another user id."
+            ),
+        )
+
     service = _build_service(session)
     override_id = await service.record_override(
         tenant_id=user.tenant_id,
         proposal_id=body.proposal_id,
         risk_evaluation_id=body.risk_evaluation_id,
-        authorised_by_user_id=body.authorised_by_user_id,
+        authorised_by_user_id=user.id,
         reason_text=body.reason_text,
         confirmation_chain=body.confirmation_chain,
         state_snapshot_at_override=body.state_snapshot_at_override,
@@ -150,7 +165,7 @@ async def post_override(
         override_id=override_id,
         proposal_id=body.proposal_id,
         risk_evaluation_id=body.risk_evaluation_id,
-        authorised_by_user_id=body.authorised_by_user_id,
+        authorised_by_user_id=user.id,
         reason_text=body.reason_text,
         confirmation_chain=body.confirmation_chain,
         created_at=utc_now(),

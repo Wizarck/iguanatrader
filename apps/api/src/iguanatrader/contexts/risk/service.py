@@ -481,8 +481,6 @@ class RiskService:
         already ``True`` (callers are expected to track first-time
         transitions only).
         """
-        was_active = await self._repo.load_kill_switch_state(tenant_id)
-
         when = utc_now()
         event_id = await self._repo.append_kill_switch_event(
             tenant_id=tenant_id,
@@ -492,7 +490,11 @@ class RiskService:
             reason=reason,
             created_at=when,
         )
-        await self._repo.update_kill_switch_cache(
+        # #43: the cache upsert returns whether this was a real transition
+        # (inactive→active), derived atomically from the rowcount — no
+        # separate dirty pre-read that two concurrent activators could both
+        # observe as False and both publish on.
+        transitioned = await self._repo.update_kill_switch_cache(
             tenant_id=tenant_id,
             is_active=True,
             last_event_id=event_id,
@@ -506,10 +508,10 @@ class RiskService:
             source=source,
             actor_user_id=str(actor_user_id) if actor_user_id else None,
             reason=reason,
-            already_active=was_active,
+            already_active=not transitioned,
         )
 
-        if not was_active:
+        if transitioned:
             await self._publish(
                 RiskKillSwitchActivated(
                     idempotency_key=str(event_id),
@@ -532,8 +534,6 @@ class RiskService:
         reason: str | None,
     ) -> UUID:
         """Append a ``transition='deactivated'`` event + update the cache."""
-        was_active = await self._repo.load_kill_switch_state(tenant_id)
-
         when = utc_now()
         event_id = await self._repo.append_kill_switch_event(
             tenant_id=tenant_id,
@@ -543,7 +543,9 @@ class RiskService:
             reason=reason,
             created_at=when,
         )
-        await self._repo.update_kill_switch_cache(
+        # #43: publish only on a real active→inactive transition, derived
+        # atomically from the upsert (no dirty pre-read).
+        transitioned = await self._repo.update_kill_switch_cache(
             tenant_id=tenant_id,
             is_active=False,
             last_event_id=event_id,
@@ -557,10 +559,10 @@ class RiskService:
             source=source,
             actor_user_id=str(actor_user_id) if actor_user_id else None,
             reason=reason,
-            was_active=was_active,
+            was_active=transitioned,
         )
 
-        if was_active:
+        if transitioned:
             await self._publish(
                 RiskKillSwitchDeactivated(
                     idempotency_key=str(event_id),

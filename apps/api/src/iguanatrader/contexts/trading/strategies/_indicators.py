@@ -17,7 +17,16 @@ from typing import Any
 
 
 def _compute_atr(bars: Any) -> Decimal | None:
-    """Wilder ATR over ``bars`` — needs at least 2 bars."""
+    """Mean true range over ``bars`` — needs at least 2 bars.
+
+    #42: this is the *simple* ATR — the arithmetic mean of the per-bar
+    true ranges — NOT Wilder's smoothed RMA (``ATR_t = (ATR_{t-1}*(n-1) +
+    TR_t)/n``). The historical "Wilder ATR" label was inaccurate. The math
+    is intentionally unchanged (renaming the concept, not the behaviour:
+    altering live stop distances is a deliberate strategy change, not a
+    bug fix). Switching to true Wilder smoothing must be validated against
+    backtests before it touches real stop placement.
+    """
     from itertools import pairwise
 
     if len(bars) < 2:
