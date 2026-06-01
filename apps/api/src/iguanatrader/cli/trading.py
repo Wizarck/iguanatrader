@@ -179,8 +179,9 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # resolve their session from session_var at call time, so a single
         # service instance rides whichever per-delivery session the
         # middleware binds. The ambient ``session`` above remains the unit
-        # of work for the sequential daemon STARTUP steps + the cron sweeps
-        # (per-tick cron sessions are the documented follow-up).
+        # of work for the sequential daemon STARTUP steps only; the cron
+        # sweeps now each run on their own fresh per-tick session via
+        # ``_sweep_unit_of_work`` (closes the #29 cron-side hazard).
         bus = MessageBus()
         bus.set_delivery_middleware(session_scoped_delivery(sessionmaker, bus))
         watchlist_symbols = _parse_watchlist(
@@ -400,12 +401,17 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         )
         from iguanatrader.contexts.risk.trailing_stop_sweep import TrailingStopSweepService
 
-        # Shared audit repo over the daemon session — written by the
-        # trailing sweep (#38) and read by the stop-hit sweep (#28).
-        trailing_audit_repo = TrailingStopAuditRepository(session)
+        # Shared audit repo — written by the trailing sweep (#38) and read by
+        # the stop-hit sweep (#28). No explicit session (#29): it resolves
+        # session_var at call time, so the SAME instance correctly rides
+        # whichever per-tick sweep session is bound when each sweep fires —
+        # the two sweeps run as separate cron jobs on separate per-tick
+        # sessions now (see ``_sweep_unit_of_work`` below).
+        trailing_audit_repo = TrailingStopAuditRepository()
 
         stop_hit_sweep_service = StopHitSweepService(
-            session=session,
+            # No session=... (#29): resolves the per-tick session the sweep
+            # unit-of-work wrapper binds, not the long-lived ambient session.
             market_data_port=market_data_port,
             bus=bus,
             # #28: enforce the tightened trailing stop at close, not just
@@ -418,7 +424,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # ``compute_trailing_stop`` short-circuit), so wiring it is safe;
         # before this it was never built, so trailing stops never ratcheted.
         trailing_stop_sweep_service = TrailingStopSweepService(
-            session=session,
+            # No session=... (#29): per-tick session via the sweep wrapper.
             audit_repo=trailing_audit_repo,
             risk_caps_provider=risk_service.load_caps,
             market_data_port=market_data_port,
@@ -456,11 +462,23 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # work with publish-after-commit. This is REQUIRED now the bus delivers
         # per-event: it commits the proposal row before ``ProposalCreated`` is
         # published, so the risk subscriber (a fresh per-delivery session) sees
-        # it. The session-only cron sweeps still ride the ambient daemon
-        # session (per-tick sweep sessions are the documented follow-up).
+        # it. The session-only cron sweeps get the same treatment via
+        # ``_sweep_unit_of_work`` below (per-tick fresh session + commit).
         from iguanatrader.shared.contextvars import run_in_session_scope
 
         async def _propose_unit_of_work(inner: Any) -> None:
+            await run_in_session_scope(sessionmaker, bus, tenant_id, inner)
+
+        # Audit #29 (cron side): run each session-only cron sweep tick
+        # (trailing-stop, stop-hit, equity-snapshot, daemon-heartbeat) as its
+        # OWN committed unit of work on a fresh per-tick session, instead of
+        # sharing the long-lived ambient daemon session. This removes the
+        # last concurrent-AsyncSession hazard: the 10s heartbeat and the
+        # 1-min stop-hit sweep no longer touch one session at once. Same
+        # wrapper shape as the propose unit of work, bound to the daemon's
+        # single tenant (the sweeps that fan out across tenants — equity —
+        # override the tenant context per row internally).
+        async def _sweep_unit_of_work(inner: Any) -> None:
             await run_in_session_scope(sessionmaker, bus, tenant_id, inner)
 
         # Side-effect: registers cron JobSpecs on the scheduler (4 propose
@@ -483,6 +501,7 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             broker=broker,
             daemon_lifecycle_service=lifecycle_service,
             propose_unit_of_work=_propose_unit_of_work,
+            sweep_unit_of_work=_sweep_unit_of_work,
         )
 
         # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close

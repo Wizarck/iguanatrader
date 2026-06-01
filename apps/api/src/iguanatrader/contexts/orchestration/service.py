@@ -276,6 +276,8 @@ class OrchestrationService:
         lookback_bars: int = 200,
         propose_unit_of_work: Callable[[Callable[[], Awaitable[None]]], Awaitable[None]]
         | None = None,
+        sweep_unit_of_work: Callable[[Callable[[], Awaitable[None]]], Awaitable[None]]
+        | None = None,
     ) -> None:
         """Register cron triggers for the 4 propose routines + market_data_sync.
 
@@ -287,6 +289,15 @@ class OrchestrationService:
         ``ProposalCreated`` before the proposal row committed, and the risk
         subscriber (reading in its own session) would not see it. ``None``
         (older/test setups) runs the tick directly on the ambient session.
+
+        ``sweep_unit_of_work`` (audit #29, cron side): same wrapper shape for the
+        session-only cron sweeps (trailing-stop, stop-hit, equity-snapshot,
+        daemon-heartbeat). Before this each sweep tick ran on the SHARED
+        long-lived daemon session, so two sweeps firing close together (e.g. the
+        10s heartbeat overlapping the 1-min stop-hit sweep) used one
+        ``AsyncSession`` concurrently — the #29 isolation hazard. With the
+        wrapper each tick opens its own fresh session + commits at the boundary.
+        ``None`` keeps the ambient-session behaviour for older/test setups.
 
         Slice T4-followup-market-data §2.11: replaces the T4
         ``_placeholder`` no-op with a real per-symbol propose loop and
@@ -405,20 +416,34 @@ class OrchestrationService:
 
             return _propose
 
-        def _wrap_uow(
+        def _wrap_in_uow(
             inner: Callable[[], Awaitable[None]],
+            uow: Callable[[Callable[[], Awaitable[None]]], Awaitable[None]] | None,
         ) -> Callable[[], Awaitable[None]]:
-            """Run ``inner`` through the per-tick unit of work, when supplied."""
-            if propose_unit_of_work is None:
+            """Run ``inner`` through the per-tick unit of work ``uow``, when given.
+
+            ``uow`` (audit #2/#27/#29) opens a FRESH per-tick session, binds the
+            contextvars, commits at the boundary, and publishes any events the
+            tick produced only AFTER the commit (publish-after-commit). ``None``
+            (older / test setups) runs ``inner`` directly on the ambient
+            session. Used for both the propose ticks (``propose_unit_of_work``)
+            and the session-only cron sweeps (``sweep_unit_of_work``) so neither
+            shares the long-lived daemon session any more.
+            """
+            if uow is None:
                 return inner
 
             async def _run() -> None:
-                await propose_unit_of_work(inner)
+                await uow(inner)
 
             return _run
 
         for routine_name, cron_kwargs in cron_kwargs_by_routine.items():
-            fn = _wrap_uow(_make_propose_fn(routine_name)) if wire_propose_loops else _placeholder
+            fn = (
+                _wrap_in_uow(_make_propose_fn(routine_name), propose_unit_of_work)
+                if wire_propose_loops
+                else _placeholder
+            )
             spec = JobSpec(
                 name=routine_name,
                 fn=fn,
@@ -499,7 +524,7 @@ class OrchestrationService:
 
             sweep_spec = JobSpec(
                 name="trailing_stops_sweep",
-                fn=_sweep_trailing_stops,
+                fn=_wrap_in_uow(_sweep_trailing_stops, sweep_unit_of_work),
                 cron_kwargs={
                     "hour": "9-16",
                     "minute": "*/15",
@@ -538,7 +563,7 @@ class OrchestrationService:
 
             stop_hit_spec = JobSpec(
                 name="stop_hit_sweep",
-                fn=_sweep_stop_hits,
+                fn=_wrap_in_uow(_sweep_stop_hits, sweep_unit_of_work),
                 cron_kwargs={
                     "hour": "9-16",
                     "minute": "*",  # every minute during US market hours
@@ -575,7 +600,7 @@ class OrchestrationService:
 
             equity_spec = JobSpec(
                 name="equity_snapshot_sweep",
-                fn=_sweep_equity_snapshots,
+                fn=_wrap_in_uow(_sweep_equity_snapshots, sweep_unit_of_work),
                 cron_kwargs={
                     "hour": "9-16",
                     "minute": "*/15",
@@ -644,7 +669,7 @@ class OrchestrationService:
 
             heartbeat_spec = JobSpec(
                 name="daemon_heartbeat",
-                fn=_heartbeat,
+                fn=_wrap_in_uow(_heartbeat, sweep_unit_of_work),
                 cron_kwargs={"second": "*/10"},
             )
             scheduler.add_job(heartbeat_spec)

@@ -57,7 +57,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -107,14 +107,19 @@ class StopHitSweepService:
     def __init__(
         self,
         *,
-        session: AsyncSession,
+        session: AsyncSession | None = None,
         market_data_port: MarketDataPort,
         bus: MessageBus,
         clock: Callable[[], datetime] = utc_now,
         timeframe: str = "1d",
         trailing_audit_repo: TrailingStopAuditRepository | None = None,
     ) -> None:
-        self._session = session
+        # Audit #29: ``session`` is OPTIONAL. When omitted, the sweep resolves
+        # the active session from ``session_var`` at call time, so the cron
+        # wrapper can bind a FRESH per-tick session (no longer riding the
+        # long-lived ambient daemon session shared with the other sweeps).
+        # Explicit callers (the unit tests) keep passing a fake session.
+        self._explicit_session = session
         self._market_data_port = market_data_port
         self._bus = bus
         self._clock = clock
@@ -127,6 +132,20 @@ class StopHitSweepService:
         # (e.g. a tenant with no trailing config), the proposal stop is used
         # unchanged. Production wires the repo in the daemon bootstrap.
         self._trailing_audit_repo = trailing_audit_repo
+
+    @property
+    def _session(self) -> AsyncSession:
+        if self._explicit_session is not None:
+            return self._explicit_session
+        from iguanatrader.shared.contextvars import session_var
+
+        sess = session_var.get()
+        if sess is None:
+            raise LookupError(
+                "StopHitSweepService has no session: pass session=... or bind "
+                "session_var (per-tick cron scope)."
+            )
+        return cast("AsyncSession", sess)
 
     async def sweep(self) -> StopHitSweepResult:
         """Iterate open trades, compare to stop/target, emit close events."""
