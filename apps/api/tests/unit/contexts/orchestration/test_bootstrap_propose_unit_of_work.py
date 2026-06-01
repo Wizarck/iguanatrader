@@ -38,7 +38,7 @@ _PROPOSE_ROUTINES = {"premarket", "midday", "postmarket", "weekly_review"}
 
 
 async def _bootstrap(scheduler: _FakeScheduler, uow: Any) -> None:
-    svc = OrchestrationService(repository=object())  # repo unused by this path
+    svc = OrchestrationService(repository=object())  # type: ignore[arg-type]  # repo unused
     await svc.bootstrap_routines(
         scheduler=scheduler,
         trading_service=object(),

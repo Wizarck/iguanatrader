@@ -84,10 +84,10 @@ def _fetch_robots(parser: RobotFileParser, host: str, user_agent: str) -> bool:
         return True
     except urllib.error.HTTPError as err:
         if err.code in (401, 403):
-            parser.disallow_all = True
+            parser.disallow_all = True  # type: ignore[attr-defined]
             return True
         if 400 <= err.code < 500:
-            parser.allow_all = True
+            parser.allow_all = True  # type: ignore[attr-defined]
             return True
         # 5xx — indeterminate.
         logger.warning(

@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
@@ -75,7 +75,9 @@ async def sf(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return session_factory(engine)
 
 
-async def _seed_chain(sf: async_sessionmaker[AsyncSession], tid):  # noqa: ANN001
+async def _seed_chain(
+    sf: async_sessionmaker[AsyncSession], tid: UUID
+) -> tuple[UUID, UUID, UUID, UUID]:
     """Seed tenant → strategy_config → proposal → trade → order."""
     sc_id, pid, trid, oid = uuid4(), uuid4(), uuid4(), uuid4()
     async with sf() as s:
@@ -221,7 +223,7 @@ def test_snapshot_in_lockstep_with_orm() -> None:
     for table in WHITELISTED_TRADING_TABLES:
         model = models[table]
         all_cols = set(model.__table__.columns.keys())
-        whitelist = set(model.__append_only_mutable_columns__)
+        whitelist = set(model.__append_only_mutable_columns__)  # type: ignore[attr-defined]
         assert (
             set(MUTABLE_COLUMNS[table]) == whitelist
         ), f"{table}: MUTABLE_COLUMNS snapshot drifted from the ORM whitelist"

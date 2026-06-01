@@ -36,8 +36,8 @@ def test_indeterminate_allows_when_fail_open(monkeypatch: pytest.MonkeyPatch) ->
 def test_definitive_allow_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
     # A successful fetch with an allow-all body permits the URL even under
     # a fail-closed policy (the answer is definitive, not indeterminate).
-    def _fetch(parser, host, ua):  # noqa: ANN001
-        parser.parse(["User-agent: *", "Allow: /"])
+    def _fetch(parser: object, host: object, ua: object) -> bool:
+        parser.parse(["User-agent: *", "Allow: /"])  # type: ignore[attr-defined]
         return True
 
     monkeypatch.setattr(robots_check, "_fetch_robots", _fetch)
@@ -46,8 +46,8 @@ def test_definitive_allow_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_definitive_disallow_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fetch(parser, host, ua):  # noqa: ANN001
-        parser.parse(["User-agent: *", "Disallow: /"])
+    def _fetch(parser: object, host: object, ua: object) -> bool:
+        parser.parse(["User-agent: *", "Disallow: /"])  # type: ignore[attr-defined]
         return True
 
     monkeypatch.setattr(robots_check, "_fetch_robots", _fetch)

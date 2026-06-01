@@ -250,7 +250,9 @@ class StopHitSweepService:
         """
         if self._trailing_audit_repo is None:
             return record.stop_price
-        latest = await self._trailing_audit_repo.get_latest_for_trade(record.trade_id)
+        latest = await self._trailing_audit_repo.get_latest_for_trade(
+            record.trade_id  # type: ignore[arg-type]
+        )
         if latest is None or latest.new_stop is None:
             return record.stop_price
         return Decimal(str(latest.new_stop))

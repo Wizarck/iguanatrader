@@ -93,7 +93,7 @@ class TestStateMachine:
         a.mark_reconnecting()
         # mypy narrows a.state.value to Literal["disconnected"] from the
         # previous assert; it cannot follow the mark_*() mutation.
-        assert a.state.value == "reconnecting"  # type: ignore[comparison-overlap]
+        assert a.state.value == "reconnecting"
         a.mark_connected()
         assert a.state.value == "connected"
 

@@ -357,7 +357,7 @@ class IBKRSource:
         # Lazy materialise the concrete client. Only happens on the
         # first ``fetch_async`` call when no client was injected.
         self._client = IbAsyncResearchClient()
-        await self._client.connect_async(self._host, self._port, self._client_id)
+        await self._client.connect_async(self._host, self._port, self._client_id)  # type: ignore[arg-type]
         return self._client
 
 

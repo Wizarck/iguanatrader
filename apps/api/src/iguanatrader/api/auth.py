@@ -145,7 +145,8 @@ def decode_jwt(token: str) -> dict[str, Any] | None:
     Never raises.
     """
     try:
-        return jwt.decode(token, _get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        decoded: dict[str, Any] = jwt.decode(token, _get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        return decoded
     except jwt.ExpiredSignatureError:
         log.info("auth.session.expired")
         return None

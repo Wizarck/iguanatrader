@@ -92,7 +92,7 @@ async def _bootstrap(
     mode_repo: Any,
     sweep_uow: Any,
 ) -> None:
-    svc = OrchestrationService(repository=object())
+    svc = OrchestrationService(repository=object())  # type: ignore[arg-type]
     await svc.bootstrap_routines(
         scheduler=scheduler,
         trading_service=object(),

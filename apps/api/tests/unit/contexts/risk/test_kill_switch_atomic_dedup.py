@@ -70,7 +70,7 @@ async def test_double_activation_publishes_once_but_records_two_events(
 
     bus = MessageBus()
     published: list[RiskKillSwitchActivated] = []
-    sub = bus.subscribe(RiskKillSwitchActivated, lambda ev: published.append(ev))  # type: ignore[arg-type,misc]
+    sub = bus.subscribe(RiskKillSwitchActivated, lambda ev: published.append(ev))  # type: ignore[arg-type,return-value]
     try:
         async with with_tenant_context(tid), sf() as session:
             session_var.set(session)
@@ -108,7 +108,7 @@ async def test_noop_deactivate_of_never_active_publishes_nothing(
 
     bus = MessageBus()
     published: list[RiskKillSwitchDeactivated] = []
-    sub = bus.subscribe(RiskKillSwitchDeactivated, lambda ev: published.append(ev))  # type: ignore[arg-type,misc]
+    sub = bus.subscribe(RiskKillSwitchDeactivated, lambda ev: published.append(ev))  # type: ignore[arg-type,return-value]
     try:
         async with with_tenant_context(tid), sf() as session:
             session_var.set(session)

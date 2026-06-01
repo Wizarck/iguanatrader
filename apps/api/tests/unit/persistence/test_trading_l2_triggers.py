@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
@@ -59,7 +59,7 @@ async def sf(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return session_factory(engine)
 
 
-async def _seed_snapshot(sf: async_sessionmaker[AsyncSession], tid) -> object:  # noqa: ANN001
+async def _seed_snapshot(sf: async_sessionmaker[AsyncSession], tid: UUID) -> object:
     async with sf() as s:
         s.add(Tenant(id=tid, name="t", feature_flags={}))
         await s.commit()

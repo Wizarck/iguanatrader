@@ -69,7 +69,7 @@ class OpenBBSidecarSource:
         enabled: bool | None = None,
     ) -> None:
         self._base_url = (
-            base_url or os.environ.get("OPENBB_SIDECAR_URL", DEFAULT_BASE_URL)
+            base_url or os.environ.get("OPENBB_SIDECAR_URL") or DEFAULT_BASE_URL
         ).rstrip("/")
         # Owned client by default; tests inject a fake.
         self._client = client or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)

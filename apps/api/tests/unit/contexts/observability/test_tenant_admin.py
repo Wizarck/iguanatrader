@@ -9,7 +9,7 @@ silently drops) when it cannot resolve a session or tenant.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from uuid import uuid4
 
@@ -31,10 +31,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture(autouse=True)
-def _listeners() -> AsyncIterator[None]:
+def _listeners() -> Iterator[None]:
     register_global_listeners()
     try:
-        yield  # type: ignore[misc]
+        yield
     finally:
         unregister_global_listeners()
 
