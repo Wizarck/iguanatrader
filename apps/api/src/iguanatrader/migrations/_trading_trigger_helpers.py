@@ -70,16 +70,14 @@ def emit_postgres_trading_full_lock_triggers(op: object) -> None:
     execute = op.execute  # type: ignore[attr-defined]
     for table in FULLY_APPEND_ONLY_TRADING_TABLES:
         fn_name = f"trg_{table}_block_mutation"
-        execute(
-            f"""
+        execute(f"""
             CREATE OR REPLACE FUNCTION {fn_name}() RETURNS trigger
             LANGUAGE plpgsql AS $$
             BEGIN
                 RAISE EXCEPTION 'append-only: % on {table} forbidden', TG_OP;
             END;
             $$;
-            """
-        )
+            """)
         execute(
             f"CREATE TRIGGER trg_{table}_no_update BEFORE UPDATE ON {table} "
             f"FOR EACH ROW EXECUTE FUNCTION {fn_name}();"

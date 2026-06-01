@@ -82,9 +82,7 @@ async def test_double_activation_publishes_once_but_records_two_events(
                 tenant_id=tid, source="channel_command", actor_user_id=None, reason="again"
             )
             await session.commit()
-            events = (
-                (await session.execute(sa.select(KillSwitchEventORM))).scalars().all()
-            )
+            events = (await session.execute(sa.select(KillSwitchEventORM))).scalars().all()
         # drain the bus
         import asyncio
 

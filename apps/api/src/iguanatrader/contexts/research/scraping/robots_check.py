@@ -90,10 +90,14 @@ def _fetch_robots(parser: RobotFileParser, host: str, user_agent: str) -> bool:
             parser.allow_all = True
             return True
         # 5xx — indeterminate.
-        logger.warning("research.scraping.robots_server_error", extra={"host": host, "status": err.code})
+        logger.warning(
+            "research.scraping.robots_server_error", extra={"host": host, "status": err.code}
+        )
         return False
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        logger.warning("research.scraping.robots_unreachable", extra={"host": host, "error": str(exc)})
+        logger.warning(
+            "research.scraping.robots_unreachable", extra={"host": host, "error": str(exc)}
+        )
         return False
 
 

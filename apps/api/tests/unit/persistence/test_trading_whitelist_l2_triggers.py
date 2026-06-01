@@ -147,7 +147,11 @@ async def _seed_chain(sf: async_sessionmaker[AsyncSession], tid):  # noqa: ANN00
 
 # (table, a NON-whitelisted column to mutate, a NEW value, a whitelisted UPDATE)
 _BLOCK_ALLOW = [
-    ("trade_proposals", "UPDATE trade_proposals SET quantity = 1", "UPDATE trade_proposals SET state = 'approved'"),
+    (
+        "trade_proposals",
+        "UPDATE trade_proposals SET quantity = 1",
+        "UPDATE trade_proposals SET state = 'approved'",
+    ),
     ("trades", "UPDATE trades SET symbol = 'TSLA'", "UPDATE trades SET state = 'closing'"),
     ("orders", "UPDATE orders SET quantity = 1", "UPDATE orders SET state = 'filled'"),
 ]
@@ -218,9 +222,9 @@ def test_snapshot_in_lockstep_with_orm() -> None:
         model = models[table]
         all_cols = set(model.__table__.columns.keys())
         whitelist = set(model.__append_only_mutable_columns__)
-        assert set(MUTABLE_COLUMNS[table]) == whitelist, (
-            f"{table}: MUTABLE_COLUMNS snapshot drifted from the ORM whitelist"
-        )
+        assert (
+            set(MUTABLE_COLUMNS[table]) == whitelist
+        ), f"{table}: MUTABLE_COLUMNS snapshot drifted from the ORM whitelist"
         assert set(NON_WHITELISTED_COLUMNS[table]) == (all_cols - whitelist), (
             f"{table}: NON_WHITELISTED_COLUMNS snapshot drifted from ORM "
             f"(columns − whitelist); add a follow-up trigger migration"

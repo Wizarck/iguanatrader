@@ -274,10 +274,12 @@ class OrchestrationService:
         daemon_lifecycle_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
-        propose_unit_of_work: Callable[[Callable[[], Awaitable[None]]], Awaitable[None]]
-        | None = None,
-        sweep_unit_of_work: Callable[[Callable[[], Awaitable[None]]], Awaitable[None]]
-        | None = None,
+        propose_unit_of_work: (
+            Callable[[Callable[[], Awaitable[None]]], Awaitable[None]] | None
+        ) = None,
+        sweep_unit_of_work: (
+            Callable[[Callable[[], Awaitable[None]]], Awaitable[None]] | None
+        ) = None,
     ) -> None:
         """Register cron triggers for the 4 propose routines + market_data_sync.
 

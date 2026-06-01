@@ -146,9 +146,7 @@ class IBKRBrokerageModel:
         account_code = os.environ.get("IGUANATRADER_IBKR_ACCOUNT_CODE")
         if mode == "live":
             if not account_code:
-                raise ValueError(
-                    "live mode requires IGUANATRADER_IBKR_ACCOUNT_CODE to be set"
-                )
+                raise ValueError("live mode requires IGUANATRADER_IBKR_ACCOUNT_CODE to be set")
             return cls(
                 mode="live",
                 host=host,

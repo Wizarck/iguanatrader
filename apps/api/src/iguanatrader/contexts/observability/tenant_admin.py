@@ -51,9 +51,7 @@ async def get_feature_flag(
     if tid is None:
         return default
     session = cast(AsyncSession, sess)
-    tenant = (
-        await session.execute(select(Tenant).where(Tenant.id == tid))
-    ).scalar_one_or_none()
+    tenant = (await session.execute(select(Tenant).where(Tenant.id == tid))).scalar_one_or_none()
     if tenant is None or not tenant.feature_flags:
         return default
     return tenant.feature_flags.get(key, default)
@@ -92,9 +90,7 @@ async def set_feature_flag(
             "set_feature_flag requires a tenant (pass tenant_id= or bind tenant_id_var)"
         )
     session = cast(AsyncSession, sess)
-    tenant = (
-        await session.execute(select(Tenant).where(Tenant.id == tid))
-    ).scalar_one_or_none()
+    tenant = (await session.execute(select(Tenant).where(Tenant.id == tid))).scalar_one_or_none()
     if tenant is None:
         raise RuntimeError(f"set_feature_flag: tenant {tid} not found")
     flags = dict(tenant.feature_flags or {})

@@ -159,9 +159,7 @@ class OpenBBSidecarSource:
         # #24: date params go through httpx ``params=`` (URL-encoded by the
         # client) instead of hand-concatenated query string, and the symbol
         # is percent-encoded into its path segment.
-        params = {
-            k: v for k, v in (("start_date", start_date), ("end_date", end_date)) if v
-        }
+        params = {k: v for k, v in (("start_date", start_date), ("end_date", end_date)) if v}
         path = f"/v1/equity/historical_prices/{quote(symbol, safe='')}"
 
         payload = self._get_or_skip(

@@ -127,9 +127,7 @@ def _whitelist_update_trigger(table: str) -> str:
     NULL→NULL no-op does not trip the guard — matching the L1 "actually
     changed" semantics.
     """
-    changed = " OR ".join(
-        f"OLD.{col} IS NOT NEW.{col}" for col in NON_WHITELISTED_COLUMNS[table]
-    )
+    changed = " OR ".join(f"OLD.{col} IS NOT NEW.{col}" for col in NON_WHITELISTED_COLUMNS[table])
     allowed = ",".join(MUTABLE_COLUMNS[table])
     return (
         f"CREATE TRIGGER trg_{table}_no_update "
@@ -173,14 +171,12 @@ def emit_postgres_trading_whitelist_triggers(op: object) -> None:
     execute = op.execute  # type: ignore[attr-defined]
     for table in WHITELISTED_TRADING_TABLES:
         changed = " OR ".join(
-            f"OLD.{col} IS DISTINCT FROM NEW.{col}"
-            for col in NON_WHITELISTED_COLUMNS[table]
+            f"OLD.{col} IS DISTINCT FROM NEW.{col}" for col in NON_WHITELISTED_COLUMNS[table]
         )
         allowed = ",".join(MUTABLE_COLUMNS[table])
         upd_fn = f"trg_{table}_block_nonwhitelisted_update"
         del_fn = f"trg_{table}_block_delete"
-        execute(
-            f"""
+        execute(f"""
             CREATE OR REPLACE FUNCTION {upd_fn}() RETURNS trigger
             LANGUAGE plpgsql AS $$
             BEGIN
@@ -191,22 +187,19 @@ def emit_postgres_trading_whitelist_triggers(op: object) -> None:
                 RETURN NEW;
             END;
             $$;
-            """
-        )
+            """)
         execute(
             f"CREATE TRIGGER trg_{table}_no_update BEFORE UPDATE ON {table} "
             f"FOR EACH ROW EXECUTE FUNCTION {upd_fn}();"
         )
-        execute(
-            f"""
+        execute(f"""
             CREATE OR REPLACE FUNCTION {del_fn}() RETURNS trigger
             LANGUAGE plpgsql AS $$
             BEGIN
                 RAISE EXCEPTION 'append-only: DELETE on {table} forbidden';
             END;
             $$;
-            """
-        )
+            """)
         execute(
             f"CREATE TRIGGER trg_{table}_no_delete BEFORE DELETE ON {table} "
             f"FOR EACH ROW EXECUTE FUNCTION {del_fn}();"

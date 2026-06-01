@@ -535,9 +535,7 @@ class TradingService:
             order_type="market",
             stop_price=proposal_row.stop_price,
             target_price=proposal_row.target_price,
-            client_order_id=derive_client_order_id(
-                event.tenant_id, "entry", event.proposal_id
-            ),
+            client_order_id=derive_client_order_id(event.tenant_id, "entry", event.proposal_id),
             algo_kind=self._execution_algo,
         )
 

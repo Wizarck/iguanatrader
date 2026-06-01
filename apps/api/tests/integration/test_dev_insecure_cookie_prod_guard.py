@@ -49,9 +49,7 @@ def test_guard_raises_for_all_production_like_envs(
 
 
 @pytest.mark.parametrize("env", ["dev", "test", "ci", ""])
-def test_guard_passes_for_non_production_envs(
-    env: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_guard_passes_for_non_production_envs(env: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(ENV_VAR, env)
     monkeypatch.setenv(DEV_INSECURE_COOKIE_ENV, "1")
     enforce_dev_insecure_cookie_prod_guard()  # no raise
