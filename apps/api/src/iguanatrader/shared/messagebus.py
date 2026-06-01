@@ -47,6 +47,16 @@ EventT = TypeVar("EventT", bound="Event")
 
 log = structlog.get_logger("iguanatrader.shared.messagebus")
 
+#: A delivery middleware wraps the invocation of a subscriber's handler. It
+#: receives the bound handler + the event and is responsible for awaiting the
+#: handler. The daemon injects a session-per-delivery middleware (audit
+#: #2/#27/#29) that opens a fresh unit-of-work + tenant scope, runs the
+#: handler, and commits/rolls back at the delivery boundary — so one shared
+#: long-lived session no longer backs every worker. ``None`` (the default)
+#: calls the handler directly, preserving the historical behavior for tests
+#: and the in-request bus.
+DeliveryMiddleware = Callable[["_Handler[Event]", "Event"], Awaitable[None]]
+
 
 @dataclass
 class Event:
@@ -109,9 +119,23 @@ class MessageBus:
        session (see the daemon composition root).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, delivery_middleware: DeliveryMiddleware | None = None) -> None:
         self._subscriptions: dict[type[Event], list[Subscription[Event]]] = {}
         self._closed = False
+        # Audit #2/#27/#29: optional per-delivery wrapper. When set, every
+        # handler invocation runs inside it (the daemon supplies a
+        # session-per-delivery + commit boundary). When None, handlers are
+        # called directly — the historical behavior.
+        self._delivery_middleware = delivery_middleware
+
+    def set_delivery_middleware(self, middleware: DeliveryMiddleware | None) -> None:
+        """Install (or clear) the per-delivery middleware after construction.
+
+        Needed because the session-per-delivery middleware closes over the bus
+        itself (to flush its transactional outbox), a chicken-and-egg the
+        constructor cannot resolve: build the bus, then bind the middleware.
+        """
+        self._delivery_middleware = middleware
 
     def subscribe(
         self,
@@ -172,6 +196,19 @@ class MessageBus:
         if self._closed:
             raise RuntimeError("MessageBus is closed; cannot publish")
 
+        # Audit #2/#27/#29: when a transactional outbox is bound to the current
+        # context (i.e. we are inside a session-per-delivery unit of work),
+        # BUFFER the event instead of delivering it now. The unit-of-work
+        # runner flushes the buffer only after its session commits, so a
+        # downstream subscriber never reads a row the publisher has not yet
+        # committed. Outside a unit of work the outbox is None → deliver now.
+        from iguanatrader.shared.contextvars import publish_outbox_var
+
+        outbox = publish_outbox_var.get()
+        if outbox is not None:
+            outbox.append(event)
+            return
+
         bucket = self._subscriptions.get(type(event), [])
         for sub in bucket:
             if (
@@ -211,7 +248,10 @@ class MessageBus:
         while True:
             event = await sub.queue.get()
             try:
-                await sub.handler(event)
+                if self._delivery_middleware is not None:
+                    await self._delivery_middleware(sub.handler, event)
+                else:
+                    await sub.handler(event)
                 if sub.idempotent and event.idempotency_key is not None:
                     sub._record_key(event.idempotency_key)
             except asyncio.CancelledError:
@@ -227,4 +267,4 @@ class MessageBus:
                 sub.queue.task_done()
 
 
-__all__ = ["Event", "MessageBus", "Subscription"]
+__all__ = ["DeliveryMiddleware", "Event", "MessageBus", "Subscription"]

@@ -274,8 +274,19 @@ class OrchestrationService:
         daemon_lifecycle_service: Any | None = None,
         timeframe: str = "1d",
         lookback_bars: int = 200,
+        propose_unit_of_work: Callable[[Callable[[], Awaitable[None]]], Awaitable[None]]
+        | None = None,
     ) -> None:
         """Register cron triggers for the 4 propose routines + market_data_sync.
+
+        ``propose_unit_of_work`` (audit #2/#27/#29): when supplied, each propose
+        tick runs THROUGH it — the daemon passes a wrapper that opens a fresh
+        per-tick session + commits + publishes its events only after the commit
+        (``run_in_session_scope``). This is REQUIRED once the bus delivers in
+        per-delivery sessions: without it the propose tick would publish
+        ``ProposalCreated`` before the proposal row committed, and the risk
+        subscriber (reading in its own session) would not see it. ``None``
+        (older/test setups) runs the tick directly on the ambient session.
 
         Slice T4-followup-market-data §2.11: replaces the T4
         ``_placeholder`` no-op with a real per-symbol propose loop and
@@ -394,8 +405,20 @@ class OrchestrationService:
 
             return _propose
 
+        def _wrap_uow(
+            inner: Callable[[], Awaitable[None]],
+        ) -> Callable[[], Awaitable[None]]:
+            """Run ``inner`` through the per-tick unit of work, when supplied."""
+            if propose_unit_of_work is None:
+                return inner
+
+            async def _run() -> None:
+                await propose_unit_of_work(inner)
+
+            return _run
+
         for routine_name, cron_kwargs in cron_kwargs_by_routine.items():
-            fn = _make_propose_fn(routine_name) if wire_propose_loops else _placeholder
+            fn = _wrap_uow(_make_propose_fn(routine_name)) if wire_propose_loops else _placeholder
             spec = JobSpec(
                 name=routine_name,
                 fn=fn,

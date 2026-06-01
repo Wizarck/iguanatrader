@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import func, select, text, update
@@ -65,8 +65,28 @@ _STOPLOSS_GUARD_LOOKBACK: int = 5
 class RiskRepository(RiskRepositoryPort):
     """Concrete SQLAlchemy adapter for the risk persistence surface."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+    def __init__(self, session: AsyncSession | None = None) -> None:
+        # Audit #27/#29: ``session`` is now OPTIONAL. When omitted, every
+        # method resolves the active session from ``session_var`` at call time,
+        # so a single ``RiskService`` instance rides the per-delivery session
+        # the bus middleware binds (no captured long-lived session). Explicit
+        # callers (request scope, CLI ops, the kill-switch read closure) keep
+        # passing one and are unaffected.
+        self._explicit_session = session
+
+    @property
+    def _session(self) -> AsyncSession:
+        if self._explicit_session is not None:
+            return self._explicit_session
+        from iguanatrader.shared.contextvars import session_var
+
+        session = session_var.get()
+        if session is None:
+            raise LookupError(
+                "RiskRepository has no session: pass session=... or bind "
+                "session_var (bus session-per-delivery middleware / request scope)."
+            )
+        return cast("AsyncSession", session)
 
     async def load_risk_state(self, tenant_id: UUID) -> RiskState:
         """Compose a :class:`RiskState` from real trades + equity snapshots.
