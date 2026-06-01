@@ -27,7 +27,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from alembic import op
-
 from iguanatrader.migrations._trading_whitelist_trigger_helpers import (
     SQLITE_TRADING_WHITELIST_TRIGGER_SQL,
     WHITELISTED_TRADING_TABLES,

@@ -23,10 +23,9 @@ from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-import structlog
 
 from iguanatrader.contexts.observability.models import (
     ApiCostEvent,

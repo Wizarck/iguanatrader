@@ -98,8 +98,8 @@ async def test_synthesize_fences_untrusted_narrative_and_strips_sentinel(
     injected fence sentinel in the content is stripped so it cannot break
     out of the fence and smuggle instructions into the trusted region."""
     from iguanatrader.contexts.research.synthesis.synthesizer import (
-        Synthesizer,
         _HINDSIGHT_SENTINEL,
+        Synthesizer,
     )
 
     spy = _RecordingLLM()

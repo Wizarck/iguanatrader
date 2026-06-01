@@ -135,17 +135,16 @@ async def run_in_session_scope(
     """
     outbox: list[Any] = []
     result: Any = None
-    async with session_factory() as session:
-        async with with_session_context(session, tenant_id):
-            token = publish_outbox_var.set(outbox)
-            try:
-                result = await fn()
-                await session.commit()
-            except BaseException:
-                await session.rollback()
-                raise
-            finally:
-                publish_outbox_var.reset(token)
+    async with session_factory() as session, with_session_context(session, tenant_id):
+        token = publish_outbox_var.set(outbox)
+        try:
+            result = await fn()
+            await session.commit()
+        except BaseException:
+            await session.rollback()
+            raise
+        finally:
+            publish_outbox_var.reset(token)
     # Session committed + closed, outbox no longer bound on this context →
     # publishing now delivers immediately (each downstream delivery opens its
     # own unit of work + outbox in turn).

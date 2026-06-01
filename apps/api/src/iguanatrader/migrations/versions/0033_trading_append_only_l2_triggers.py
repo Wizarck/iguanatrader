@@ -29,7 +29,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from alembic import op
-
 from iguanatrader.migrations._trading_trigger_helpers import (
     FULLY_APPEND_ONLY_TRADING_TABLES,
     SQLITE_TRADING_TRIGGER_SQL,

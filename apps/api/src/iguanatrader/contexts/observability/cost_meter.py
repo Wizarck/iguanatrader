@@ -172,7 +172,7 @@ async def _persist_cost_event(
     try:
         async with session.begin_nested():
             await repo.insert(event)
-    except Exception as exc:  # noqa: BLE001 — observability is best-effort.
+    except Exception as exc:
         log.warning(
             "observability.cost.persist_failed",
             provider=provider,

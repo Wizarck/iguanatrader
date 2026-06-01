@@ -21,7 +21,7 @@ async def _handle(ctx: CommandContext) -> CommandResult:
             False,
             tenant_id=ctx.incoming.tenant_id,
         )
-    except Exception as exc:  # noqa: BLE001 — report, never silently succeed.
+    except Exception as exc:
         return CommandResult(
             status="error",
             message=f"Failed to resume approvals: {exc}",

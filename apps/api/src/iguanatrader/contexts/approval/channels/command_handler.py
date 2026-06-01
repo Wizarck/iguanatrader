@@ -92,7 +92,7 @@ async def _approvals_paused(tenant_id: Any) -> bool:
             tenant_id=tenant_id,
         )
         return bool(flag)
-    except Exception as exc:  # noqa: BLE001 — fail-open + log, never wedge.
+    except Exception as exc:
         log.warning("approval.command.pause_check_failed", error=str(exc))
         return False
 

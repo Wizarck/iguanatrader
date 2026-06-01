@@ -417,7 +417,7 @@ class RiskRepository(RiskRepositoryPort):
             )
             .values(is_active=is_active, last_event_id=last_event_id, updated_at=updated_at)
         )
-        if changed.rowcount and changed.rowcount > 0:
+        if changed.rowcount and changed.rowcount > 0:  # type: ignore[attr-defined]
             return True
 
         inserted = await self._session.execute(
@@ -430,7 +430,7 @@ class RiskRepository(RiskRepositoryPort):
             )
             .on_conflict_do_nothing(index_elements=["tenant_id"])
         )
-        if inserted.rowcount and inserted.rowcount > 0:
+        if inserted.rowcount and inserted.rowcount > 0:  # type: ignore[attr-defined]
             # Fresh row: transition iff we set it active (False→True).
             return bool(is_active)
 

@@ -166,4 +166,4 @@ def reset_cache_for_tests() -> None:
         _cache.clear()
 
 
-__all__ = ["is_robots_allowed", "robots_crawl_delay", "reset_cache_for_tests"]
+__all__ = ["is_robots_allowed", "reset_cache_for_tests", "robots_crawl_delay"]

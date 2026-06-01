@@ -21,7 +21,7 @@ STATIC SNAPSHOT as of migration ``0035``. They are NOT derived from the ORM at
 runtime — a future column addition must ship its own follow-up migration that
 recreates the trigger, exactly as schema changes always do. The lockstep test
 ``tests/unit/persistence/test_trading_whitelist_l2_triggers.py`` asserts this
-snapshot still equals ``ORM columns − whitelist`` for each table, so the drift
+snapshot still equals ``ORM columns - whitelist`` for each table, so the drift
 (new column not covered by a trigger) fails CI instead of silently shipping an
 immutable field that raw SQL can rewrite.
 

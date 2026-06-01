@@ -270,7 +270,7 @@ async def test_handler_skips_review_when_tenant_raises_threshold_to_one(
         assessor = _FakeAssessor()
         handler = AutoRiskReviewOnCreateHandler(
             assessor=assessor,  # type: ignore[arg-type]
-            loader=_FakeProposalLoader(proposal=proposal),  # type: ignore[arg-type]
+            loader=_FakeProposalLoader(proposal=proposal),
             persister=build_risk_assessment_persister(proposal_repo=repo),
             threshold_loader=build_risk_review_threshold_loader(),
         )
@@ -309,7 +309,7 @@ async def test_handler_runs_review_when_tenant_lowers_threshold_below_confidence
         assessor = _FakeAssessor()
         handler = AutoRiskReviewOnCreateHandler(
             assessor=assessor,  # type: ignore[arg-type]
-            loader=_FakeProposalLoader(proposal=proposal),  # type: ignore[arg-type]
+            loader=_FakeProposalLoader(proposal=proposal),
             persister=build_risk_assessment_persister(proposal_repo=repo),
             threshold_loader=build_risk_review_threshold_loader(),
         )

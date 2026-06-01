@@ -102,7 +102,7 @@ def assert_url_allowed(url: str) -> list[str]:
 
     ips: list[str] = []
     for info in infos:
-        addr = info[4][0]
+        addr = str(info[4][0])  # sockaddr[0] is the IP; mypy widens to str|int
         _check_addr(host, addr)  # raises on the first blocked address
         ips.append(addr)
     if not ips:

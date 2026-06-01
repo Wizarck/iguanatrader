@@ -626,7 +626,7 @@ async def forgot_password(
     # channels that are not wired in the current dispatcher is safe
     # (the multi-dispatcher just emits ``skipped`` for unknown
     # channels).
-    recipients = resolve_recipients_for_user(user)  # type: ignore[arg-type]
+    recipients = resolve_recipients_for_user(user)
     if not recipients:
         log.warning(
             "auth.password.forgot.no_recipients",

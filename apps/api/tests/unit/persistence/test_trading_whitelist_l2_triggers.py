@@ -10,7 +10,7 @@ block every DELETE.
 SQLite trigger DDL exactly as migration 0035 does (mirrors the #26 test).
 
 The final test is the lockstep guard: it asserts the migration's static column
-snapshot still equals ``ORM columns − whitelist`` for each table, so a future
+snapshot still equals ``ORM columns - whitelist`` for each table, so a future
 column addition that forgets a follow-up trigger migration fails CI.
 """
 
@@ -212,7 +212,7 @@ async def test_orders_new_immutable_columns_are_protected(
 
 
 def test_snapshot_in_lockstep_with_orm() -> None:
-    """The migration's static column snapshot must equal ``ORM columns −
+    """The migration's static column snapshot must equal ``ORM columns -
     whitelist`` for each table — otherwise a new column ships immutable-by-
     intent but unprotected by any trigger."""
     models = {
@@ -229,5 +229,5 @@ def test_snapshot_in_lockstep_with_orm() -> None:
         ), f"{table}: MUTABLE_COLUMNS snapshot drifted from the ORM whitelist"
         assert set(NON_WHITELISTED_COLUMNS[table]) == (all_cols - whitelist), (
             f"{table}: NON_WHITELISTED_COLUMNS snapshot drifted from ORM "
-            f"(columns − whitelist); add a follow-up trigger migration"
+            f"(columns - whitelist); add a follow-up trigger migration"
         )
