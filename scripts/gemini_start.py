@@ -23,6 +23,7 @@ Bank-id resolution order:
 
 See `.ai-playbook/specs/skills-distribution.md` §5.1.
 """
+
 from __future__ import annotations
 
 import runpy
