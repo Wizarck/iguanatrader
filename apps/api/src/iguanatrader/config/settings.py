@@ -40,25 +40,44 @@ class ConfigError(IguanaError):
     default_status: ClassVar[int] = 500
 
 
+#: Environments that serve real network traffic and therefore must carry
+#: production-grade cookie security. ``paper`` is included: it is a
+#: deployed, network-reachable environment (real IBKR paper account) — only
+#: ``dev``/``test`` are exempt. Centralised so the set never drifts
+#: between the cookie guard and other production-gated call sites.
+_PRODUCTION_LIKE_ENVS: frozenset[str] = frozenset({"paper", "live", "production"})
+
+
+def is_production_like(env: str | None) -> bool:
+    """True for deployed environments (``paper``/``live``/``production``)."""
+    return (env or "").strip().lower() in _PRODUCTION_LIKE_ENVS
+
+
 def enforce_dev_insecure_cookie_prod_guard() -> None:
-    """Refuse to boot when ``IGUANATRADER_DEV_INSECURE_COOKIE=1`` in production.
+    """Refuse to boot when ``IGUANATRADER_DEV_INSECURE_COOKIE=1`` in a
+    production-like env.
 
     Reads :data:`DEV_INSECURE_COOKIE_ENV` and :data:`ENV_VAR` from the
     process environment; raises :class:`ConfigError` when both
     conditions hold. Idempotent — call from FastAPI lifespan, CLI
     entrypoint, and the cookie-issuing path so any boot vector
     catches the misconfiguration.
+
+    #10: previously this only fired for ``IGUANATRADER_ENV=production``,
+    so ``paper`` and ``live`` deployments silently shipped insecure
+    cookies. It now fires for every production-like env.
     """
     dev_insecure = os.getenv(DEV_INSECURE_COOKIE_ENV) == "1"
-    is_prod = (os.getenv(ENV_VAR) or "").strip().lower() == "production"
-    if dev_insecure and is_prod:
+    env = os.getenv(ENV_VAR)
+    if dev_insecure and is_production_like(env):
         raise ConfigError(
             detail=(
-                f"{DEV_INSECURE_COOKIE_ENV}=1 is forbidden in production "
-                f"(IGUANATRADER_ENV=production). The dev-only flag drops "
-                "the cookie Secure attribute (gotcha #25); shipping it to "
-                "production exposes session cookies to MITM on plain HTTP. "
-                "Unset the variable or run with IGUANATRADER_ENV=dev/paper."
+                f"{DEV_INSECURE_COOKIE_ENV}=1 is forbidden in a "
+                f"production-like environment (IGUANATRADER_ENV={env!r}; "
+                f"production-like = {sorted(_PRODUCTION_LIKE_ENVS)}). The "
+                "dev-only flag drops the cookie Secure attribute (gotcha "
+                "#25); shipping it exposes session cookies to MITM on plain "
+                "HTTP. Unset the variable or run with IGUANATRADER_ENV=dev/test."
             ),
         )
 
@@ -68,4 +87,5 @@ __all__ = [
     "ENV_VAR",
     "ConfigError",
     "enforce_dev_insecure_cookie_prod_guard",
+    "is_production_like",
 ]

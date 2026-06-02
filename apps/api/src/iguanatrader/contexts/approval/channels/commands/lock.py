@@ -12,19 +12,21 @@ from iguanatrader.contexts.approval.channels.types import (
 
 
 async def _handle(ctx: CommandContext) -> CommandResult:
+    # #31: persist the pause for real. A failure here MUST surface as
+    # ``status="error"`` — the previous code swallowed every failure as
+    # ``status="ok"``, so an operator was told "Approvals paused" while the
+    # flag was never written and the system kept approving + executing.
     try:
         tenant_admin = importlib.import_module("iguanatrader.contexts.observability.tenant_admin")
-        set_flag = getattr(tenant_admin, "set_feature_flag", None)
-        if set_flag is None:
-            return CommandResult(
-                status="ok",
-                message="Feature-flag admin unavailable.",
-            )
-        await set_flag("approvals_paused", True)
-    except ModuleNotFoundError:
+        await tenant_admin.set_feature_flag(
+            "approvals_paused",
+            True,
+            tenant_id=ctx.incoming.tenant_id,
+        )
+    except Exception as exc:
         return CommandResult(
-            status="ok",
-            message="Observability context not yet installed; lock is a no-op.",
+            status="error",
+            message=f"Failed to pause approvals: {exc}",
         )
     return CommandResult(
         status="ok",

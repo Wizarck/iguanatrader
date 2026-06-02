@@ -114,6 +114,8 @@ async def _seed_proposal(
     sf: async_sessionmaker[AsyncSession],
     *,
     tenant_id: UUID,
+    stop_price: Decimal = Decimal("90"),
+    target_price: Decimal | None = None,
 ) -> tuple[UUID, UUID]:
     """Seed a strategy_config + an approved-ready trade proposal."""
     sc_id = uuid4()
@@ -142,7 +144,8 @@ async def _seed_proposal(
                 side="buy",
                 quantity=Decimal("10"),
                 entry_price_indicative=Decimal("100"),
-                stop_price=Decimal("90"),
+                stop_price=stop_price,
+                target_price=target_price,
                 reasoning={"why": "test"},
                 mode="paper",
             )
@@ -167,9 +170,16 @@ def _stub_resolver() -> Any:
 
 
 @pytest.mark.asyncio
-async def test_execute_on_approval_times_out_with_timeout_reason(
+async def test_execute_on_approval_timeout_persists_reconcilable_order(
     schema_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Audit #7: a timed-out submission may still be live at the broker, so it
+    must NOT be marked terminally ``rejected``. The handler persists a
+    non-terminal ``timeout_pending`` order keyed by the deterministic
+    ``client_order_id`` and publishes NO ``OrderRejected`` — the order is
+    held for reconciliation, not rejected."""
+    from iguanatrader.contexts.trading.ports import derive_client_order_id
+
     tenant_id = await _seed_tenant(schema_session_factory, "t-timeout")
     _sc_id, proposal_id = await _seed_proposal(schema_session_factory, tenant_id=tenant_id)
 
@@ -188,11 +198,77 @@ async def test_execute_on_approval_times_out_with_timeout_reason(
         await service.execute_on_approval_handler(
             ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
         )
+        # Same-session readback (the handler does not commit yet — that is the
+        # session-per-event work #2/#27/#29; autoflush surfaces the pending
+        # row to this SELECT).
+        from sqlalchemy import select
 
-    rejections = [e for e in bus.published if isinstance(e, OrderRejected)]
-    assert len(rejections) == 1
-    assert rejections[0].reason == "timeout"
-    assert rejections[0].proposal_id == proposal_id
+        orders = list((await s.execute(select(Order))).scalars().all())
+
+    # No OrderRejected — the order is reconcilable, not rejected.
+    assert [e for e in bus.published if isinstance(e, OrderRejected)] == []
+    assert len(orders) == 1
+    order = orders[0]
+    assert order.state == "timeout_pending"
+    assert order.broker_order_id is None
+    assert order.client_order_id == derive_client_order_id(tenant_id, "entry", proposal_id)
+
+
+@pytest.mark.asyncio
+async def test_execute_on_approval_threads_stop_target_and_client_order_id(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Audit #6 (minimal) + #7: a successful submission persists the proposal's
+    protective ``stop_price``/``target_price`` onto the order row and a
+    deterministic ``client_order_id`` — none of which used to be threaded."""
+    from iguanatrader.contexts.trading.ports import derive_client_order_id
+
+    tenant_id = await _seed_tenant(schema_session_factory, "t-stop-target")
+    _sc_id, proposal_id = await _seed_proposal(
+        schema_session_factory,
+        tenant_id=tenant_id,
+        stop_price=Decimal("90"),
+        target_price=Decimal("120"),
+    )
+
+    placed: list[NewOrder] = []
+
+    class _OkBroker(_HangingBroker):
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            placed.append(order)
+            return BrokerOrderId("BR-OK-1")
+
+    broker = _OkBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+        )
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+        from sqlalchemy import select
+
+        orders = list((await s.execute(select(Order))).scalars().all())
+
+    # The NewOrder handed to the broker carries the protective levels + key.
+    assert len(placed) == 1
+    expected_cid = derive_client_order_id(tenant_id, "entry", proposal_id)
+    assert placed[0].stop_price == Decimal("90")
+    assert placed[0].target_price == Decimal("120")
+    assert placed[0].client_order_id == expected_cid
+    # ...and they are persisted on the submitted order row.
+    assert len(orders) == 1
+    order = orders[0]
+    assert order.state == "submitted"
+    assert order.broker_order_id == "BR-OK-1"
+    assert order.stop_price == Decimal("90")
+    assert order.target_price == Decimal("120")
+    assert order.client_order_id == expected_cid
 
 
 @pytest.mark.asyncio
@@ -365,3 +441,82 @@ async def test_startup_reconcile_falls_back_to_24h_window_when_db_empty(
     age = utc_now() - captured_since[0]
     # Default fallback is 24h; allow 5s of drift
     assert timedelta(hours=24) - timedelta(seconds=5) <= age <= timedelta(hours=24, seconds=5)
+
+
+@pytest.mark.asyncio
+async def test_execute_on_approval_rejected_when_kill_switch_active(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """#5: a proposal approved around a kill-switch trip must NOT place a
+    live order. The execute boundary re-reads the authoritative
+    kill-switch state and publishes ``OrderRejected(reason="kill_switch")``
+    without contacting the broker."""
+    tenant_id = await _seed_tenant(schema_session_factory, "t-killswitch")
+    _sc_id, proposal_id = await _seed_proposal(schema_session_factory, tenant_id=tenant_id)
+
+    placed: list[NewOrder] = []
+
+    class _RecordingBroker(_HangingBroker):
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            placed.append(order)
+            return BrokerOrderId("SHOULD-NOT-HAPPEN")
+
+    broker = _RecordingBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async def _halted(_tid: UUID) -> bool:
+        return True
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+            kill_switch_reader=_halted,
+        )
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+
+    assert placed == []  # broker never contacted
+    rejections = [e for e in bus.published if isinstance(e, OrderRejected)]
+    assert len(rejections) == 1
+    assert rejections[0].reason == "kill_switch"
+    assert rejections[0].proposal_id == proposal_id
+
+
+@pytest.mark.asyncio
+async def test_execute_on_approval_generic_broker_error_is_caught(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """#8: a non-timeout/non-auth/non-budget broker error must not escape
+    the handler (which pre-WS0 killed the bus worker). It yields a
+    persisted rejected Order + ``OrderRejected(reason="broker_other")``."""
+    from iguanatrader.shared.errors import IntegrationError
+
+    tenant_id = await _seed_tenant(schema_session_factory, "t-broker-err")
+    _sc_id, proposal_id = await _seed_proposal(schema_session_factory, tenant_id=tenant_id)
+
+    class _ErroringBroker(_HangingBroker):
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            raise IntegrationError(detail="client not connected")
+
+    broker = _ErroringBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+        )
+        # Must NOT raise out of the handler.
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+
+    rejections = [e for e in bus.published if isinstance(e, OrderRejected)]
+    assert len(rejections) == 1
+    assert rejections[0].reason == "broker_other"

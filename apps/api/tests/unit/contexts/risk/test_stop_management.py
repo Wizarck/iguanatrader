@@ -286,7 +286,8 @@ def test_trailing_long_only_v1_5() -> None:
 def test_trailing_atr_period_param_overridable() -> None:
     """Different ``atr_period`` windows produce different trailing distances.
 
-    The helper's Wilder ATR averages true-range pairs over its bar input.
+    The helper's mean-true-range ATR (#42; simple mean, not Wilder) averages
+    true-range pairs over its bar input.
     Callers control the window by pre-trimming ``bars``. We feed the
     same trade two BarHistory inputs — one with a long pre-entry +
     post-entry sequence (14-period equivalent) and one truncated

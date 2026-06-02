@@ -67,6 +67,7 @@ from iguanatrader.contexts.trading.ports import (
     Proposal,
     StrategyConfigSnapshot,
     StrategyPort,
+    derive_client_order_id,
 )
 from iguanatrader.contexts.trading.repository import (
     EquitySnapshotRepository,
@@ -76,7 +77,7 @@ from iguanatrader.contexts.trading.repository import (
     TradeRepository,
 )
 from iguanatrader.shared.contextvars import tenant_id_var
-from iguanatrader.shared.errors import IguanaError
+from iguanatrader.shared.errors import IguanaError, IntegrationError
 from iguanatrader.shared.messagebus import MessageBus
 from iguanatrader.shared.time import now as utc_now
 
@@ -137,6 +138,14 @@ _VALID_EXIT_REASONS: frozenset[str] = frozenset(
 # wrapper: ``async def _resolve(id): return mapping[id]``.
 StrategyResolver = Callable[[UUID], Awaitable[StrategyPort]]
 
+# Reads the authoritative per-tenant kill-switch state (the DB cache that
+# ``RiskService.evaluate_proposal`` consults). Injected so the trading
+# context can re-check the kill switch at the broker-submission boundary
+# without importing the risk persistence layer directly. ``True`` means
+# halted. When unset, the execute path proceeds (legacy/test behaviour);
+# the production daemon wires the real reader.
+KillSwitchReader = Callable[[UUID], Awaitable[bool]]
+
 
 class TradingService:
     """Orchestrate the propose→fills sequence via :class:`MessageBus`.
@@ -166,10 +175,18 @@ class TradingService:
         strategy_resolver: StrategyResolver,
         execution_algo: str = "market",
         order_timeout_secs: float = 30.0,
+        kill_switch_reader: KillSwitchReader | None = None,
     ) -> None:
         self._bus = bus
         self._broker = broker
         self._strategy_resolver = strategy_resolver
+        # Slice #5: authoritative kill-switch re-check at the execute /
+        # close broker-submission boundary. The in-memory
+        # ``_kill_switch_active`` flag below is NOT load-bearing in
+        # production (``halt_handler`` is unsubscribed), so the DB-backed
+        # reader is the real gate that stops an already-approved proposal
+        # from executing after the operator (or an auto-breach) halts.
+        self._kill_switch_reader = kill_switch_reader
         # Slice ``ibkr-execution-algos-entry``: which IBKR execution
         # algorithm to attach to every entry order this service
         # submits. Canonical values match :class:`RiskCaps.execution_algo`
@@ -337,7 +354,7 @@ class TradingService:
             tenant_id=str(event.tenant_id),
         )
 
-        if event.outcome in {"allow", "clip"}:
+        if event.outcome == "allow":
             await self._bus.publish(
                 ApprovalRequested(
                     tenant_id=event.tenant_id,
@@ -349,6 +366,32 @@ class TradingService:
                 "trading.approval.requested",
                 proposal_id=str(event.proposal_id),
                 decision=event.outcome,
+            )
+            return
+
+        if event.outcome == "clip":
+            # Slice #37: ``clip`` is plumbed through the event contract
+            # (Decision.clip_quantity) but the execute path builds the
+            # order at proposal_row.quantity — clip_quantity is dropped,
+            # so approving a clip would execute at FULL size and breach
+            # the very cap that asked to clip it. Until clip_quantity is
+            # threaded end-to-end (ApprovalRequested -> ProposalApproved
+            # -> NewOrder(min(quantity, clip_quantity))), fail SAFE by
+            # rejecting rather than silently over-sizing.
+            await self._bus.publish(
+                ProposalRejected(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    reason="risk_engine_clip_unsupported",
+                )
+            )
+            log.warning(
+                "trading.proposal.clip_unsupported",
+                proposal_id=str(event.proposal_id),
+                tenant_id=str(event.tenant_id),
+                clip_quantity=(
+                    str(event.clip_quantity) if event.clip_quantity is not None else None
+                ),
             )
             return
 
@@ -412,6 +455,27 @@ class TradingService:
             )
             return
 
+        # Slice #5: authoritative kill-switch re-check BEFORE creating any
+        # Trade/Order or contacting the broker. Closes the race where a
+        # proposal was approved just before the operator/auto-breach
+        # tripped the switch — without this gate the approval flows
+        # straight to a live order. No Trade/Order row is created on the
+        # halted path (nothing to orphan); the bus event is the record.
+        if await self._is_halted(event.tenant_id):
+            await self._bus.publish(
+                OrderRejected(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    reason="kill_switch",
+                )
+            )
+            log.warning(
+                "trading.execute.kill_switch_active",
+                proposal_id=str(event.proposal_id),
+                tenant_id=str(event.tenant_id),
+            )
+            return
+
         proposal_repo = TradeProposalRepository()
         proposal_row = await proposal_repo.get_by_id(event.proposal_id)
         if proposal_row is None:
@@ -448,7 +512,20 @@ class TradingService:
             opened_at=opened_at,
         )
         await trade_repo.add(trade)
+        # The Trade is the parent of the Order's ``trade_id`` FK. With no ORM
+        # ``relationship`` between the two mappers, the unit-of-work does NOT
+        # order the inserts by FK, so a combined flush emits the child Order
+        # before its parent Trade and trips the constraint (rolling the whole
+        # ledger write back). Flush the parent rows — the proposal state change
+        # + the Trade — now so the later Order insert satisfies the FK.
+        # (Unit-of-work boundary COMMITS are the #2/#27/#29 follow-up; this
+        # only fixes the insert ORDERING within the flush.)
+        await trade_repo.session.flush()
 
+        # Audit #6 (minimal): thread the proposal's protective stop + target
+        # into the order instead of discarding them. Audit #7: derive a
+        # deterministic client_order_id from the proposal so a retry/reconcile
+        # of this same logical entry dedupes broker-side.
         new_order = NewOrder(
             tenant_id=event.tenant_id,
             trade_id=trade_id,
@@ -456,7 +533,9 @@ class TradingService:
             side=proposal_row.side,
             quantity=proposal_row.quantity,
             order_type="market",
-            client_order_id=uuid4(),
+            stop_price=proposal_row.stop_price,
+            target_price=proposal_row.target_price,
+            client_order_id=derive_client_order_id(event.tenant_id, "entry", event.proposal_id),
             algo_kind=self._execution_algo,
         )
 
@@ -489,6 +568,65 @@ class TradingService:
                 proposal_id=str(event.proposal_id),
                 error=str(exc),
             )
+        except IntegrationError as exc:
+            # Slice #8: any other broker/adapter failure — client not
+            # connected, UnsupportedOrderTypeError, a broker NACK wrapped
+            # as IntegrationError. Previously these propagated UNCAUGHT
+            # out of the handler and (pre-WS0) killed the approval worker.
+            # Record a rejected Order + OrderRejected so the proposal
+            # reaches a terminal state and the open Trade is reconcilable.
+            # (Kept BELOW BrokerAuthError, which subclasses IntegrationError.)
+            rejection_reason = "broker_other"
+            log.warning(
+                "trading.execute.broker_error",
+                proposal_id=str(event.proposal_id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        except Exception as exc:
+            # Last-resort guard: an unexpected error still yields a
+            # persisted rejection rather than an orphaned open Trade.
+            rejection_reason = "broker_other"
+            log.error(
+                "trading.execute.unexpected_error",
+                proposal_id=str(event.proposal_id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+                exc_info=True,
+            )
+
+        if rejection_reason == "timeout":
+            # Audit #7: a submission that TIMED OUT may still be live at the
+            # broker — marking it terminally 'rejected' would orphan a real
+            # position while the DB claimed it never happened. Persist a
+            # NON-terminal, reconcilable order keyed by the deterministic
+            # client_order_id; the Trade stays 'open' and fill reconciliation
+            # (or a manual sweep, once the adapter echoes order_ref) resolves
+            # it. No OrderRejected is published — the order is not rejected.
+            timeout_order = Order(
+                id=order_id,
+                tenant_id=event.tenant_id,
+                trade_id=trade_id,
+                broker="ibkr",
+                broker_order_id=None,
+                client_order_id=new_order.client_order_id,
+                order_type=new_order.order_type,
+                side=new_order.side,
+                quantity=new_order.quantity,
+                limit_price=None,
+                stop_price=new_order.stop_price,
+                target_price=new_order.target_price,
+                state="timeout_pending",
+            )
+            await order_repo.add(timeout_order)
+            log.warning(
+                "trading.execute.timeout_pending_reconcile",
+                order_id=str(order_id),
+                client_order_id=str(new_order.client_order_id),
+                proposal_id=str(event.proposal_id),
+                tenant_id=str(event.tenant_id),
+            )
+            return
 
         if rejection_reason is not None:
             rejected_order = Order(
@@ -497,11 +635,13 @@ class TradingService:
                 trade_id=trade_id,
                 broker="ibkr",
                 broker_order_id=None,
+                client_order_id=new_order.client_order_id,
                 order_type=new_order.order_type,
                 side=new_order.side,
                 quantity=new_order.quantity,
                 limit_price=None,
-                stop_price=None,
+                stop_price=new_order.stop_price,
+                target_price=new_order.target_price,
                 state="rejected",
             )
             await order_repo.add(rejected_order)
@@ -520,11 +660,13 @@ class TradingService:
             trade_id=trade_id,
             broker="ibkr",
             broker_order_id=broker_order_id,
+            client_order_id=new_order.client_order_id,
             order_type=new_order.order_type,
             side=new_order.side,
             quantity=new_order.quantity,
             limit_price=None,
-            stop_price=None,
+            stop_price=new_order.stop_price,
+            target_price=new_order.target_price,
             state="submitted",
             submitted_at=utc_now(),
         )
@@ -777,6 +919,26 @@ class TradingService:
             target_state=target_state,
         )
 
+    async def _is_halted(self, tenant_id: UUID) -> bool:
+        """Return True iff the authoritative DB kill-switch is active.
+
+        Defaults to the in-memory flag's value when no reader is wired
+        (legacy/test path). Reader failures fail SAFE (treated as halted)
+        for live execution — a risk read that cannot confirm the switch
+        is off must not green-light a real order.
+        """
+        if self._kill_switch_reader is None:
+            return self._kill_switch_active
+        try:
+            return await self._kill_switch_reader(tenant_id)
+        except Exception:
+            log.warning(
+                "trading.kill_switch.read_failed_fail_safe",
+                tenant_id=str(tenant_id),
+                exc_info=True,
+            )
+            return True
+
     async def halt_handler(self, event: Any) -> None:
         """Subscriber: flip the internal halt flag.
 
@@ -814,6 +976,21 @@ class TradingService:
                 trade_id=str(event.trade_id),
                 reason=event.reason,
                 detail=exc.detail,
+            )
+        except Exception as exc:
+            # Slice #25: defensive per-handler swallow. The MessageBus
+            # worker now also guards handler exceptions (WS0), but a bad
+            # CloseTradeRequested (e.g. an invalid reason raising
+            # ValueError, or a transient broker error) must not abort the
+            # close subscriber; log and continue so subsequent valid
+            # close requests still process.
+            log.error(
+                "trading.trade.close_failed",
+                trade_id=str(event.trade_id),
+                reason=event.reason,
+                error=str(exc),
+                error_type=type(exc).__name__,
+                exc_info=True,
             )
 
     async def close_trade(self, trade_id: UUID, *, reason: str) -> BrokerOrderId:
@@ -855,6 +1032,10 @@ class TradingService:
             )
 
         opposite_side = "sell" if trade.side == "buy" else "buy"
+        # Audit #7: deterministic client_order_id for the exit leg, keyed by
+        # the trade (distinct 'exit' role so it never collides with the entry
+        # order's key on the per-tenant UNIQUE constraint). A retried close
+        # after a transient broker hang dedupes broker-side.
         new_order = NewOrder(
             tenant_id=trade.tenant_id,
             trade_id=trade_id,
@@ -862,7 +1043,7 @@ class TradingService:
             side=opposite_side,
             quantity=trade.quantity,
             order_type="market",
-            client_order_id=uuid4(),
+            client_order_id=derive_client_order_id(trade.tenant_id, "exit", trade_id),
             algo_kind=self._execution_algo,
         )
         # Slice ``order-timeout-restart-reconcile``: bail on a hung
@@ -884,6 +1065,7 @@ class TradingService:
             trade_id=trade_id,
             broker="ibkr",
             broker_order_id=broker_order_id,
+            client_order_id=new_order.client_order_id,
             order_type=new_order.order_type,
             side=opposite_side,
             quantity=trade.quantity,

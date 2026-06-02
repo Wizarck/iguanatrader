@@ -41,7 +41,21 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar, cast
 
+import structlog
+
 EventT = TypeVar("EventT", bound="Event")
+
+log = structlog.get_logger("iguanatrader.shared.messagebus")
+
+#: A delivery middleware wraps the invocation of a subscriber's handler. It
+#: receives the bound handler + the event and is responsible for awaiting the
+#: handler. The daemon injects a session-per-delivery middleware (audit
+#: #2/#27/#29) that opens a fresh unit-of-work + tenant scope, runs the
+#: handler, and commits/rolls back at the delivery boundary — so one shared
+#: long-lived session no longer backs every worker. ``None`` (the default)
+#: calls the handler directly, preserving the historical behavior for tests
+#: and the in-request bus.
+DeliveryMiddleware = Callable[["_Handler[Event]", "Event"], Awaitable[None]]
 
 
 @dataclass
@@ -93,19 +107,35 @@ class Subscription(Generic[EventT]):
 class MessageBus:
     """In-process pub/sub with per-subscriber FIFO queues.
 
-    .. caution:: handler exceptions kill the worker task
+    .. note:: handler exceptions are logged and swallowed
 
-       The internal worker task does NOT catch exceptions raised by a
-       handler. If a handler raises, its worker task terminates and
-       that subscriber stops receiving events. Slice 2 has no logging
-       wired up (slice O1 lands ``structlog``); until then, callers
-       SHOULD wrap their handler bodies in a ``try/except`` and decide
-       whether to log + swallow or let the failure propagate.
+       The internal worker wraps each ``handler(event)`` call in
+       ``try/except``: a handler that raises is logged via ``structlog``
+       (``messagebus.handler_failed``) and the worker continues draining
+       its queue. One poison event can never silently decommission a
+       subscriber. ``asyncio.CancelledError`` is re-raised so shutdown
+       still cancels the worker promptly. Handlers that need their own
+       transactional unit-of-work should still open/commit their own
+       session (see the daemon composition root).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, delivery_middleware: DeliveryMiddleware | None = None) -> None:
         self._subscriptions: dict[type[Event], list[Subscription[Event]]] = {}
         self._closed = False
+        # Audit #2/#27/#29: optional per-delivery wrapper. When set, every
+        # handler invocation runs inside it (the daemon supplies a
+        # session-per-delivery + commit boundary). When None, handlers are
+        # called directly — the historical behavior.
+        self._delivery_middleware = delivery_middleware
+
+    def set_delivery_middleware(self, middleware: DeliveryMiddleware | None) -> None:
+        """Install (or clear) the per-delivery middleware after construction.
+
+        Needed because the session-per-delivery middleware closes over the bus
+        itself (to flush its transactional outbox), a chicken-and-egg the
+        constructor cannot resolve: build the bus, then bind the middleware.
+        """
+        self._delivery_middleware = middleware
 
     def subscribe(
         self,
@@ -166,6 +196,19 @@ class MessageBus:
         if self._closed:
             raise RuntimeError("MessageBus is closed; cannot publish")
 
+        # Audit #2/#27/#29: when a transactional outbox is bound to the current
+        # context (i.e. we are inside a session-per-delivery unit of work),
+        # BUFFER the event instead of delivering it now. The unit-of-work
+        # runner flushes the buffer only after its session commits, so a
+        # downstream subscriber never reads a row the publisher has not yet
+        # committed. Outside a unit of work the outbox is None → deliver now.
+        from iguanatrader.shared.contextvars import publish_outbox_var
+
+        outbox = publish_outbox_var.get()
+        if outbox is not None:
+            outbox.append(event)
+            return
+
         bucket = self._subscriptions.get(type(event), [])
         for sub in bucket:
             if (
@@ -192,15 +235,36 @@ class MessageBus:
         self._subscriptions.clear()
 
     async def _worker(self, sub: Subscription[Event]) -> None:
-        """Drain ``sub.queue`` in FIFO order, invoking the handler."""
+        """Drain ``sub.queue`` in FIFO order, invoking the handler.
+
+        Handler exceptions are logged and swallowed so a single bad event
+        can never decommission the subscriber. Previously an unhandled
+        exception terminated this worker task and the subscriber silently
+        stopped receiving ALL future events (the caution in the class
+        docstring). The idempotency key is recorded only after a clean
+        handler return, so a failed delivery is eligible for redelivery
+        (at-least-once on the failure path).
+        """
         while True:
             event = await sub.queue.get()
             try:
-                await sub.handler(event)
+                if self._delivery_middleware is not None:
+                    await self._delivery_middleware(sub.handler, event)
+                else:
+                    await sub.handler(event)
                 if sub.idempotent and event.idempotency_key is not None:
                     sub._record_key(event.idempotency_key)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception(
+                    "messagebus.handler_failed",
+                    event_type=type(event).__name__,
+                    handler=getattr(sub.handler, "__qualname__", repr(sub.handler)),
+                    idempotency_key=event.idempotency_key,
+                )
             finally:
                 sub.queue.task_done()
 
 
-__all__ = ["Event", "MessageBus", "Subscription"]
+__all__ = ["DeliveryMiddleware", "Event", "MessageBus", "Subscription"]

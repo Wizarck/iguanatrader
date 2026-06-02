@@ -19,8 +19,10 @@ Long-side logic (per proposal §What):
 2. ``favorable_pct = (highest_close - entry_price) / entry_price``.
 3. If ``favorable_pct < trail_trigger_pct``: return ``reason="trigger_not_reached"``;
    the proposed new stop equals the current stop (no-op).
-4. Compute Wilder ATR over the post-entry bars (same true-range
-   definition used by ``contexts/trading/strategies/_indicators.py``;
+4. Compute the mean true range over the post-entry bars (a *simple*
+   ATR — arithmetic mean of per-bar true ranges, NOT Wilder's smoothed
+   RMA; #42 corrected the misnomer) using the same true-range
+   definition as ``contexts/trading/strategies/_indicators.py``;
    inlined here to avoid risk → trading cross-context coupling — the two
    copies are byte-identical and tracked by the 4-copy hoist heuristic
    established in the strategy slices).
@@ -112,8 +114,15 @@ class TrailingStopUpdate:
     reason: TrailingStopReason
 
 
-def _wilder_atr(bars: list[Bar]) -> Decimal | None:
-    """Wilder ATR over ``bars``. Byte-identical to the trading helper.
+def _mean_true_range(bars: list[Bar]) -> Decimal | None:
+    """Mean true range over ``bars``. Byte-identical to the trading helper.
+
+    #42: this is the *simple* ATR (arithmetic mean of per-bar true
+    ranges), NOT Wilder's smoothed RMA — the old ``_wilder_atr`` name was
+    inaccurate. Math intentionally unchanged; see
+    ``contexts/trading/strategies/_indicators._compute_atr`` for the full
+    rationale (switching to true Wilder smoothing changes live stop
+    distances and is a deliberate, backtest-gated strategy change).
 
     Inlined to avoid a ``risk → trading._indicators`` cross-context
     import; the two copies are tracked by the project-wide 4-copy hoist
@@ -147,7 +156,7 @@ def compute_trailing_stop(
     Pure function. Does NOT mutate state; the caller persists.
 
     The ``atr_period`` parameter is currently informational — the
-    Wilder ATR is computed over **all** post-entry bars (the proposal's
+    mean true range is computed over **all** post-entry bars (the proposal's
     "ATR over the post-entry bars" wording). When the post-entry window
     is shorter than ``atr_period`` the function still produces a usable
     ATR estimate from whatever bars are available rather than refusing;
@@ -198,7 +207,7 @@ def compute_trailing_stop(
             reason="trigger_not_reached",
         )
 
-    atr = _wilder_atr(list(post_entry))
+    atr = _mean_true_range(list(post_entry))
     if atr is None:
         # Only one post-entry bar — true range needs a previous bar. The
         # trigger fired but ATR is undefined; treat as "no update" so the

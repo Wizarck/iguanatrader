@@ -14,8 +14,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from iguanatrader.contexts.trading.events import (
+    ApprovalRequested,
     ProposalApproved,
     ProposalCreated,
+    ProposalRejected,
+    ProposalRiskEvaluated,
 )
 from iguanatrader.contexts.trading.ports import (
     BarHistory,
@@ -132,46 +135,81 @@ def _make_config(strategy_config_id: UUID, tenant_id: UUID) -> StrategyConfigSna
 
 
 @pytest.mark.asyncio
-async def test_execute_on_approval_handler_idempotent_under_duplicate_publish() -> None:
-    """Two ``ProposalApproved`` events with the same id are deduplicated.
+async def test_risk_check_handler_clip_outcome_fails_safe() -> None:
+    """#37: a ``clip`` risk outcome must NOT flow to approval (which would
+    execute at full size, ignoring clip_quantity). Until clip is threaded
+    end-to-end the handler fails safe by publishing ProposalRejected."""
 
-    The bus subscription registered by ``register_subscriptions`` uses
-    ``idempotent=True`` (slice 2 D1 contract). The handler's
-    ``execute_on_approval`` call (skeletal in T1; T4 fills the broker
-    submission) must be invoked exactly once.
-    """
-    bus = MessageBus()
-    broker = _FakeBroker()
+    class _RecordingBus(MessageBus):
+        def __init__(self) -> None:
+            super().__init__()
+            self.published: list[Any] = []
 
-    tenant_id = uuid4()
-    strategy_id = uuid4()
+        async def publish(self, event: Any) -> None:
+            self.published.append(event)
+            await super().publish(event)
 
+    bus = _RecordingBus()
     service = TradingService(
         bus=bus,
-        broker=broker,
-        strategy_resolver=_async_const(_FakeStrategy(return_proposal=None)),
+        broker=_FakeBroker(),
+        strategy_resolver=_async_const(None),
+    )
+    tenant_id = uuid4()
+    proposal_id = uuid4()
+    await service.risk_check_handler(
+        ProposalRiskEvaluated(
+            tenant_id=tenant_id,
+            proposal_id=proposal_id,
+            outcome="clip",
+            clip_quantity=Decimal("5"),
+        )
     )
 
+    rejected = [e for e in bus.published if isinstance(e, ProposalRejected)]
+    approvals = [e for e in bus.published if isinstance(e, ApprovalRequested)]
+    assert len(approvals) == 0  # clip never reaches approval
+    assert len(rejected) == 1
+    assert rejected[0].reason == "risk_engine_clip_unsupported"
+    await bus.aclose()
+
+
+@pytest.mark.asyncio
+async def test_bus_dedups_duplicate_proposal_approved_once_processed() -> None:
+    """An idempotent subscription drops a duplicate ``ProposalApproved``
+    once the first delivery has COMPLETED.
+
+    The bus records an ``idempotency_key`` only after the handler returns
+    cleanly (``_worker``), so duplicates issued *within the same burst*
+    (before the first handler returns) are NOT deduped at the bus layer.
+    The execute handler's own DB idempotency check
+    (``OrderRepository.get_by_proposal_id``) is the second line of
+    defence for the burst case and is exercised by the integration tests
+    (a real session + committed order row is required to show it).
+
+    This test pins the bus-level contract: publish, let the first
+    delivery finish (key recorded), then a same-key publish is dropped.
+    """
+    bus = MessageBus()
     invocation_count = {"n": 0}
 
-    async def _wrapper(event: ProposalApproved) -> None:
+    async def _handler(event: ProposalApproved) -> None:
         invocation_count["n"] += 1
-        await service.execute_on_approval_handler(event)
 
-    bus.subscribe(ProposalApproved, _wrapper, idempotent=True)
+    bus.subscribe(ProposalApproved, _handler, idempotent=True)
 
     pid = uuid4()
+    tenant_id = uuid4()
     await bus.publish(ProposalApproved(tenant_id=tenant_id, proposal_id=pid))
+    # Let the first delivery complete so its idempotency_key is recorded.
+    for _ in range(10):
+        await asyncio.sleep(0)
     await bus.publish(ProposalApproved(tenant_id=tenant_id, proposal_id=pid))
-
-    # Drain queues. asyncio.sleep(0) repeatedly until everything has been
-    # processed; the FIFO worker hops control on each await.
     for _ in range(10):
         await asyncio.sleep(0)
 
     assert invocation_count["n"] == 1
     await bus.aclose()
-    _ = strategy_id  # keep referenced (ruff)
 
 
 @pytest.mark.asyncio

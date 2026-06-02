@@ -23,6 +23,7 @@ from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +32,10 @@ from iguanatrader.contexts.observability.models import (
     AuditLog,
     ConfigChange,
 )
+from iguanatrader.shared.contextvars import tenant_id_var
 from iguanatrader.shared.kernel import BaseRepository
+
+log = structlog.get_logger("iguanatrader.contexts.observability.repository")
 
 
 class ApiCostEventRepository(BaseRepository):
@@ -134,14 +138,50 @@ class AuditLogRepository(BaseRepository):
     """
 
     async def insert(self, entry: AuditLog) -> None:
-        """Add ``entry`` to the current session.
+        """Add ``entry`` to the current session, stamping the tenant.
 
-        If the entry's ``tenant_id`` is ``None``, the row is global; the
-        slice-3 listener does not stamp because the model declares the
-        column as nullable.
+        #40: ``AuditLog.tenant_id`` is nullable and the slice-3 listener
+        does NOT stamp it (the column is intentionally optional for
+        ops-global rows). That means a *tenant-scoped* event whose
+        ``tenant_id`` the caller forgot to set would silently land as a
+        GLOBAL row (NULL) — losing attribution and polluting the global
+        audit feed. Here we bind the active ``tenant_id_var`` when the
+        entry has no tenant and a tenant context is in scope. A genuinely
+        global row (no tenant context) is still allowed but logged, so an
+        unstamped global write is visible rather than silent. Callers that
+        KNOW their intent should prefer :meth:`insert_for_tenant` /
+        :meth:`insert_global`.
         """
         session = cast(AsyncSession, self.session)
+        if entry.tenant_id is None:
+            ambient = tenant_id_var.get()
+            if ambient is not None:
+                entry.tenant_id = ambient
+            else:
+                log.info("observability.audit_log.global_row", event=entry.event)
         session.add(entry)
+
+    async def insert_for_tenant(self, entry: AuditLog) -> None:
+        """Insert a per-tenant audit row, REQUIRING a resolvable tenant.
+
+        Raises ``LookupError`` if the entry has no tenant and none is bound
+        on :data:`tenant_id_var` — a tenant-scoped audit event must never
+        silently degrade to a global row.
+        """
+        if entry.tenant_id is None:
+            ambient = tenant_id_var.get()
+            if ambient is None:
+                raise LookupError(
+                    "insert_for_tenant requires a tenant (entry.tenant_id unset and "
+                    "tenant_id_var not bound)"
+                )
+            entry.tenant_id = ambient
+        cast(AsyncSession, self.session).add(entry)
+
+    async def insert_global(self, entry: AuditLog) -> None:
+        """Insert an intentional ops-global (``tenant_id=NULL``) audit row."""
+        entry.tenant_id = None
+        cast(AsyncSession, self.session).add(entry)
 
     async def query_global(
         self,

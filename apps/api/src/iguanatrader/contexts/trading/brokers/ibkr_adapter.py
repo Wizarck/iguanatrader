@@ -46,6 +46,7 @@ from iguanatrader.contexts.trading.brokers.client_protocol import (
 )
 from iguanatrader.contexts.trading.brokers.ibkr_brokerage_model import (
     IBKRBrokerageModel,
+    translate_order_type,
 )
 from iguanatrader.contexts.trading.ports import (
     BrokerOrderId,
@@ -299,7 +300,11 @@ class IBKRAdapter(HeartbeatMixin):
 
     async def place_order(self, order: NewOrder) -> BrokerOrderId:
         """Submit ``order`` to IBKR. Idempotent against ``client_order_id``."""
-        self._brokerage.assert_supports_order_type(order.order_type)
+        # Translate the domain order-type (lowercase ``market``/``limit``/…
+        # stored on the ORM row) into the IBKR code the whitelist + the
+        # ib_async translator expect, then gate on the translated value.
+        ib_order_type = translate_order_type(order.order_type)
+        self._brokerage.assert_supports_order_type(ib_order_type)
         if order.client_order_id is None:
             raise ValueError(
                 "IBKRAdapter.place_order requires NewOrder.client_order_id "
@@ -319,7 +324,7 @@ class IBKRAdapter(HeartbeatMixin):
             raise IntegrationError(detail="IBKRAdapter.place_order: client not connected")
 
         contract = self._build_contract(order.symbol)
-        ib_order = self._build_ib_order(order)
+        ib_order = self._build_ib_order(order, ib_order_type=ib_order_type)
         broker_order_id_raw = await self._client.place_order(contract, ib_order)
         broker_order_id = BrokerOrderId(broker_order_id_raw)
         self._client_order_cache[order.client_order_id] = broker_order_id
@@ -494,11 +499,15 @@ class IBKRAdapter(HeartbeatMixin):
     def _build_contract(self, symbol: str) -> Contract:
         return Contract(symbol=symbol, exchange="SMART", currency="USD", sec_type="STK")
 
-    def _build_ib_order(self, order: NewOrder) -> IBOrder:
+    def _build_ib_order(self, order: NewOrder, *, ib_order_type: str | None = None) -> IBOrder:
+        # ``ib_order_type`` is the already-translated IBKR code from
+        # :meth:`place_order`; fall back to translating here so direct
+        # callers/tests still get the mapping.
+        resolved_type = ib_order_type or translate_order_type(order.order_type)
         return IBOrder(
             action=order.side.upper(),
             total_quantity=order.quantity,
-            order_type=order.order_type,
+            order_type=resolved_type,
             limit_price=order.limit_price,
             aux_price=order.stop_price,
             account=self._brokerage.account_code,

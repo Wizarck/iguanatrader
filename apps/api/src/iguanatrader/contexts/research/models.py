@@ -59,6 +59,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -409,6 +410,20 @@ class ResearchFact(Base):
         Index(
             "ix_research_facts_source_id",
             "source_id",
+        ),
+        # #44: partial unique index mirroring migration 0008. It MUST be
+        # declared on the model too — schemas built from ``Base.metadata``
+        # (test fixtures, dev bootstrap) would otherwise lack the dedupe
+        # guarantee entirely, so a duplicate ``(tenant_id, dedupe_key)``
+        # insert silently lands instead of colliding. Keep the name +
+        # predicate byte-identical to 0008 so metadata and migration agree.
+        Index(
+            "idx_research_facts_dedupe_key",
+            "tenant_id",
+            "dedupe_key",
+            unique=True,
+            sqlite_where=text("dedupe_key IS NOT NULL"),
+            postgresql_where=text("dedupe_key IS NOT NULL"),
         ),
     )
 

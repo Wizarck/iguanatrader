@@ -190,3 +190,51 @@ class TestUnsubscribeAndClose:
         bus = MessageBus()
         await bus.aclose()
         await bus.aclose()  # no-op; must not raise
+
+
+class TestHandlerResilience:
+    async def test_handler_exception_does_not_kill_worker(self) -> None:
+        """A raising handler is logged + swallowed; the subscriber keeps
+        draining subsequent events (regression for the worker-death bug)."""
+        bus = MessageBus()
+        seen: list[int] = []
+
+        async def handler(ev: _Click) -> None:
+            if ev.n == 1:
+                raise RuntimeError("boom on the poison event")
+            seen.append(ev.n)
+
+        sub = bus.subscribe(_Click, handler)
+        await bus.publish(_Click(n=1))  # poison — handler raises
+        await bus.publish(_Click(n=2))  # must still be delivered
+        await bus.publish(_Click(n=3))
+        await sub.queue.join()
+
+        assert seen == [2, 3]
+        # Worker task is still alive (not terminated by the exception).
+        assert sub._task is not None and not sub._task.done()
+        await bus.aclose()
+
+    async def test_failed_idempotent_delivery_is_not_recorded(self) -> None:
+        """On handler failure the idempotency key is NOT recorded, so a
+        redelivery of the same key is processed again (at-least-once)."""
+        bus = MessageBus()
+        attempts: list[int] = []
+
+        async def handler(ev: _Click) -> None:
+            attempts.append(ev.n)
+            raise RuntimeError("always fails")
+
+        sub = bus.subscribe(_Click, handler, idempotent=True)
+        ev = _Click(n=7)
+        ev.idempotency_key = "k1"
+        await bus.publish(ev)
+        await sub.queue.join()
+        # Same key redelivered — not suppressed, because the first failed.
+        ev2 = _Click(n=7)
+        ev2.idempotency_key = "k1"
+        await bus.publish(ev2)
+        await sub.queue.join()
+
+        assert attempts == [7, 7]
+        await bus.aclose()

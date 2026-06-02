@@ -16,6 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -27,8 +28,28 @@ from iguanatrader.contexts.risk.orm import TrailingStopAuditORM
 class TrailingStopAuditRepository:
     """Read/write surface for the ``trailing_stop_audit`` table."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+    def __init__(self, session: AsyncSession | None = None) -> None:
+        # Audit #29: ``session`` is OPTIONAL. When omitted, each method
+        # resolves the active session from ``session_var`` at call time, so a
+        # single shared instance rides whichever per-tick cron session the
+        # sweep unit-of-work wrapper binds (the stop-hit + trailing sweeps now
+        # each run on their own fresh per-tick session). Explicit callers
+        # (tests, request scope) keep passing one and are unaffected.
+        self._explicit_session = session
+
+    @property
+    def _session(self) -> AsyncSession:
+        if self._explicit_session is not None:
+            return self._explicit_session
+        from iguanatrader.shared.contextvars import session_var
+
+        sess = session_var.get()
+        if sess is None:
+            raise LookupError(
+                "TrailingStopAuditRepository has no session: pass session=... "
+                "or bind session_var (per-tick cron scope / request scope)."
+            )
+        return cast("AsyncSession", sess)
 
     async def add_row(
         self,

@@ -19,9 +19,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -47,6 +49,13 @@ MAX_RETRY_ATTEMPTS = 5
 # on cold cache; allow plenty.
 DEFAULT_TIMEOUT_SECONDS = 90.0
 
+# #24: ticker allow-list for border validation. Equity symbols are
+# letters/digits plus ``.`` (class shares: BRK.B) and ``-`` (some ADRs).
+# Anything else (slashes, spaces, ``?``/``#``, path traversal) is rejected
+# before it can be interpolated into the sidecar URL path — defence in
+# depth on top of the per-segment ``quote`` encoding below.
+_TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{1,15}$")
+
 
 class OpenBBSidecarSource:
     """:class:`SourcePort` bound to the AGPL-isolated OpenBB sidecar."""
@@ -60,7 +69,7 @@ class OpenBBSidecarSource:
         enabled: bool | None = None,
     ) -> None:
         self._base_url = (
-            base_url or os.environ.get("OPENBB_SIDECAR_URL", DEFAULT_BASE_URL)
+            base_url or os.environ.get("OPENBB_SIDECAR_URL") or DEFAULT_BASE_URL
         ).rstrip("/")
         # Owned client by default; tests inject a fake.
         self._client = client or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)
@@ -98,11 +107,18 @@ class OpenBBSidecarSource:
                 extra={"symbol": symbol},
             )
             return
+        if not self._validate_symbol(symbol):
+            return
 
+        # #24: ``quote(safe="")`` percent-encodes the symbol so it cannot
+        # break out of its path segment (``/``, ``?``, ``#`` … no longer
+        # reinterpret the URL). Normal tickers (AAPL, BRK.B) pass through
+        # unchanged.
+        enc = quote(symbol, safe="")
         endpoints = [
-            ("fundamentals", f"/v1/equity/fundamentals/{symbol}", "fundamentals"),
-            ("ratings", f"/v1/equity/ratings/{symbol}", "analyst_ratings"),
-            ("esg", f"/v1/equity/esg/{symbol}", "esg_score"),
+            ("fundamentals", f"/v1/equity/fundamentals/{enc}", "fundamentals"),
+            ("ratings", f"/v1/equity/ratings/{enc}", "analyst_ratings"),
+            ("esg", f"/v1/equity/esg/{enc}", "esg_score"),
         ]
         for name, path, fact_kind in endpoints:
             payload = self._get_or_skip(symbol=symbol, name=name, path=path)
@@ -137,16 +153,18 @@ class OpenBBSidecarSource:
                 extra={"symbol": symbol, "endpoint": "historical_prices"},
             )
             return
+        if not self._validate_symbol(symbol):
+            return
 
-        query_parts: list[str] = []
-        if start_date:
-            query_parts.append(f"start_date={start_date}")
-        if end_date:
-            query_parts.append(f"end_date={end_date}")
-        query = ("?" + "&".join(query_parts)) if query_parts else ""
-        path = f"/v1/equity/historical_prices/{symbol}{query}"
+        # #24: date params go through httpx ``params=`` (URL-encoded by the
+        # client) instead of hand-concatenated query string, and the symbol
+        # is percent-encoded into its path segment.
+        params = {k: v for k, v in (("start_date", start_date), ("end_date", end_date)) if v}
+        path = f"/v1/equity/historical_prices/{quote(symbol, safe='')}"
 
-        payload = self._get_or_skip(symbol=symbol, name="historical_prices", path=path)
+        payload = self._get_or_skip(
+            symbol=symbol, name="historical_prices", path=path, params=params or None
+        )
         if payload is None:
             return
         yield self._draft_from_payload(
@@ -160,7 +178,31 @@ class OpenBBSidecarSource:
     # HTTP plumbing — backoff loop + 4xx/5xx routing
     # ------------------------------------------------------------------
 
-    def _get_or_skip(self, *, symbol: str, name: str, path: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _validate_symbol(symbol: str) -> bool:
+        """#24: reject symbols that don't match the ticker allow-list.
+
+        Logs + returns False (caller yields nothing) rather than raising,
+        so one malformed symbol never aborts a multi-symbol batch — and,
+        critically, no HTTP request is issued with an attacker-influenced
+        path. Defence in depth alongside per-segment ``quote`` encoding.
+        """
+        if _TICKER_RE.match(symbol):
+            return True
+        logger.warning(
+            "research.openbb_sidecar.invalid_symbol",
+            extra={"symbol": symbol},
+        )
+        return False
+
+    def _get_or_skip(
+        self,
+        *,
+        symbol: str,
+        name: str,
+        path: str,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
         """Issue GET to the sidecar with retries; return parsed JSON or None.
 
         Returns ``None`` on 4xx (no-data / unsupported) — caller skips that
@@ -171,7 +213,7 @@ class OpenBBSidecarSource:
         last_exc: Exception | None = None
         for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
             try:
-                response = self._client.get(url)
+                response = self._client.get(url, params=params)
             except httpx.HTTPError as exc:
                 last_exc = exc
                 self._sleep_for_attempt(attempt, name=name, exc=exc)

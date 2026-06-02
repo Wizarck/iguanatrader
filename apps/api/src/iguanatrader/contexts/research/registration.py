@@ -83,30 +83,35 @@ async def ensure_symbol_registered(
 
     symbol_universe_id = uuid4()
     watchlist_config_id = uuid4()
-    session.add(
-        SymbolUniverse(
-            id=symbol_universe_id,
-            tenant_id=tenant_id,
-            symbol=symbol,
-            exchange=exchange,
-        )
-    )
-    session.add(
-        WatchlistConfig(
-            id=watchlist_config_id,
-            tenant_id=tenant_id,
-            symbol_universe_id=symbol_universe_id,
-            tier=tier,
-            methodology=methodology,
-            brief_refresh_schedule=schedule,
-        )
-    )
     try:
-        await session.flush()
+        # #23: wrap the INSERTs in a SAVEPOINT so a lost race rolls back
+        # ONLY these two rows. The previous ``session.rollback()`` rolled
+        # back the WHOLE shared transaction — discarding any other pending
+        # work in the daemon's long-lived session (the #29 hazard). This
+        # mirrors ``OnDemandIngestionService._persist``.
+        async with session.begin_nested():
+            session.add(
+                SymbolUniverse(
+                    id=symbol_universe_id,
+                    tenant_id=tenant_id,
+                    symbol=symbol,
+                    exchange=exchange,
+                )
+            )
+            session.add(
+                WatchlistConfig(
+                    id=watchlist_config_id,
+                    tenant_id=tenant_id,
+                    symbol_universe_id=symbol_universe_id,
+                    tier=tier,
+                    methodology=methodology,
+                    brief_refresh_schedule=schedule,
+                )
+            )
+            await session.flush()
     except IntegrityError:
-        # Concurrent first-time call won the race — roll our INSERTs
-        # back to a savepoint-safe state and read the winner's ids.
-        await session.rollback()
+        # Concurrent first-time call won the race — the SAVEPOINT already
+        # rolled our INSERTs back; read the winner's ids.
         existing = await _select_ids(session, tenant_id=tenant_id, symbol=symbol)
         if existing is None:
             raise

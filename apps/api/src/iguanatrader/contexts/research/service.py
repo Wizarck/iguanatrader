@@ -160,8 +160,7 @@ class BriefService:
 
             raise InsufficientPriceDataError(
                 detail=(
-                    f"close_price missing for {symbol}; "
-                    f"ingest price bars before synthesis"
+                    f"close_price missing for {symbol}; " f"ingest price bars before synthesis"
                 ),
             )
 

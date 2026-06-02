@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
@@ -69,7 +69,7 @@ class TrailingStopSweepService:
     def __init__(
         self,
         *,
-        session: AsyncSession,
+        session: AsyncSession | None = None,
         audit_repo: TrailingStopAuditRepository,
         risk_caps_provider: Callable[[], RiskCaps],
         market_data_port: MarketDataPort,
@@ -77,13 +77,32 @@ class TrailingStopSweepService:
         timeframe: str = "1d",
         lookback_bars: int = 200,
     ) -> None:
-        self._session = session
+        # Audit #29: ``session`` is OPTIONAL. When omitted, the sweep resolves
+        # the active session from ``session_var`` at call time so the cron
+        # wrapper binds a FRESH per-tick session instead of riding the
+        # long-lived ambient daemon session. Explicit callers (the integration
+        # tests) keep passing one.
+        self._explicit_session = session
         self._audit_repo = audit_repo
         self._risk_caps_provider = risk_caps_provider
         self._market_data_port = market_data_port
         self._clock = clock
         self._timeframe = timeframe
         self._lookback_bars = lookback_bars
+
+    @property
+    def _session(self) -> AsyncSession:
+        if self._explicit_session is not None:
+            return self._explicit_session
+        from iguanatrader.shared.contextvars import session_var
+
+        sess = session_var.get()
+        if sess is None:
+            raise LookupError(
+                "TrailingStopSweepService has no session: pass session=... or "
+                "bind session_var (per-tick cron scope)."
+            )
+        return cast("AsyncSession", sess)
 
     async def sweep(self) -> TrailingStopSweepResult:
         """Iterate open trades, compute trailing stops, persist ratchets."""

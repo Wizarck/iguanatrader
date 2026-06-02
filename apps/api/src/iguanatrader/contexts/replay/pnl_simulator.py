@@ -44,11 +44,15 @@ if TYPE_CHECKING:
 
 
 def _compute_atr_at_entry(pre_entry_bars: Sequence[Bar], atr_period: int = 14) -> Decimal | None:
-    """Wilder ATR over the last ``atr_period`` pre-entry bars.
+    """Mean true range over the last ``atr_period`` pre-entry bars.
 
     Returns ``None`` if there are fewer than 2 bars (cannot compute a
     range). Matches the shape used by :func:`compute_trailing_stop`
     so the target-trigger ATR is comparable to the trailing-stop ATR.
+
+    #42: a *simple* ATR (arithmetic mean of true ranges), NOT Wilder's
+    smoothed RMA — the prior "Wilder ATR" label was inaccurate. Math
+    unchanged.
     """
     if len(pre_entry_bars) < 2:
         return None

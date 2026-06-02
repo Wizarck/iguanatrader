@@ -34,4 +34,18 @@ class ScrapeNotImplementedError(IntegrationError):
     default_status: ClassVar[int] = 501
 
 
-__all__ = ["ScrapeBlockedError", "ScrapeNotImplementedError"]
+class UnsafeUrlError(IntegrationError):
+    """#13: a scrape target failed the SSRF guard (bad scheme, no host, or a
+    host that resolves to a private/loopback/link-local/reserved address).
+
+    Deliberately NOT a :class:`ScrapeBlockedError` — the ladder must NOT
+    escalate to a higher tier and retry the same dangerous URL. This is a
+    hard refusal that propagates straight out of the ladder.
+    """
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:scrape-unsafe-url"
+    default_title: ClassVar[str] = "Scrape Target Failed SSRF Guard"
+    default_status: ClassVar[int] = 400
+
+
+__all__ = ["ScrapeBlockedError", "ScrapeNotImplementedError", "UnsafeUrlError"]

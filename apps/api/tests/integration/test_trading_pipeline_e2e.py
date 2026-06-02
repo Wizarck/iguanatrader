@@ -63,7 +63,8 @@ from iguanatrader.persistence import (
 )
 from iguanatrader.persistence.base import Base
 from iguanatrader.shared.contextvars import (
-    session_var,
+    run_in_session_scope,
+    session_scoped_delivery,
     with_tenant_context,
 )
 from iguanatrader.shared.messagebus import MessageBus
@@ -172,8 +173,13 @@ class _FakeBroker:
 
 
 async def _drain(*, ticks: int = 50) -> None:
+    # Each bus hop now opens its OWN session + commits (session-per-delivery)
+    # before publishing downstream (publish-after-commit). aiosqlite runs those
+    # commits on a worker thread, so a bare ``sleep(0)`` yield is not always
+    # enough wall-time for the thread callback to land before the next hop —
+    # interleave a tiny real sleep so the chain actually advances.
     for _ in range(ticks):
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.002)
 
 
 @pytest.mark.asyncio
@@ -209,7 +215,13 @@ async def test_propose_to_fill_chain(
         )
         await s.commit()
 
+    # Audit #2/#27/#29: the bus now delivers each event in its OWN session +
+    # commit boundary (session-per-delivery), instead of every worker sharing
+    # one long-lived session. This is what makes the chain durable + isolated;
+    # it is also what fixes this test's historical IllegalStateChangeError
+    # (concurrent use of one AsyncSession across overlapping deliveries).
     bus = MessageBus()
+    bus.set_delivery_middleware(session_scoped_delivery(sf, bus))
     broker = _FakeBroker()
     in_memory_md = InMemoryMarketDataAdapter(seed={"AAPL": _generate_uptrend(50)})
 
@@ -242,8 +254,11 @@ async def test_propose_to_fill_chain(
     bus.subscribe(ProposalApproved, _capture_pa)
     bus.subscribe(OrderPlaced, _capture_op)
 
-    async with with_tenant_context(tenant_id), sf() as session:
-        session_var.set(session)
+    # Subscribe inside the tenant scope so the worker tasks capture
+    # ``tenant_id_var`` as the fallback for any event that does not carry a
+    # tenant_id of its own. Each service resolves its session from session_var
+    # (the per-delivery session the middleware binds) — no explicit session.
+    async with with_tenant_context(tenant_id):
         trading_service = TradingService(
             bus=bus,
             broker=cast("BrokerPort", broker),
@@ -252,7 +267,7 @@ async def test_propose_to_fill_chain(
         trading_service.register_subscriptions()
 
         risk_service = RiskService(
-            repository=RiskRepository(session=session),
+            repository=RiskRepository(),
             bus=bus,
         )
         risk_service.register_subscriptions(bus)
@@ -285,14 +300,21 @@ async def test_propose_to_fill_chain(
             enabled=True,
             version=1,
         )
-        await trading_service.propose(
-            symbol="AAPL",
-            strategy_config_id=config_id,
-            bars=bars_history,
-            config=snapshot,
+        # propose runs as its OWN committed unit of work (mirrors a cron tick):
+        # the proposal row commits first, then ProposalCreated is published
+        # (publish-after-commit), so the risk subscriber's fresh session sees it.
+        await run_in_session_scope(
+            sf,
+            bus,
+            tenant_id,
+            lambda: trading_service.propose(
+                symbol="AAPL",
+                strategy_config_id=config_id,
+                bars=bars_history,
+                config=snapshot,
+            ),
         )
-        await session.commit()
-        await _drain()
+        await _drain(ticks=120)
 
         # 5. Assert: ProposalCreated fired + RiskService bridge produced
         #    a ProposalRiskEvaluated event.

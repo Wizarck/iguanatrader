@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import typer
 
@@ -59,11 +59,35 @@ def run(
         "--tenant",
         help="Tenant slug; defaults to the first tenant if single-tenant.",
     ),
+    confirm_live: bool = typer.Option(
+        False,
+        "--confirm-live",
+        help="Required to start the LIVE (real-money) daemon. Ignored in paper mode.",
+    ),
 ) -> None:
     """Run the iguanatrader trading daemon (long-running)."""
     if mode not in _VALID_MODES:
         typer.echo(f"Invalid mode {mode!r}; expected one of {_VALID_MODES}")
         raise typer.Exit(code=2)
+
+    # #15: live mode places real-money orders. Refuse to start it without an
+    # explicit confirmation — the ``--confirm-live`` flag, or the
+    # ``IGUANATRADER_CONFIRM_LIVE`` env truthy for non-interactive (k8s /
+    # systemd) deploys. Paper mode is unaffected.
+    if mode == "live":
+        env_confirm = os.environ.get("IGUANATRADER_CONFIRM_LIVE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if not (confirm_live or env_confirm):
+            typer.echo(
+                "Refusing to start the LIVE trading daemon without confirmation. "
+                "Re-run with --confirm-live (or set IGUANATRADER_CONFIRM_LIVE=true) "
+                "once you understand this places real-money orders."
+            )
+            raise typer.Exit(code=2)
 
     asyncio.run(_run_daemon(mode=mode, tenant=tenant))
 
@@ -91,7 +115,11 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         build_ib_async_client_from_env,
     )
     from iguanatrader.persistence import engine_factory, session_factory
-    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+    from iguanatrader.shared.contextvars import (
+        session_scoped_delivery,
+        session_var,
+        tenant_id_var,
+    )
     from iguanatrader.shared.messagebus import MessageBus
 
     engine = engine_factory(db_url())
@@ -142,7 +170,20 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         tenant_id_var.set(tenant_id)
         session_var.set(session)
 
+        # Audit #2/#27/#29: deliver every bus event in its OWN session +
+        # commit boundary with publish-after-commit (the transactional
+        # outbox), instead of every worker sharing this long-lived session.
+        # This is what makes the execution ledger durable (#2) and the
+        # kill-switch auto-activation commit at trip time (#27), and removes
+        # the cross-handler session aliasing (#29). Bus-driven services
+        # resolve their session from session_var at call time, so a single
+        # service instance rides whichever per-delivery session the
+        # middleware binds. The ambient ``session`` above remains the unit
+        # of work for the sequential daemon STARTUP steps only; the cron
+        # sweeps now each run on their own fresh per-tick session via
+        # ``_sweep_unit_of_work`` (closes the #29 cron-side hazard).
         bus = MessageBus()
+        bus.set_delivery_middleware(session_scoped_delivery(sessionmaker, bus))
         watchlist_symbols = _parse_watchlist(
             os.environ.get("IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS")
         )
@@ -190,11 +231,24 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
                 f"IGUANATRADER_ORDER_TIMEOUT_SECS must be a float, got {order_timeout_raw!r}"
             ) from exc
 
+        # Slice #5: wire the authoritative kill-switch reader so the
+        # execute-on-approval boundary re-checks the DB cache before
+        # placing a live order (the in-memory flag is never set in
+        # production because ``halt_handler`` is unsubscribed). Reads the
+        # same per-tenant cache ``RiskService.evaluate_proposal`` uses.
+        async def _kill_switch_reader(check_tenant_id: UUID) -> bool:
+            # No explicit session: this runs inside execute_on_approval_handler,
+            # a bus handler, so it resolves the per-delivery session the
+            # middleware bound (which sees the committed kill-switch cache) —
+            # not the long-lived daemon session (#29).
+            return await RiskRepository().load_kill_switch_state(check_tenant_id)
+
         trading_service = TradingService(
             bus=bus,
             broker=broker,
             strategy_resolver=_make_strategy_resolver(session_factory=sessionmaker),
             order_timeout_secs=order_timeout_secs,
+            kill_switch_reader=_kill_switch_reader,
         )
         trading_service.register_subscriptions()
 
@@ -207,7 +261,11 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
 
         # Slice K1-followup-bus-subscriptions §3.1 — RiskService bridge
         # subscribes to ProposalCreated + emits ProposalRiskEvaluated.
-        risk_service = RiskService(repository=RiskRepository(session=session), bus=bus)
+        # No explicit session (#27/#29): the repository resolves the
+        # per-delivery session the bus middleware binds, so the kill-switch
+        # auto-activation commits at trip time instead of riding the shared
+        # session's incidental later commit.
+        risk_service = RiskService(repository=RiskRepository(), bus=bus)
         risk_service.register_subscriptions(bus)
 
         # Slice P1-followup-bus-subscriptions §3.1 — ApprovalService
@@ -338,11 +396,38 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         # breaches and publishes CloseTradeRequested. Closes the
         # auto-close loop that K1's stoploss_guard depends on.
         from iguanatrader.contexts.risk.stop_hit_sweep import StopHitSweepService
+        from iguanatrader.contexts.risk.trailing_stop_repository import (
+            TrailingStopAuditRepository,
+        )
+        from iguanatrader.contexts.risk.trailing_stop_sweep import TrailingStopSweepService
+
+        # Shared audit repo — written by the trailing sweep (#38) and read by
+        # the stop-hit sweep (#28). No explicit session (#29): it resolves
+        # session_var at call time, so the SAME instance correctly rides
+        # whichever per-tick sweep session is bound when each sweep fires —
+        # the two sweeps run as separate cron jobs on separate per-tick
+        # sessions now (see ``_sweep_unit_of_work`` below).
+        trailing_audit_repo = TrailingStopAuditRepository()
 
         stop_hit_sweep_service = StopHitSweepService(
-            session=session,
+            # No session=... (#29): resolves the per-tick session the sweep
+            # unit-of-work wrapper binds, not the long-lived ambient session.
             market_data_port=market_data_port,
             bus=bus,
+            # #28: enforce the tightened trailing stop at close, not just
+            # the proposal's original stop.
+            trailing_audit_repo=trailing_audit_repo,
+        )
+
+        # #38: construct + register the trailing-stop sweep. It is inert by
+        # construction until a tenant sets ``trail_trigger_pct`` (the
+        # ``compute_trailing_stop`` short-circuit), so wiring it is safe;
+        # before this it was never built, so trailing stops never ratcheted.
+        trailing_stop_sweep_service = TrailingStopSweepService(
+            # No session=... (#29): per-tick session via the sweep wrapper.
+            audit_repo=trailing_audit_repo,
+            risk_caps_provider=risk_service.load_caps,
+            market_data_port=market_data_port,
         )
 
         # Slice ``dual-daemon-mode-toggle-and-reconcile``: per-daemon
@@ -372,6 +457,30 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
 
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)
+
+        # Audit #2/#27/#29: run each propose tick as its OWN committed unit of
+        # work with publish-after-commit. This is REQUIRED now the bus delivers
+        # per-event: it commits the proposal row before ``ProposalCreated`` is
+        # published, so the risk subscriber (a fresh per-delivery session) sees
+        # it. The session-only cron sweeps get the same treatment via
+        # ``_sweep_unit_of_work`` below (per-tick fresh session + commit).
+        from iguanatrader.shared.contextvars import run_in_session_scope
+
+        async def _propose_unit_of_work(inner: Any) -> None:
+            await run_in_session_scope(sessionmaker, bus, tenant_id, inner)
+
+        # Audit #29 (cron side): run each session-only cron sweep tick
+        # (trailing-stop, stop-hit, equity-snapshot, daemon-heartbeat) as its
+        # OWN committed unit of work on a fresh per-tick session, instead of
+        # sharing the long-lived ambient daemon session. This removes the
+        # last concurrent-AsyncSession hazard: the 10s heartbeat and the
+        # 1-min stop-hit sweep no longer touch one session at once. Same
+        # wrapper shape as the propose unit of work, bound to the daemon's
+        # single tenant (the sweeps that fan out across tenants — equity —
+        # override the tenant context per row internally).
+        async def _sweep_unit_of_work(inner: Any) -> None:
+            await run_in_session_scope(sessionmaker, bus, tenant_id, inner)
+
         # Side-effect: registers cron JobSpecs on the scheduler (4 propose
         # routines + 5th market_data_sync + equity_snapshot_sweep +
         # stop_hit_sweep + daemon_heartbeat per-mode toggle gate wired
@@ -385,11 +494,14 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
             ingestion_service=ingestion_service,
             equity_snapshot_sweep_service=equity_snapshot_sweep_service,
             stop_hit_sweep_service=stop_hit_sweep_service,
+            trailing_stop_sweep_service=trailing_stop_sweep_service,
             daemon_mode=mode,
             daemon_tenant_id=tenant_id,
             trading_mode_repo=trading_mode_repo,
             broker=broker,
             daemon_lifecycle_service=lifecycle_service,
+            propose_unit_of_work=_propose_unit_of_work,
+            sweep_unit_of_work=_sweep_unit_of_work,
         )
 
         # K1 (PR #103) + P1 (this slice) bus-bridge follow-ups close
@@ -554,8 +666,13 @@ async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter
     """
     from iguanatrader.contexts.trading.brokers.client_protocol import IBClient
     from iguanatrader.contexts.trading.brokers.ibkr_adapter import IBKRAdapter
+    from iguanatrader.contexts.trading.brokers.ibkr_brokerage_model import (
+        IBKRBrokerageModel,
+    )
 
-    return IBKRAdapter(  # type: ignore[call-arg]
+    brokerage = IBKRBrokerageModel.from_env(cast('Literal["paper", "live"]', mode))
+    return IBKRAdapter(
+        brokerage=brokerage,
         client_factory=lambda: cast("IBClient", ib_client),
     )
 

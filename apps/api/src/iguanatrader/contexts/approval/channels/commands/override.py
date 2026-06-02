@@ -55,4 +55,7 @@ SPEC: CommandSpec = CommandSpec(
     required_role="admin",
     idempotency_key_source="payload",
     description_md=("Override a risk decision. Reason >= 20 chars. Admin only."),
+    # #31: /override forces a risk-blocked proposal through — denied while
+    # approvals are paused.
+    blocked_when_paused=True,
 )

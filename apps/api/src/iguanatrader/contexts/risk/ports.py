@@ -102,7 +102,14 @@ class RiskRepositoryPort(Port, Protocol):
         is_active: bool,
         last_event_id: UUID,
         updated_at: datetime,
-    ) -> None: ...
+    ) -> bool:
+        """Upsert the cache row; return whether ``is_active`` TRANSITIONED.
+
+        #43: the publish-once decision is derived atomically from the upsert
+        rowcount (see :class:`RiskRepository.update_kill_switch_cache`), not a
+        separate pre-read — so the contract returns ``bool``, not ``None``.
+        """
+        ...
 
     async def has_today_automatic_breach_event(
         self,

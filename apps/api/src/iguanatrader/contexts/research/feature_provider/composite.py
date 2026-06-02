@@ -63,6 +63,14 @@ _RECIPE_BY_METHODOLOGY: dict[str, dict[str, Tier]] = {
     },
 }
 
+#: Features that must survive the per-methodology recipe filter because a
+#: downstream consumer requires them regardless of the recipe. #4:
+#: ``BriefService.refresh`` raises ``InsufficientPriceDataError`` without
+#: ``close_price``, yet no recipe lists it — so it is carried through here
+#: rather than being added to every recipe (which would feed it into the
+#: methodology scorer via ``values_only()``).
+_PASSTHROUGH_FEATURES: frozenset[str] = frozenset({"close_price"})
+
 
 class CompositeFeatureProvider:
     """Aggregates Tier-A/B/C providers per methodology recipe."""
@@ -112,6 +120,19 @@ class CompositeFeatureProvider:
         filtered_citations = {
             name: merged.fact_citations[name] for name in recipe if name in merged.fact_citations
         }
+        # #4: always carry synthesizer-required features through, even when
+        # the methodology recipe omits them. ``close_price`` is required by
+        # ``BriefService.refresh`` (it raises InsufficientPriceDataError
+        # otherwise) but is NOT in any recipe, so the recipe filter above
+        # dropped it on every real refresh. Carry it (and its citation)
+        # without adding it to the recipe — recipe keys flow into the
+        # methodology scorer (values_only()), and polluting that would
+        # distort scoring / partial-detection.
+        for name in _PASSTHROUGH_FEATURES:
+            if name in merged.values:
+                filtered_values[name] = merged.values[name]
+            if name in merged.fact_citations:
+                filtered_citations[name] = merged.fact_citations[name]
         return FeatureBundle(values=filtered_values, fact_citations=filtered_citations)
 
 

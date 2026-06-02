@@ -72,7 +72,7 @@ _ATR_PARAMS: list[dict[str, object]] = [
         "max": 200,
         "step": 1,
         "help": (
-            "Bars used by Wilder ATR. 14 is the textbook default; "
+            "Bars used by the ATR (mean true range). 14 is the textbook default; "
             "lower = tighter, jumpier stops."
         ),
     },

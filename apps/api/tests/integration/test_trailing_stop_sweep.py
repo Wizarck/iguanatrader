@@ -37,7 +37,10 @@ from iguanatrader.contexts.risk.trailing_stop_sweep import (
 from iguanatrader.contexts.trading.models import StrategyConfig, Trade, TradeProposal
 from iguanatrader.contexts.trading.ports import Bar, BarHistory
 from iguanatrader.persistence import Tenant
-from iguanatrader.shared.contextvars import with_tenant_context
+from iguanatrader.shared.contextvars import (
+    run_in_session_scope,
+    with_tenant_context,
+)
 from iguanatrader.shared.time import now as utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -649,3 +652,64 @@ async def test_sweep_is_tenant_scoped(
     assert await _count_audit_rows(schema_session_factory, tenant_id=tenant_a) == 1
     # Tenant B's audit table is untouched.
     assert await _count_audit_rows(schema_session_factory, tenant_id=tenant_b) == 0
+
+
+# ---------------------------------------------------------------------------
+# 11. #29 (cron side): the sweep runs durably through the per-tick
+#     unit-of-work wrapper with NO explicit session — it resolves the fresh
+#     session ``run_in_session_scope`` binds and the audit row commits at the
+#     tick boundary (visible from a fresh session afterwards).
+# ---------------------------------------------------------------------------
+class _NullBus:
+    """Minimal bus for ``run_in_session_scope``; the trailing sweep publishes
+    nothing so ``publish`` is never actually reached."""
+
+    async def publish(self, event: object) -> None:  # pragma: no cover - unused
+        raise AssertionError("trailing sweep should not publish events")
+
+
+@pytest.mark.asyncio
+async def test_sweep_persists_through_per_tick_unit_of_work_without_explicit_session(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """No ``session=...``: the sweep resolves the per-tick session bound by
+    ``run_in_session_scope`` and the ratchet commits durably at the boundary."""
+    tenant_id = await _seed_tenant(schema_session_factory, "t-pertick")
+    opened_at = utc_now() - timedelta(days=5)
+    await _seed_trade(
+        schema_session_factory,
+        tenant_id=tenant_id,
+        symbol="SPY",
+        entry_price=Decimal("100"),
+        stop_price=Decimal("90"),
+        opened_at=opened_at,
+    )
+
+    md = _FakeMarketDataPort()
+    base = opened_at + timedelta(days=1)
+    md.set_bars(
+        "SPY",
+        [_make_bar(ts=base + timedelta(days=i), close=Decimal(105 + i * 2)) for i in range(6)],
+    )
+
+    # Construct BOTH the audit repo and the sweep with NO explicit session —
+    # exactly the daemon wiring. They resolve session_var, which the wrapper
+    # binds per tick.
+    audit_repo = TrailingStopAuditRepository()
+    service = TrailingStopSweepService(
+        audit_repo=audit_repo,
+        risk_caps_provider=_caps_with_trail,
+        market_data_port=md,
+    )
+
+    result = await run_in_session_scope(
+        schema_session_factory,
+        _NullBus(),
+        tenant_id,
+        service.sweep,
+    )
+
+    assert result.trades_evaluated == 1
+    assert result.trades_trailed == 1
+    # Durable: a brand-new session sees the committed audit row.
+    assert await _count_audit_rows(schema_session_factory, tenant_id=tenant_id) == 1

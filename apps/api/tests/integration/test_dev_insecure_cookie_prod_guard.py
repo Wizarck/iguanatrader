@@ -37,6 +37,24 @@ def test_guard_passes_when_dev_insecure_in_dev_env(
     enforce_dev_insecure_cookie_prod_guard()  # no raise
 
 
+@pytest.mark.parametrize("env", ["paper", "live", "production", "PAPER", " Live "])
+def test_guard_raises_for_all_production_like_envs(
+    env: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#10: the guard must fire for paper/live, not just production."""
+    monkeypatch.setenv(ENV_VAR, env)
+    monkeypatch.setenv(DEV_INSECURE_COOKIE_ENV, "1")
+    with pytest.raises(ConfigError):
+        enforce_dev_insecure_cookie_prod_guard()
+
+
+@pytest.mark.parametrize("env", ["dev", "test", "ci", ""])
+def test_guard_passes_for_non_production_envs(env: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(ENV_VAR, env)
+    monkeypatch.setenv(DEV_INSECURE_COOKIE_ENV, "1")
+    enforce_dev_insecure_cookie_prod_guard()  # no raise
+
+
 def test_guard_passes_when_secure_cookie_in_production(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

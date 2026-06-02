@@ -67,14 +67,17 @@ async def approvals_stream(
     bus = get_message_bus()
     queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
 
+    def _is_for_caller(event_tenant_id: UUID | None) -> bool:
+        # #3 fail-closed tenant scoping: the approval events ride the
+        # process-wide singleton bus, so a stream opened by tenant A
+        # would otherwise see tenant B's approval decisions. Drop any
+        # event whose tenant_id is absent or does not match the caller's
+        # JWT tenant.
+        return event_tenant_id is not None and event_tenant_id == user.tenant_id
+
     async def _on_approved(event: ApprovalProposalApproved) -> None:
-        # No per-event tenant_id field on the event payload (slice 2's
-        # bus is process-wide); the trading bounded context relies on
-        # consistent tenant_id_var. SSE filtering uses the request's
-        # JWT tenant — match the caller's tenant (best effort: the
-        # producer side already runs inside that tenant's contextvar
-        # scope, so any event delivered to this process is in-scope
-        # for the caller's tenant in MVP single-tenant deployments).
+        if not _is_for_caller(event.tenant_id):
+            return
         await queue.put(
             (
                 "approval.proposal.approved",
@@ -89,6 +92,8 @@ async def approvals_stream(
         )
 
     async def _on_rejected(event: ApprovalProposalRejected) -> None:
+        if not _is_for_caller(event.tenant_id):
+            return
         await queue.put(
             (
                 "approval.proposal.rejected",
@@ -103,6 +108,8 @@ async def approvals_stream(
         )
 
     async def _on_timed_out(event: ApprovalProposalTimedOut) -> None:
+        if not _is_for_caller(event.tenant_id):
+            return
         await queue.put(
             (
                 "approval.proposal.timed_out",

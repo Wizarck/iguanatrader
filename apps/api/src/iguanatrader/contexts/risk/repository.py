@@ -19,10 +19,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,8 +65,28 @@ _STOPLOSS_GUARD_LOOKBACK: int = 5
 class RiskRepository(RiskRepositoryPort):
     """Concrete SQLAlchemy adapter for the risk persistence surface."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+    def __init__(self, session: AsyncSession | None = None) -> None:
+        # Audit #27/#29: ``session`` is now OPTIONAL. When omitted, every
+        # method resolves the active session from ``session_var`` at call time,
+        # so a single ``RiskService`` instance rides the per-delivery session
+        # the bus middleware binds (no captured long-lived session). Explicit
+        # callers (request scope, CLI ops, the kill-switch read closure) keep
+        # passing one and are unaffected.
+        self._explicit_session = session
+
+    @property
+    def _session(self) -> AsyncSession:
+        if self._explicit_session is not None:
+            return self._explicit_session
+        from iguanatrader.shared.contextvars import session_var
+
+        session = session_var.get()
+        if session is None:
+            raise LookupError(
+                "RiskRepository has no session: pass session=... or bind "
+                "session_var (bus session-per-delivery middleware / request scope)."
+            )
+        return cast("AsyncSession", session)
 
     async def load_risk_state(self, tenant_id: UUID) -> RiskState:
         """Compose a :class:`RiskState` from real trades + equity snapshots.
@@ -365,34 +385,63 @@ class RiskRepository(RiskRepositoryPort):
         is_active: bool,
         last_event_id: UUID,
         updated_at: datetime,
-    ) -> None:
-        """Upsert the single cache row for ``tenant_id``.
+    ) -> bool:
+        """Upsert the cache row for ``tenant_id``; return whether the
+        ``is_active`` state actually TRANSITIONED.
 
-        Uses SQLite's ``INSERT … ON CONFLICT DO UPDATE`` (Postgres has
-        the same syntax). The ``kill_switch_state`` table is NOT
-        flagged ``__tablename_is_append_only__``; UPDATE is permitted.
+        #43: the publish-once decision must NOT come from a separate
+        ``load_kill_switch_state`` read taken before this write — under
+        concurrency two activators can both read ``is_active=False`` and
+        both publish ``RiskKillSwitchActivated``. Instead the transition is
+        derived atomically here:
 
-        On Postgres deployments (post-MVP) the same statement is
-        valid — :func:`sqlalchemy.dialects.sqlite.insert` is the most
-        portable form for the on_conflict_do_update pattern; the
-        equivalent ``sqlalchemy.dialects.postgresql.insert`` lands as
-        a follow-up when the engine is detected at boot.
+        1. ``UPDATE … WHERE is_active <> :new`` — fires (rowcount 1) only on
+           a genuine change of an existing row.
+        2. else ``INSERT … ON CONFLICT DO NOTHING`` — a fresh row is a
+           transition iff the new value differs from the implicit prior
+           (inactive=False): activating transitions, a no-op deactivate of
+           a never-seen tenant does not.
+        3. else the row already held the same value (no transition) — but
+           still refresh ``last_event_id``/``updated_at`` for the audit
+           pointer.
+
+        ``UPDATE``/``INSERT … ON CONFLICT`` are each atomic; the sequence is
+        the standard change-detecting upsert and is valid on both SQLite
+        and Postgres.
         """
-        stmt = sqlite_insert(KillSwitchStateORM).values(
-            tenant_id=tenant_id,
-            is_active=is_active,
-            last_event_id=last_event_id,
-            updated_at=updated_at,
+        changed = await self._session.execute(
+            update(KillSwitchStateORM)
+            .where(
+                KillSwitchStateORM.tenant_id == tenant_id,
+                KillSwitchStateORM.is_active != is_active,
+            )
+            .values(is_active=is_active, last_event_id=last_event_id, updated_at=updated_at)
         )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["tenant_id"],
-            set_={
-                "is_active": is_active,
-                "last_event_id": last_event_id,
-                "updated_at": updated_at,
-            },
+        if changed.rowcount and changed.rowcount > 0:  # type: ignore[attr-defined]
+            return True
+
+        inserted = await self._session.execute(
+            sqlite_insert(KillSwitchStateORM)
+            .values(
+                tenant_id=tenant_id,
+                is_active=is_active,
+                last_event_id=last_event_id,
+                updated_at=updated_at,
+            )
+            .on_conflict_do_nothing(index_elements=["tenant_id"])
         )
-        await self._session.execute(stmt)
+        if inserted.rowcount and inserted.rowcount > 0:  # type: ignore[attr-defined]
+            # Fresh row: transition iff we set it active (False→True).
+            return bool(is_active)
+
+        # Row already existed with this same is_active value: no transition,
+        # but keep the audit pointer fresh.
+        await self._session.execute(
+            update(KillSwitchStateORM)
+            .where(KillSwitchStateORM.tenant_id == tenant_id)
+            .values(last_event_id=last_event_id, updated_at=updated_at)
+        )
+        return False
 
     async def has_today_automatic_breach_event(
         self,

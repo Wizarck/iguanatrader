@@ -30,7 +30,7 @@ import functools
 import inspect
 import uuid
 from collections.abc import Awaitable, Callable
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, TypeVar, cast, overload
 from uuid import UUID
 
@@ -120,7 +120,12 @@ def _compute_cost_usd(
     cost = Decimal(response.tokens_input) * per_in / Decimal(1_000_000) + Decimal(
         response.tokens_output
     ) * per_out / Decimal(1_000_000)
-    return cost
+    # #19: quantize to the stored column scale (Numeric(12, 6)) at this
+    # single point, so an in-memory SUM of per-call costs matches the
+    # SUM(cost_usd) the budget check reads back from the DB. Without it the
+    # full-precision Decimal is silently rounded on INSERT and the two
+    # diverge (the budget gate then trusts a number the DB never stored).
+    return cost.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
 
 async def _persist_cost_event(
@@ -139,7 +144,8 @@ async def _persist_cost_event(
     session middleware in slice 5 commits at request end; ad-hoc
     callsites must commit manually).
     """
-    if session_var.get() is None:
+    session = session_var.get()
+    if session is None:
         return False
     repo = ApiCostEventRepository()
     event = ApiCostEvent(
@@ -157,7 +163,23 @@ async def _persist_cost_event(
         routine_run_id=None,
         correlation_id=correlation_id,
     )
-    await repo.insert(event)
+    # #20: isolate the metering INSERT in a SAVEPOINT. A failure here
+    # (constraint, serialization error) must NEVER abort the caller's
+    # business unit-of-work — observability is best-effort. Without the
+    # savepoint a failed insert poisons the shared transaction so the
+    # request's real writes can't commit either. We roll back just this
+    # row and log; the caller proceeds.
+    try:
+        async with session.begin_nested():
+            await repo.insert(event)
+    except Exception as exc:
+        log.warning(
+            "observability.cost.persist_failed",
+            provider=provider,
+            model=model,
+            error=str(exc),
+        )
+        return False
     return True
 
 

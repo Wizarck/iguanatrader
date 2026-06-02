@@ -71,7 +71,11 @@ class RiskEvaluationORM(Base):
     )
     outcome: Mapped[str] = mapped_column(Text, nullable=False)
     cap_type_breached: Mapped[str | None] = mapped_column(Text, nullable=True)
-    current_pct: Mapped[Any | None] = mapped_column(Numeric(8, 6), nullable=True)
+    # #41: widened from Numeric(8, 6) — a ``current_pct`` utilisation can
+    # exceed 99.999999 (e.g. a drawdown breach reported as >100%), which
+    # overflows the 8-digit precision on Postgres and fails the INSERT.
+    # 12 digits leaves head-room while keeping 6 decimal places.
+    current_pct: Mapped[Any | None] = mapped_column(Numeric(12, 6), nullable=True)
     state_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSON,
         nullable=False,
@@ -90,8 +94,15 @@ class RiskEvaluationORM(Base):
             name="outcome_allowed",
         ),
         CheckConstraint(
+            # #36: ``stoploss_guard`` + ``cooldown_period`` are real v1.5
+            # protections wired into the engine pipeline (engine.py), so a
+            # breach by either emits a Decision with that cap_type. They were
+            # missing from this allow-list, so persisting such an evaluation
+            # violated the CHECK and crashed the engine as soon as the caps
+            # were configured.
             "cap_type_breached IS NULL OR cap_type_breached IN "
-            "('per_trade','daily_loss','weekly_loss','max_open','max_drawdown')",
+            "('per_trade','daily_loss','weekly_loss','max_open','max_drawdown',"
+            "'stoploss_guard','cooldown_period')",
             name="cap_type_breached_allowed",
         ),
     )

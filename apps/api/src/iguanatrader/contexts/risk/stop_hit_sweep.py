@@ -57,10 +57,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 
+from iguanatrader.contexts.risk.trailing_stop_repository import TrailingStopAuditRepository
 from iguanatrader.contexts.trading.events import CloseTradeRequested
 from iguanatrader.contexts.trading.models import Trade, TradeProposal
 from iguanatrader.contexts.trading.ports import MarketDataPort
@@ -106,17 +107,45 @@ class StopHitSweepService:
     def __init__(
         self,
         *,
-        session: AsyncSession,
+        session: AsyncSession | None = None,
         market_data_port: MarketDataPort,
         bus: MessageBus,
         clock: Callable[[], datetime] = utc_now,
         timeframe: str = "1d",
+        trailing_audit_repo: TrailingStopAuditRepository | None = None,
     ) -> None:
-        self._session = session
+        # Audit #29: ``session`` is OPTIONAL. When omitted, the sweep resolves
+        # the active session from ``session_var`` at call time, so the cron
+        # wrapper can bind a FRESH per-tick session (no longer riding the
+        # long-lived ambient daemon session shared with the other sweeps).
+        # Explicit callers (the unit tests) keep passing a fake session.
+        self._explicit_session = session
         self._market_data_port = market_data_port
         self._bus = bus
         self._clock = clock
         self._timeframe = timeframe
+        # #28: when injected, the EFFECTIVE stop is the latest tightened
+        # ``trailing_stop_audit.new_stop`` rather than the proposal's
+        # original stop — otherwise the trailing sweep ratchets the stop in
+        # the audit log but the close loop never acts on the tightened
+        # level, so trailing stops are never actually enforced. When None
+        # (e.g. a tenant with no trailing config), the proposal stop is used
+        # unchanged. Production wires the repo in the daemon bootstrap.
+        self._trailing_audit_repo = trailing_audit_repo
+
+    @property
+    def _session(self) -> AsyncSession:
+        if self._explicit_session is not None:
+            return self._explicit_session
+        from iguanatrader.shared.contextvars import session_var
+
+        sess = session_var.get()
+        if sess is None:
+            raise LookupError(
+                "StopHitSweepService has no session: pass session=... or bind "
+                "session_var (per-tick cron scope)."
+            )
+        return cast("AsyncSession", sess)
 
     async def sweep(self) -> StopHitSweepResult:
         """Iterate open trades, compare to stop/target, emit close events."""
@@ -210,6 +239,24 @@ class StopHitSweepService:
             )
         return rows
 
+    async def _effective_stop(self, record: _TradeWithExitLevels) -> Decimal:
+        """Return the stop to enforce: latest trailing-tightened stop, else
+        the proposal's original (#28).
+
+        The trailing sweep records each ratchet in ``trailing_stop_audit``;
+        the most-recent ``new_stop`` is the live protective level. Falling
+        back to the proposal stop preserves behaviour for trades that have
+        no trailing config (no audit rows).
+        """
+        if self._trailing_audit_repo is None:
+            return record.stop_price
+        latest = await self._trailing_audit_repo.get_latest_for_trade(
+            record.trade_id  # type: ignore[arg-type]
+        )
+        if latest is None or latest.new_stop is None:
+            return record.stop_price
+        return Decimal(str(latest.new_stop))
+
     async def _evaluate_one(self, record: _TradeWithExitLevels) -> str | None:
         """Evaluate one trade against the latest bar.
 
@@ -231,7 +278,8 @@ class StopHitSweepService:
 
         latest_close = history.bars[-1].close
 
-        if _is_stop_hit(side=record.side, close=latest_close, stop=record.stop_price):
+        effective_stop = await self._effective_stop(record)
+        if _is_stop_hit(side=record.side, close=latest_close, stop=effective_stop):
             await self._publish_close(record=record, reason="stop")
             return "stop"
 
