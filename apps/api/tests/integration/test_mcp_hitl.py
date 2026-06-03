@@ -6,10 +6,9 @@ engine, the canonical listeners, and the real ``command_handler.dispatch``
 chain — no FastAPI client needed.
 
 The successful approve path (which needs a real ``approval_requests`` row)
-lives in ``test_mcp_hitl_approve.py``; that file omits the risk/trading
-models so the synthetic-proposal FK is skipped. Here we import the risk ORM
-so the kill-switch tables exist for the durable-halt test, and avoid
-inserting any ``approval_requests`` row.
+lives in ``test_mcp_hitl_approve.py``; that file seeds the real proposal so
+the FK resolves. Here we import the risk ORM so the kill-switch tables exist
+for the durable-halt test, and avoid inserting any ``approval_requests`` row.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from __future__ import annotations
 import sys
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import iguanatrader.contexts.approval.models as _approval_models
 import iguanatrader.contexts.risk.orm as _risk_orm
@@ -70,7 +69,7 @@ async def sf(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return session_factory(engine)
 
 
-async def _seed_tenant(sf: async_sessionmaker[AsyncSession]) -> object:
+async def _seed_tenant(sf: async_sessionmaker[AsyncSession]) -> UUID:
     tid = uuid4()
     async with sf() as s:
         s.add(Tenant(id=tid, name=f"tenant-{tid.hex[:8]}", feature_flags={}))
@@ -80,13 +79,13 @@ async def _seed_tenant(sf: async_sessionmaker[AsyncSession]) -> object:
 
 async def _add_sender(
     sf: async_sessionmaker[AsyncSession],
-    tid: object,
+    tid: UUID,
     *,
     external_id: str,
     role: str,
     enabled: bool = True,
 ) -> None:
-    async with with_tenant_context(tid), sf() as s:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as s:
         s.add(
             AuthorizedSender(
                 id=uuid4(),
@@ -109,7 +108,7 @@ async def _add_sender(
 @pytest.mark.asyncio
 async def test_unknown_sender_denied(sf: async_sessionmaker[AsyncSession]) -> None:
     tid = await _seed_tenant(sf)
-    async with with_tenant_context(tid), sf() as db:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as db:
         with pytest.raises(MCPForbiddenError):
             await _run_action(
                 db,
@@ -124,7 +123,7 @@ async def test_unknown_sender_denied(sf: async_sessionmaker[AsyncSession]) -> No
 async def test_disabled_sender_denied(sf: async_sessionmaker[AsyncSession]) -> None:
     tid = await _seed_tenant(sf)
     await _add_sender(sf, tid, external_id="owner-1", role="owner", enabled=False)
-    async with with_tenant_context(tid), sf() as db:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as db:
         with pytest.raises(MCPForbiddenError):
             await _run_action(
                 db,
@@ -144,7 +143,7 @@ async def test_disabled_sender_denied(sf: async_sessionmaker[AsyncSession]) -> N
 async def test_non_owner_denied_on_approve(sf: async_sessionmaker[AsyncSession]) -> None:
     tid = await _seed_tenant(sf)
     await _add_sender(sf, tid, external_id="plain-user", role="user")
-    async with with_tenant_context(tid), sf() as db:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as db:
         with pytest.raises(MCPForbiddenError):
             await _run_action(
                 db,
@@ -159,7 +158,7 @@ async def test_non_owner_denied_on_approve(sf: async_sessionmaker[AsyncSession])
 async def test_non_owner_denied_on_halt(sf: async_sessionmaker[AsyncSession]) -> None:
     tid = await _seed_tenant(sf)
     await _add_sender(sf, tid, external_id="plain-user", role="user")
-    async with with_tenant_context(tid), sf() as db:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as db:
         with pytest.raises(MCPForbiddenError):
             await _run_action(
                 db,
@@ -181,7 +180,7 @@ async def test_owner_halt_activates_durable_kill_switch(
     tid = await _seed_tenant(sf)
     await _add_sender(sf, tid, external_id="owner-1", role="owner")
 
-    async with with_tenant_context(tid), sf() as db:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as db:
         resp = await _run_action(
             db,
             command_name="/halt",
@@ -193,8 +192,8 @@ async def test_owner_halt_activates_durable_kill_switch(
 
     # Durable (#27): a FRESH session reads the kill-switch as active —
     # record_halt committed the event + cache at activation time.
-    async with with_tenant_context(tid), sf() as check:  # type: ignore[arg-type]
-        active = await RiskRepository(check).load_kill_switch_state(tid)  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as check:
+        active = await RiskRepository(check).load_kill_switch_state(tid)
     assert active is True
 
 
@@ -206,7 +205,7 @@ async def test_owner_approve_missing_request_is_action_failed(
     distinguishing it from the 403 a non-owner gets before dispatch."""
     tid = await _seed_tenant(sf)
     await _add_sender(sf, tid, external_id="owner-1", role="owner")
-    async with with_tenant_context(tid), sf() as db:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as db:
         with pytest.raises(MCPActionFailedError):
             await _run_action(
                 db,

@@ -462,9 +462,7 @@ async def list_pending_approvals(
                 proposal_id=r.proposal_id,
                 symbol=getattr(proposal, "symbol", None),
                 side=getattr(proposal, "side", None),
-                quantity=(
-                    str(proposal.quantity) if proposal is not None else None  # type: ignore[union-attr]
-                ),
+                quantity=(str(proposal.quantity) if proposal is not None else None),
                 entry_price_indicative=(
                     str(proposal.entry_price_indicative)
                     if proposal is not None and proposal.entry_price_indicative is not None

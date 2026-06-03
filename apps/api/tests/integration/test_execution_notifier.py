@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 # Side-effect import: registers trade_proposals so the approval_requests FK
 # (pulled in transitively via ApprovalRepository) resolves at create_all.
@@ -74,12 +74,12 @@ async def sf(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return session_factory(engine)
 
 
-async def _seed_two_senders(sf: async_sessionmaker[AsyncSession]) -> object:
+async def _seed_two_senders(sf: async_sessionmaker[AsyncSession]) -> UUID:
     tid = uuid4()
     async with sf() as s:
         s.add(Tenant(id=tid, name=f"t{tid.hex[:8]}", feature_flags={}))
         await s.commit()
-    async with with_tenant_context(tid), sf() as s:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as s:
         s.add(
             AuthorizedSender(
                 id=uuid4(),
@@ -115,7 +115,7 @@ async def test_trade_closed_pushes_pnl_to_all_senders(
     notifier = ExecutionNotifier(transport=transport)
 
     event = TradeClosed(
-        tenant_id=tid,  # type: ignore[arg-type]
+        tenant_id=tid,
         trade_id=uuid4(),
         symbol="NVDA",
         side="buy",
@@ -124,7 +124,7 @@ async def test_trade_closed_pushes_pnl_to_all_senders(
         exit_reason="target",
         closed_at=datetime.now(UTC),
     )
-    async with with_tenant_context(tid), sf() as session:  # type: ignore[arg-type]
+    async with with_tenant_context(tid), sf() as session:
         session_var.set(session)
         await notifier.on_trade_closed(event)
 
@@ -145,8 +145,8 @@ async def test_order_filled_pushes_execution_confirmation(
     transport = _FakeTransport()
     notifier = ExecutionNotifier(transport=transport)
 
-    event = OrderFilled(tenant_id=tid, order_id=uuid4(), fill_id=uuid4())  # type: ignore[arg-type]
-    async with with_tenant_context(tid), sf() as session:  # type: ignore[arg-type]
+    event = OrderFilled(tenant_id=tid, order_id=uuid4(), fill_id=uuid4())
+    async with with_tenant_context(tid), sf() as session:
         session_var.set(session)
         await notifier.on_order_filled(event)
 
@@ -164,8 +164,8 @@ async def test_no_senders_is_noop(sf: async_sessionmaker[AsyncSession]) -> None:
     transport = _FakeTransport()
     notifier = ExecutionNotifier(transport=transport)
 
-    event = OrderFilled(tenant_id=tid, order_id=uuid4(), fill_id=uuid4())  # type: ignore[arg-type]
-    async with with_tenant_context(tid), sf() as session:  # type: ignore[arg-type]
+    event = OrderFilled(tenant_id=tid, order_id=uuid4(), fill_id=uuid4())
+    async with with_tenant_context(tid), sf() as session:
         session_var.set(session)
         await notifier.on_order_filled(event)  # MUST NOT raise
 
