@@ -348,6 +348,18 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
         )
         approval_service.register_subscriptions(bus)
 
+        # Slice ``mcp-hitl-approvals`` §6 — push execution + close-out
+        # updates to the operator's authorised senders (OrderFilled +
+        # TradeClosed). Best-effort; only wired when Hermes is configured
+        # (HERMES_BASE_URL + HERMES_HMAC_SECRET), else a no-op.
+        from iguanatrader.contexts.approval.execution_notifier import (
+            build_execution_notifier_from_env,
+        )
+
+        execution_notifier = build_execution_notifier_from_env()
+        if execution_notifier is not None:
+            execution_notifier.register(bus)
+
         # Slice T4-followup-market-data §2.13 — market-data subsystem.
         # DBMarketDataAdapter reads bars from `market_data_bars` table;
         # IbAsyncMarketDataIngestor SHARES `ib_client` with the broker
