@@ -35,15 +35,21 @@ Tenant resolution:
   for that tenant. The slice-3 tenant listener auto-scopes the
   underlying queries; no per-route tenant gymnastics needed.
 
-Out of scope for B (explicit):
+Action surface (shipped by follow-up slices on this same bearer + tenant
+auth):
 
-* Action tools (``explain_proposal`` / ``risk_review`` / ``journal_trade``
-  / ``synthesize_brief``) — they'd need to invoke the existing
-  services + respect the A0 budget guard. Wired in a follow-up that
-  also adds MCP JSON-RPC framing.
-* Approve / reject / place_order — not exposed; the human-in-the-
-  loop trust boundary is the approval-channels fanout (P1) which
-  Hermes already participates in.
+* LLM action tools (``explain_proposal`` / ``risk_review`` /
+  ``journal_trade`` / ``synthesize_brief``) ship in ``mcp_tools.py``.
+* HITL action tools (``approve_proposal`` / ``reject_proposal`` /
+  ``halt_trading`` / ``resume_trading`` / ``lock`` / ``unlock`` /
+  ``list_pending_approvals``) ship in ``mcp_hitl.py`` (slice
+  ``mcp-hitl-approvals``). These DO cross the human-in-the-loop trust
+  boundary — so, unlike the read tools, each one revalidates the
+  operator's verified ``channel``+``external_id`` against
+  ``authorized_senders`` and requires the tenant ``owner``. The static
+  bearer token alone NEVER authorises a money action (it is only Layer 1;
+  the operator-identity check is Layer 2). ``place_order`` stays unexposed
+  — orders are constructed only by the engine after an approved proposal.
 """
 
 from __future__ import annotations
@@ -100,6 +106,28 @@ class MCPNotFoundError(IguanaError):
     type_uri: ClassVar[str] = "urn:iguanatrader:error:mcp-not-found"
     default_title: ClassVar[str] = "MCP Not Found"
     default_status: ClassVar[int] = 404
+
+
+class MCPForbiddenError(IguanaError):
+    """Raised when a HITL action is denied — the operator's
+    ``channel``+``external_id`` is not an enabled ``authorized_senders``
+    row, is not the tenant ``owner``, or the dispatch denied the command
+    (e.g. approvals paused). Never echoes proposal details (slice
+    ``mcp-hitl-approvals`` D1 — deny without leaking)."""
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:mcp-forbidden"
+    default_title: ClassVar[str] = "MCP Forbidden"
+    default_status: ClassVar[int] = 403
+
+
+class MCPActionFailedError(IguanaError):
+    """Raised when a HITL command dispatched but the handler returned a
+    non-OK, non-denied result (e.g. missing target, downstream risk
+    service error). Carries the handler's message for the operator."""
+
+    type_uri: ClassVar[str] = "urn:iguanatrader:error:mcp-action-failed"
+    default_title: ClassVar[str] = "MCP Action Failed"
+    default_status: ClassVar[int] = 422
 
 
 # ---------------------------------------------------------------------------

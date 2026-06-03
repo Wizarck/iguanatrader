@@ -67,6 +67,19 @@ class EnabledSenderRow:
     display_name: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedSender:
+    """Identity + privilege of an enabled :class:`AuthorizedSender` row.
+
+    Used by the MCP HITL adapter (slice ``mcp-hitl-approvals``) to revalidate
+    the operator's ``channel``+``external_id`` and resolve the privilege
+    ``role`` from the database — never the request payload.
+    """
+
+    id: UUID
+    role: str
+
+
 class ApprovalRepository(BaseRepository):
     """Concrete repository for the approval bounded context."""
 
@@ -217,6 +230,35 @@ class ApprovalRepository(BaseRepository):
             return (False, None)
         return (True, instance.id)
 
+    async def resolve_enabled_sender(
+        self,
+        *,
+        tenant_id: UUID,
+        channel: Literal["telegram", "whatsapp"],
+        external_id: str,
+    ) -> ResolvedSender | None:
+        """Return the enabled sender's ``(id, role)`` or ``None``.
+
+        Role-aware sibling of :meth:`is_sender_authorized` used by the MCP
+        HITL adapter (slice ``mcp-hitl-approvals``). A missing row, a
+        ``enabled=False`` row, or a tenant mismatch all return ``None`` —
+        the caller MUST deny without echoing proposal details. The ``role``
+        is read from the DB so the privilege can never be asserted by the
+        request payload.
+        """
+        stmt = (
+            select(AuthorizedSender)
+            .where(AuthorizedSender.tenant_id == tenant_id)
+            .where(AuthorizedSender.channel == channel)
+            .where(AuthorizedSender.external_id == external_id)
+            .where(AuthorizedSender.enabled.is_(True))
+        )
+        result = await self.session.execute(stmt)
+        instance = result.scalar_one_or_none()
+        if instance is None:
+            return None
+        return ResolvedSender(id=instance.id, role=instance.role)
+
     async def list_pending(self) -> list[ApprovalRequestRow]:
         """All non-expired requests with no decision for the current tenant."""
         now_dt = utc_now()
@@ -311,4 +353,4 @@ class ApprovalRepository(BaseRepository):
         )
 
 
-__all__ = ["ApprovalRepository"]
+__all__ = ["ApprovalRepository", "EnabledSenderRow", "ResolvedSender"]

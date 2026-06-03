@@ -592,4 +592,84 @@ class RiskService:
         await self._bus.publish(event)
 
 
-__all__ = ["RiskService"]
+# ---------------------------------------------------------------------------
+# Operator kill-switch over an approval channel (audit #5 + #27)
+# ---------------------------------------------------------------------------
+#
+# The ``/halt`` and ``/resume`` command handlers
+# (``contexts/approval/channels/commands/{halt,resume}.py``) call these
+# module-level functions by name. Before this slice they did not exist, so
+# an operator ``/halt`` over Telegram/WhatsApp was a silent no-op (audit
+# #5). They activate/deactivate the kill-switch through :class:`RiskService`
+# and **commit immediately** so a crash right after a halt cannot resume
+# trading (audit #27 — the daemon enforces the switch by reading the
+# committed cache via ``load_kill_switch_state``).
+
+
+async def record_halt(
+    *,
+    triggered_by_user_id: UUID | None,
+    triggered_by_sender_id: UUID | None,
+    triggered_via_channel: str,
+    reason: str | None,
+) -> None:
+    """Operator-initiated kill-switch activation over an approval channel.
+
+    Resolves the tenant + session from the contextvars the channel adapter
+    (MCP HITL route, Telegram, dashboard) bound, activates the kill-switch
+    (``source="channel_command"``), and commits durably (#27).
+    """
+    from iguanatrader.contexts.risk.repository import RiskRepository
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = tenant_id_var.get()
+    if tenant_id is None:
+        raise LookupError("tenant_id_var not set; cannot record halt")
+    session = session_var.get()
+    if session is None:
+        raise LookupError("session_var not set; cannot record halt")
+
+    service = RiskService(repository=RiskRepository(), bus=None)
+    await service.activate_kill_switch(
+        tenant_id=tenant_id,
+        source="channel_command",
+        actor_user_id=triggered_by_user_id,
+        reason=reason,
+    )
+    # #27: durable at activation time — not left pending for an incidental
+    # later commit (a crash in that window would resume trading after a halt).
+    await session.commit()
+
+
+async def record_resume(
+    *,
+    triggered_by_user_id: UUID | None,
+    triggered_by_sender_id: UUID | None,
+    triggered_via_channel: str,
+) -> None:
+    """Operator-initiated kill-switch deactivation over an approval channel.
+
+    Mirror of :func:`record_halt`; deactivates the kill-switch and commits
+    durably so the resume is not lost on restart.
+    """
+    from iguanatrader.contexts.risk.repository import RiskRepository
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = tenant_id_var.get()
+    if tenant_id is None:
+        raise LookupError("tenant_id_var not set; cannot record resume")
+    session = session_var.get()
+    if session is None:
+        raise LookupError("session_var not set; cannot record resume")
+
+    service = RiskService(repository=RiskRepository(), bus=None)
+    await service.deactivate_kill_switch(
+        tenant_id=tenant_id,
+        source="channel_command",
+        actor_user_id=triggered_by_user_id,
+        reason="operator resume via channel",
+    )
+    await session.commit()
+
+
+__all__ = ["RiskService", "record_halt", "record_resume"]

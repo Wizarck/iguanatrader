@@ -35,7 +35,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import structlog
 
@@ -111,19 +111,33 @@ class LogOnlyChannelDispatcher:
         )
 
 
-def build_outbound_message_from_request(request: ApprovalRequestRow) -> OutboundMessage:
+def build_outbound_message_from_request(
+    request: ApprovalRequestRow,
+    proposal: Any | None = None,
+) -> OutboundMessage:
     """Render an :class:`ApprovalRequestRow` into a generic
     :class:`OutboundMessage`.
 
-    Body shape matches the existing :class:`TelegramChannel` /
-    :class:`HermesWhatsAppChannel` adapters from P1 archive — operators
-    see byte-identical text whether the message arrives via the dashboard
-    bus path (this slice) or via the legacy dashboard-driven push.
+    When ``proposal`` is supplied (slice ``mcp-hitl-approvals`` §5) the body
+    is enriched with the proposal's symbol / side / quantity / indicative
+    entry / stop / expiry so the operator can decide straight from the
+    message — they never need to open the dashboard. Without it, the sparse
+    proposal-id body is used (backward compatible; the proposal id always
+    appears so downstream correlation + the legacy tests are unaffected).
     """
-    body = (
-        f"Approve trade proposal {request.proposal_id}? "
-        f"expires_at={request.expires_at.isoformat()}"
-    )
+    expires = request.expires_at.isoformat()
+    if proposal is not None:
+        entry = getattr(proposal, "entry_price_indicative", None)
+        stop = getattr(proposal, "stop_price", None)
+        body = (
+            f"Approve {getattr(proposal, 'side', '?')} "
+            f"{getattr(proposal, 'quantity', '?')} {getattr(proposal, 'symbol', '?')} "
+            f"@ {entry if entry is not None else 'mkt'} "
+            f"stop {stop if stop is not None else 'n/a'} "
+            f"(proposal {request.proposal_id})? expires_at={expires}"
+        )
+    else:
+        body = f"Approve trade proposal {request.proposal_id}? expires_at={expires}"
     return OutboundMessage(
         body=body,
         correlation_id=str(request.id),
@@ -132,6 +146,31 @@ def build_outbound_message_from_request(request: ApprovalRequestRow) -> Outbound
             "tenant_id": str(request.tenant_id),
         },
     )
+
+
+async def _load_proposal_for_notification(proposal_id: Any) -> Any | None:
+    """Best-effort load of the :class:`TradeProposal` for notification
+    enrichment (slice ``mcp-hitl-approvals`` §5).
+
+    Resolves the ambient request/tick session from ``session_var``. Any
+    failure (no session, missing row, import issue) returns ``None`` so the
+    push degrades to the sparse body rather than failing the fan-out.
+    """
+    try:
+        from iguanatrader.contexts.trading.models import TradeProposal
+        from iguanatrader.shared.contextvars import session_var
+
+        session = session_var.get()
+        if session is None:
+            return None
+        return await session.get(TradeProposal, proposal_id)
+    except Exception as exc:  # pragma: no cover - defensive degrade-to-sparse
+        log.warning(
+            "approval.channel.proposal_load_failed",
+            proposal_id=str(proposal_id),
+            error=str(exc),
+        )
+        return None
 
 
 async def resolve_recipients_from_request(
@@ -190,7 +229,8 @@ class _MessageDispatcherChannelAdapter:
         request: ApprovalRequestRow,
         channels: list[str],
     ) -> None:
-        message = build_outbound_message_from_request(request)
+        proposal = await _load_proposal_for_notification(request.proposal_id)
+        message = build_outbound_message_from_request(request, proposal)
         try:
             recipients = await resolve_recipients_from_request(request, self._repository)
         except Exception as exc:

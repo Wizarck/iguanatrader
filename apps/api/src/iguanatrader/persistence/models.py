@@ -180,6 +180,18 @@ class AuthorizedSender(Base):
         nullable=False,
         server_default="1",
     )
+    #: Privilege facet for bot channels (slice ``mcp-hitl-approvals`` — the
+    #: deferred "slice O1 follow-up" noted on
+    #: :class:`~iguanatrader.contexts.approval.channels.types.IncomingCommand`).
+    #: ``'owner'`` is the tenant operator responsible for its trading; the
+    #: MCP adapter maps ``owner -> IncomingCommand.role='admin'`` so the
+    #: existing per-command ``required_role`` gate enforces owner-only
+    #: privileged actions. Defaults to ``'user'`` (deny-by-default).
+    role: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default="user",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

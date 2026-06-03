@@ -15,9 +15,11 @@ Out of scope (explicit):
   than the bespoke REST shape here. When Hermes consumes a full
   MCP-SDK client, the wrapper can adapt these endpoints into the
   protocol surface without touching the underlying handlers.
-* Approve / reject / place_order tools — those cross the human-in-
-  the-loop trust boundary and live behind the approval-channels
-  fanout, not MCP. Documented in ``mcp.py``'s module docstring.
+* Approve / reject / halt / resume / lock / unlock are the human-in-
+  the-loop actions — they ship in ``mcp_hitl.py`` (slice
+  ``mcp-hitl-approvals``), gated by per-operator ``authorized_senders``
+  revalidation (owner-only) rather than the service token alone.
+  ``place_order`` stays unexposed.
 
 The shared bearer + tenant-context dependencies live in ``mcp.py`` and
 are re-used here so a token works for both read-only and action paths.
@@ -40,6 +42,7 @@ from iguanatrader.api.routes.mcp import (
     _bearer_auth,
     _bind_tenant_context,
 )
+from iguanatrader.api.routes.mcp_hitl import HITL_TOOL_SPECS
 
 log = structlog.get_logger("iguanatrader.api.routes.mcp_tools")
 
@@ -218,7 +221,7 @@ async def list_tools() -> ToolListResponse:
     """
     log.info("api.mcp.tools.list")
     return ToolListResponse(
-        tools=[ToolSpecResponse(**spec) for spec in _TOOL_SPECS],
+        tools=[ToolSpecResponse(**spec) for spec in (*_TOOL_SPECS, *HITL_TOOL_SPECS)],
     )
 
 
