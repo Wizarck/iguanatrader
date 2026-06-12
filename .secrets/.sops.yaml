@@ -11,5 +11,5 @@
 #             every session.
 
 creation_rules:
-  - path_regex: \.env$
-    age: age10nqq3zd2t88nzym3wr95ju5rt0la9m3363sdnm8xfx44davzg4hqk0qh00
+  - path_regex: \.env(\.enc)?$
+    age: age10nqq3zd2t88nzym3wr95ju5rt0la9m3363sdnm8xfx44davzg4hqk0qh00,age1eggdra8hlcq6rn4lq6803v5yn4296und5nzn3zm8h0kfenv22p3qqq7yhz
