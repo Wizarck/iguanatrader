@@ -122,7 +122,12 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
     )
     from iguanatrader.shared.messagebus import MessageBus
 
-    engine = engine_factory(db_url())
+    # Audit #29: the daemon runs several concurrent write units of work against
+    # one SQLite file (heartbeat every 10s, stop-hit sweep every minute, propose
+    # ticks, bus deliveries — each a fresh per-unit session). BEGIN IMMEDIATE
+    # takes the write lock at transaction start so they queue on busy_timeout
+    # instead of deadlocking on a DEFERRED read→write lock upgrade.
+    engine = engine_factory(db_url(), sqlite_begin_immediate=True)
     sessionmaker = session_factory(engine)
     shutdown_event = asyncio.Event()
 
@@ -626,7 +631,12 @@ async def _run_scheduler_only_daemon(
     from iguanatrader.shared.contextvars import session_var, tenant_id_var
 
     log.info("trading.daemon.scheduler_only.boot", tenant_id=str(tenant_id))
-    engine = engine_factory(db_url())
+    # Audit #29: the daemon runs several concurrent write units of work against
+    # one SQLite file (heartbeat every 10s, stop-hit sweep every minute, propose
+    # ticks, bus deliveries — each a fresh per-unit session). BEGIN IMMEDIATE
+    # takes the write lock at transaction start so they queue on busy_timeout
+    # instead of deadlocking on a DEFERRED read→write lock upgrade.
+    engine = engine_factory(db_url(), sqlite_begin_immediate=True)
     sessionmaker = session_factory(engine)
     scheduler = build_apscheduler_adapter_from_env()
 
