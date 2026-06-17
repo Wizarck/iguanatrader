@@ -57,7 +57,8 @@ def test_live_with_wrong_port_raises() -> None:
 
 
 def test_paper_accepts_ib_gateway_port_4002() -> None:
-    # gnzsnz/ib-gateway exposes the paper API on 4002 (vs TWS 7497).
+    # 4002 is gnzsnz/ib-gateway's localhost-bound paper API (reachable
+    # only from inside the gateway container itself).
     model = IBKRBrokerageModel(mode="paper", port=4002)
     assert model.port == 4002
     assert model.mode == "paper"
@@ -69,15 +70,30 @@ def test_live_accepts_ib_gateway_port_4001() -> None:
     assert model.mode == "live"
 
 
+def test_paper_accepts_ib_gateway_socat_port_4004() -> None:
+    # 4004 is the socat-exposed paper API that sibling containers (the
+    # trading daemon) actually connect to — verified in prod: :4004
+    # connects, :4002 times out from another container.
+    model = IBKRBrokerageModel(mode="paper", port=4004)
+    assert model.port == 4004
+    assert model.mode == "paper"
+
+
+def test_live_accepts_ib_gateway_socat_port_4003() -> None:
+    model = IBKRBrokerageModel(mode="live", port=4003, account_code="U1234567")
+    assert model.port == 4003
+    assert model.mode == "live"
+
+
 def test_from_env_reads_ibkr_host_and_port(monkeypatch) -> None:
     # The compose deployment sets IBKR_HOST/IBKR_PORT (pointing at the
     # ib-gateway-paper container); from_env must honour them over the
     # mode-canonical TWS defaults.
     monkeypatch.setenv("IBKR_HOST", "ib-gateway-paper")
-    monkeypatch.setenv("IBKR_PORT", "4002")
+    monkeypatch.setenv("IBKR_PORT", "4004")
     model = IBKRBrokerageModel.from_env("paper")
     assert model.host == "ib-gateway-paper"
-    assert model.port == 4002
+    assert model.port == 4004
 
 
 def test_supported_order_types_default_is_canonical() -> None:

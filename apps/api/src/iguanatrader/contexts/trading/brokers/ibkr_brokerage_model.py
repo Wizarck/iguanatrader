@@ -44,11 +44,17 @@ IBKR_ORDER_TYPES: frozenset[str] = frozenset(
 
 _PAPER_PORT = 7497
 _LIVE_PORT = 7496
-# IB Gateway (gnzsnz/ib-gateway) exposes its API on 4002 (paper) / 4001 (live),
-# while standalone TWS uses 7497 / 7496. Accept either per mode so the daemon can
-# run against an IB Gateway container without weakening paper/live separation.
-_PAPER_PORTS = frozenset({_PAPER_PORT, 4002})
-_LIVE_PORTS = frozenset({_LIVE_PORT, 4001})
+# Standalone TWS serves the API on 7497 (paper) / 7496 (live). The
+# gnzsnz/ib-gateway container runs the Java API bound to localhost on
+# 4002 (paper) / 4001 (live) and re-exposes it to the container network
+# via socat on 4004 (paper) / 4003 (live). A daemon running in a sibling
+# container therefore connects on 4004/4003 — the 4002/4001 sockets only
+# accept connections from *inside* the gateway container itself (verified
+# in prod: `ib-gateway-paper:4004` connects, `:4002` times out). Accept
+# every per-mode variant so any topology works without weakening the
+# paper/live separation the __post_init__ guard enforces.
+_PAPER_PORTS = frozenset({_PAPER_PORT, 4002, 4004})
+_LIVE_PORTS = frozenset({_LIVE_PORT, 4001, 4003})
 
 
 def translate_order_type(order_type: str) -> str:
