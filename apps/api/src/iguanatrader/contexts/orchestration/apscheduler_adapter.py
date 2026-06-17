@@ -6,10 +6,13 @@ Resolves the deferred-install carry-forward from slice O2: the
 root constructs this adapter and registers cron jobs via
 :meth:`OrchestrationService.bootstrap_routines`.
 
-Persistence: ``SQLAlchemyJobStore`` against the same SQLite the rest
-of the API uses — jobs survive process restart so a missed daily
-"premarket_research" run during a deploy is rescheduled correctly per
-the APScheduler ``misfire_grace_time`` setting.
+Jobstore: ``MemoryJobStore``. The routines are registered as *bound
+methods* of in-memory daemon services (via
+:meth:`OrchestrationService.bootstrap_routines`), which a persistent
+(pickling) jobstore cannot serialize. Persistence buys nothing here
+anyway — the daemon re-runs ``bootstrap_routines`` on every boot, so
+the full cron schedule is rebuilt from code each start; a deploy-missed
+daily run is re-armed by its cron trigger on the next process start.
 """
 
 from __future__ import annotations
@@ -49,11 +52,18 @@ class APSchedulerAdapter:
     def _ensure(self) -> AsyncIOScheduler:
         if self._scheduler is None:
             from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
-            from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+            from apscheduler.jobstores.memory import MemoryJobStore
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+            # MemoryJobStore, not SQLAlchemyJobStore: the routines are bound
+            # methods of in-memory daemon services, which a persistent
+            # jobstore cannot pickle ("This Job cannot be serialized since
+            # the reference to its callable could not be determined") — it
+            # crash-looped the full-mode daemon at scheduler.start(). The
+            # daemon rebuilds the schedule from code on every boot, so the
+            # ``_jobstore_url`` (kept for constructor/back-compat) is unused.
             self._scheduler = AsyncIOScheduler(
-                jobstores={"default": SQLAlchemyJobStore(url=self._jobstore_url)},
+                jobstores={"default": MemoryJobStore()},
                 timezone=self._timezone,
                 job_defaults={
                     "misfire_grace_time": _DEFAULT_MISFIRE_GRACE_SECONDS,

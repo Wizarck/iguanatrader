@@ -101,3 +101,26 @@ def test_is_running_reflects_scheduler_state(scheduler_mock: MagicMock) -> None:
 
     scheduler_mock.running = True
     assert adapter.is_running is True
+
+
+@pytest.mark.asyncio
+async def test_real_scheduler_starts_with_non_picklable_job() -> None:
+    # Regression: production routines are bound methods / closures over
+    # in-memory daemon services. A persistent (pickling) jobstore raised
+    # "This Job cannot be serialized since the reference to its callable
+    # could not be determined" at start(), crash-looping the full-mode
+    # daemon. With MemoryJobStore the adapter must add such a callable and
+    # start cleanly. Builds the REAL AsyncIOScheduler (no mock injected).
+    pytest.importorskip("apscheduler.schedulers.asyncio")  # SDK absent in some local envs.
+    calls: list[int] = []
+
+    def _tick() -> None:  # closure → not importable → not picklable
+        calls.append(1)
+
+    adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:")
+    adapter.add_job(JobSpec(name="premarket_research", fn=_tick, cron_kwargs={"hour": 8}))
+    try:
+        await adapter.start()  # must not raise on the non-picklable callable.
+        assert adapter.is_running is True
+    finally:
+        await adapter.shutdown()
