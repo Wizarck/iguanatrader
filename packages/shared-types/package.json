@@ -1,0 +1,15 @@
+{
+  "name": "@iguanatrader/shared-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared TypeScript types between iguanatrader apps. Placeholder: domain types currently live in apps/web/src/lib/*/types.ts and migrate here over time.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ]
+}
