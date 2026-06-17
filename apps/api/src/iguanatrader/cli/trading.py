@@ -165,6 +165,12 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
     log.info("trading.daemon.adapters_built", broker_mode=mode)
 
     broker = await _build_broker(ib_client=ib_client, mode=mode)
+    # Open the IBKR connection before any broker call. Without this the
+    # adapter's ``_client`` stays None and the first broker use in
+    # ``startup_reconcile`` → ``reconcile_fills`` raises
+    # IntegrationError("client not connected"), crash-looping the daemon
+    # (the full-mode path was never exercised end-to-end before).
+    await broker.connect()
 
     async with sessionmaker() as session:
         tenant_id_var.set(tenant_id)
