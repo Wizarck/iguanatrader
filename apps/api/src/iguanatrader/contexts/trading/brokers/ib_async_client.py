@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
 from iguanatrader.contexts.trading.brokers.client_protocol import (
@@ -257,11 +257,29 @@ def _from_position(p: Any) -> PositionRecord:
     )
 
 
+def _account_summary_value(raw: Any) -> Decimal:
+    """Coerce an account-summary row value to Decimal, tolerating the
+    non-numeric tags IBKR returns.
+
+    ``accountSummaryAsync`` mixes numeric tags the adapter reads
+    (``NetLiquidation``, ``TotalCashValue``, ``RealizedPnL``, ...) with
+    string tags it does not (``AccountType="INDIVIDUAL"``,
+    ``Currency="USD"``, ``TradingType=...``). Eagerly running
+    ``Decimal()`` over the string tags raised ``decimal.ConversionSyntax``
+    and failed the whole equity reconcile; the non-numeric tags are never
+    used numerically, so coerce them to 0 instead of raising.
+    """
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+
+
 def _from_account_summary_row(row: Any) -> AccountSummaryRow:
     return AccountSummaryRow(
         account=row.account,
         tag=row.tag,
-        value=Decimal(str(row.value)),
+        value=_account_summary_value(row.value),
         currency=getattr(row, "currency", "USD") or "USD",
     )
 
