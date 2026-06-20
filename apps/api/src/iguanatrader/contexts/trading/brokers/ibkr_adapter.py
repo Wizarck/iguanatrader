@@ -111,12 +111,14 @@ class IBKRAdapter(HeartbeatMixin):
         client_factory: Callable[[], IBClient],
         bus: MessageBus | None = None,
         tenant_id: UUID | None = None,
+        native_bracket: bool = False,
     ) -> None:
         super().__init__()
         self._brokerage = brokerage
         self._client_factory = client_factory
         self._bus = bus
         self._tenant_id = tenant_id
+        self._native_bracket = native_bracket
         self._client: IBClient | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._reconnect_task: asyncio.Task[None] | None = None
@@ -324,6 +326,55 @@ class IBKRAdapter(HeartbeatMixin):
             raise IntegrationError(detail="IBKRAdapter.place_order: client not connected")
 
         contract = self._build_contract(order.symbol)
+
+        # Native bracket/OCO path (feature-flagged via constructor, default
+        # OFF). When ON and the order carries a protective stop, submit the
+        # entry as a broker-side bracket — parent entry + child STP (+ optional
+        # LMT take-profit) transmitted atomically with parentId/OCA linkage, so
+        # the stop rests AT THE BROKER even if the daemon dies. When OFF (or no
+        # stop), fall through to the unchanged single-order path below.
+        if self._native_bracket and order.stop_price is not None:
+            reverse = "SELL" if order.side.upper() == "BUY" else "BUY"
+            parent = self._build_ib_order(order, ib_order_type=ib_order_type)
+            stop_loss = IBOrder(
+                action=reverse,
+                total_quantity=order.quantity,
+                order_type="STP",
+                aux_price=order.stop_price,
+                account=self._brokerage.account_code,
+                order_ref=(f"{order.client_order_id}:stop" if order.client_order_id else None),
+            )
+            take_profit: IBOrder | None = None
+            if order.target_price is not None:
+                take_profit = IBOrder(
+                    action=reverse,
+                    total_quantity=order.quantity,
+                    order_type="LMT",
+                    limit_price=order.target_price,
+                    account=self._brokerage.account_code,
+                    order_ref=(f"{order.client_order_id}:tp" if order.client_order_id else None),
+                )
+            broker_order_id_raw = await self._client.place_bracket_order(
+                contract, parent, stop_loss, take_profit
+            )
+            broker_order_id = BrokerOrderId(broker_order_id_raw)
+            self._client_order_cache[order.client_order_id] = broker_order_id
+            await self._emit_event(
+                "broker.order.bracket_placed",
+                {
+                    "client_order_id": str(order.client_order_id),
+                    "broker_order_id": broker_order_id,
+                    "symbol": order.symbol,
+                    "side": order.side,
+                    "quantity": str(order.quantity),
+                    "stop_price": str(order.stop_price),
+                    "target_price": (
+                        str(order.target_price) if order.target_price is not None else None
+                    ),
+                },
+            )
+            return broker_order_id
+
         ib_order = self._build_ib_order(order, ib_order_type=ib_order_type)
         broker_order_id_raw = await self._client.place_order(contract, ib_order)
         broker_order_id = BrokerOrderId(broker_order_id_raw)

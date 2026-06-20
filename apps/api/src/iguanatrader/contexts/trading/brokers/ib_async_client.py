@@ -369,6 +369,54 @@ class IbAsyncIBClient:
                 )
         return str(trade.order.permId)
 
+    async def place_bracket_order(
+        self,
+        contract: Contract,
+        parent: IBOrder,
+        stop_loss: IBOrder,
+        take_profit: IBOrder | None,
+    ) -> str:
+        # ib_async's ``bracketOrder`` helper assumes a LIMIT parent, so build
+        # the bracket by hand to support a market entry. The last leg carries
+        # ``transmit=True`` so IBKR receives the whole bracket atomically once
+        # the parent + children are queued; children share an OCA group so a
+        # fill on one cancels the other.
+        ib = self._ensure()
+        ib_contract = _to_contract(contract)
+        parent_ord = _to_order(parent)
+        parent_ord.transmit = False
+        parent_ord.orderId = ib.client.getReqId()
+        oca_group = f"oca-{parent_ord.orderId}"
+        stop_ord = _to_order(stop_loss)
+        stop_ord.parentId = parent_ord.orderId
+        children = []
+        if take_profit is not None:
+            tp_ord = _to_order(take_profit)
+            tp_ord.parentId = parent_ord.orderId
+            tp_ord.ocaGroup = oca_group
+            tp_ord.ocaType = 1
+            tp_ord.transmit = False
+            stop_ord.ocaGroup = oca_group
+            stop_ord.ocaType = 1
+            children = [tp_ord, stop_ord]
+        else:
+            children = [stop_ord]
+        stop_ord.transmit = True  # last leg transmits the whole bracket atomically
+        trade = ib.placeOrder(ib_contract, parent_ord)
+        for child in children:
+            ib.placeOrder(ib_contract, child)
+        while not trade.order.permId:
+            await ib.waitOnUpdateAsync(timeout=1.0)
+            if not trade.order.permId and trade.orderStatus.status in {
+                "Cancelled",
+                "ApiCancelled",
+                "Inactive",
+            }:
+                raise RuntimeError(
+                    f"bracket parent rejected before perm_id: status={trade.orderStatus.status}"
+                )
+        return str(trade.order.permId)
+
     async def cancel_order(self, broker_order_id: str) -> None:
         ib = self._ensure()
         for trade in ib.openTrades():

@@ -59,6 +59,7 @@ class FakeIBClient:
         self.disconnect_calls: int = 0
         self.connect_calls: int = 0
         self.placed_orders: list[tuple[Contract, IBOrder]] = []
+        self.placed_brackets: list[tuple[Contract, IBOrder, IBOrder, IBOrder | None]] = []
         self.cancelled_orders: list[str] = []
         self.next_perm_id: int = 1000
         self.executions: list[Execution] = []
@@ -99,6 +100,20 @@ class FakeIBClient:
         if not self._connected:
             raise ConnectionError("FakeIBClient.place_order: not connected")
         self.placed_orders.append((contract, order))
+        perm_id = self.next_perm_id
+        self.next_perm_id += 1
+        return str(perm_id)
+
+    async def place_bracket_order(
+        self,
+        contract: Contract,
+        parent: IBOrder,
+        stop_loss: IBOrder,
+        take_profit: IBOrder | None,
+    ) -> str:
+        if not self._connected:
+            raise ConnectionError("FakeIBClient.place_bracket_order: not connected")
+        self.placed_brackets.append((contract, parent, stop_loss, take_profit))
         perm_id = self.next_perm_id
         self.next_perm_id += 1
         return str(perm_id)
