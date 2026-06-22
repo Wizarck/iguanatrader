@@ -55,5 +55,28 @@ services:
       postgres:
         condition: service_healthy
 
+  # The trading daemons are co-writers of the SAME ledger as the api
+  # container. If only `api` were pointed at Postgres (the original
+  # overlay gap) the daemons would keep writing the SQLite file under
+  # iguanatrader_data — a split-brain where proposals/orders/fills land
+  # in a different store than the one the api + web read, and the very
+  # multi-writer "database is locked" contention this cut-over exists to
+  # kill would persist between the two daemons. Both must share the
+  # Postgres URL. Schema migrations still belong to `api` only
+  # (IGUANA_SKIP_MIGRATIONS=1 stays set on the daemons via mvp.yml).
+  trading_daemon_paper:
+    environment:
+      - IGUANA_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-iguanatrader}:${POSTGRES_PASSWORD:-CHANGE-ME-POSTGRES-PASSWORD}@postgres:5432/${POSTGRES_DB:-iguanatrader}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  trading_daemon_live:
+    environment:
+      - IGUANA_DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-iguanatrader}:${POSTGRES_PASSWORD:-CHANGE-ME-POSTGRES-PASSWORD}@postgres:5432/${POSTGRES_DB:-iguanatrader}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   iguanatrader_postgres_data:
