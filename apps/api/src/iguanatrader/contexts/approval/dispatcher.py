@@ -138,6 +138,14 @@ def build_outbound_message_from_request(
         )
     else:
         body = f"Approve trade proposal {request.proposal_id}? expires_at={expires}"
+    # A1 auto-explain: ``AutoExplainEnrichingDispatcher`` attaches the LLM
+    # rationale as a dynamic ``narrative`` attr before fan-out. Append it so the
+    # operator gets the actual reasoning on the phone, not just the terse
+    # one-line decision prompt. Absent (older path / generation failed) → the
+    # body is unchanged, so this stays backward-compatible.
+    narrative = getattr(request, "narrative", None)
+    if narrative and str(narrative).strip():
+        body = f"{body}\n\n{str(narrative).strip()}"
     return OutboundMessage(
         body=body,
         correlation_id=str(request.id),

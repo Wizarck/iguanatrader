@@ -199,6 +199,46 @@ async def test_enriched_notification_includes_proposal_fields(
 
 
 @pytest.mark.asyncio
+async def test_notification_appends_auto_explain_narrative(
+    sf: async_sessionmaker[AsyncSession],
+) -> None:
+    """A1: the LLM rationale attached as ``request.narrative`` reaches the body
+    (the bug was that the message builder ignored it)."""
+    from datetime import UTC, datetime, timedelta
+
+    from iguanatrader.contexts.approval.channels.types import ApprovalRequestRow
+    from iguanatrader.contexts.approval.dispatcher import (
+        build_outbound_message_from_request,
+    )
+
+    tid, pid = await _seed_owner_with_proposal(sf)
+    rationale = "Donchian 20d breakout, ATR-sized stop; momentum + volume confirm."
+    async with with_tenant_context(tid), sf() as s:
+        proposal = await s.get(TradeProposal, pid)
+
+        def _row() -> ApprovalRequestRow:
+            return ApprovalRequestRow(
+                id=uuid4(),
+                tenant_id=tid,
+                proposal_id=pid,
+                delivered_to_channels=["telegram"],
+                timeout_seconds=300,
+                expires_at=datetime.now(UTC) + timedelta(seconds=300),
+                created_at=datetime.now(UTC),
+            )
+
+        with_narr = _row()
+        object.__setattr__(with_narr, "narrative", rationale)
+        enriched = build_outbound_message_from_request(with_narr, proposal)
+
+        without = build_outbound_message_from_request(_row(), proposal)
+
+    assert rationale in enriched.body  # the reasoning reached the phone
+    assert "AAPL" in enriched.body  # base enrichment preserved
+    assert rationale not in without.body  # no narrative attr → unchanged body
+
+
+@pytest.mark.asyncio
 async def test_list_pending_approvals_returns_proposal_summary(
     sf: async_sessionmaker[AsyncSession],
 ) -> None:
