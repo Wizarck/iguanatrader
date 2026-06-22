@@ -71,6 +71,28 @@ def run_migrations_offline() -> None:
 
 
 def _do_run_migrations(connection: Connection) -> None:
+    # Several revision ids exceed Alembic's default ``version_num``
+    # VARCHAR(32) (e.g. ``0019_seed_research_sources_tier_a``). SQLite
+    # ignores column widths so this never surfaced there, but Postgres
+    # raises StringDataRightTruncation. Pre-create / widen the version
+    # table to 255 before migrations so Alembic adopts the wide column.
+    # Idempotent: CREATE IF NOT EXISTS covers a fresh DB, ALTER covers an
+    # existing 32-wide table from an earlier run.
+    if connection.engine.dialect.name == "postgresql":
+        connection.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS alembic_version ("
+            "version_num VARCHAR(255) NOT NULL, "
+            "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE alembic_version "
+            "ALTER COLUMN version_num TYPE VARCHAR(255)"
+        )
+        # Close this autobegun transaction before Alembic takes over its
+        # own per-migration transaction lifecycle — otherwise the widening
+        # leaves an open transaction that swallows Alembic's commits and
+        # the whole run silently rolls back on connection close.
+        connection.commit()
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

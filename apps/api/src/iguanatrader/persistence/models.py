@@ -43,7 +43,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, Uuid, func, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from iguanatrader.persistence.base import Base
@@ -122,7 +122,7 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="0",
+        server_default=false(),
         default=False,
     )
     # NULL until the first successful password write (the bootstrap path
@@ -178,7 +178,7 @@ class AuthorizedSender(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="1",
+        server_default=true(),
     )
     #: Privilege facet for bot channels (slice ``mcp-hitl-approvals`` — the
     #: deferred "slice O1 follow-up" noted on

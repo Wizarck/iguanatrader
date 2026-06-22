@@ -32,6 +32,8 @@ from typing import Any, ClassVar
 from uuid import UUID
 
 from sqlalchemy import (
+    false,
+    true,
     JSON,
     Boolean,
     CheckConstraint,
@@ -179,7 +181,7 @@ class KillSwitchStateORM(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="0",
+        server_default=false(),
     )
     last_event_id: Mapped[UUID | None] = mapped_column(
         Uuid,

@@ -30,6 +30,8 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    false,
+    true,
     JSON,
     Boolean,
     CheckConstraint,
@@ -90,7 +92,7 @@ class ApiCostEvent(Base):
     cached: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="0",
+        server_default=false(),
     )
     prompt_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(

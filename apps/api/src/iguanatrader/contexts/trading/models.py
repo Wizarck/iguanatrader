@@ -41,6 +41,8 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import (
+    false,
+    true,
     JSON,
     Boolean,
     CheckConstraint,
@@ -85,7 +87,7 @@ class StrategyConfig(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="1",
+        server_default=true(),
     )
     version: Mapped[int] = mapped_column(
         Integer,
@@ -441,7 +443,7 @@ class TenantTradingMode(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="0",
+        server_default=false(),
     )
     last_toggled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -490,7 +492,7 @@ class DaemonHeartbeat(Base):
     ib_connected: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="0",
+        server_default=false(),
     )
 
 

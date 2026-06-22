@@ -45,6 +45,8 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    false,
+    true,
     CHAR,
     JSON,
     Boolean,
@@ -85,7 +87,7 @@ class ResearchSource(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="1",
+        server_default=true(),
     )
     last_health_check_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -199,7 +201,7 @@ class WatchlistConfig(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="1",
+        server_default=true(),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -480,7 +482,7 @@ class ResearchBrief(Base):
     partial: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="0",
+        server_default=false(),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
