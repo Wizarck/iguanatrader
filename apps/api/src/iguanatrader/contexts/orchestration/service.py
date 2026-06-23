@@ -453,6 +453,27 @@ class OrchestrationService:
             )
             scheduler.add_job(spec)
 
+        # Ops/verification hook (off by default): when
+        # ``IGUANATRADER_PROPOSE_NOW=true`` also register a propose that
+        # fires every minute, so an operator can exercise the full
+        # propose→risk→approve→notify chain on demand instead of waiting
+        # for the next market-hours cron. Disable again after verifying.
+        import os as _os
+
+        if (
+            wire_propose_loops
+            and _os.environ.get("IGUANATRADER_PROPOSE_NOW", "").lower() == "true"
+        ):
+            scheduler.add_job(
+                JobSpec(
+                    name="propose_now",
+                    fn=_wrap_in_uow(
+                        _make_propose_fn("premarket"), propose_unit_of_work
+                    ),
+                    cron_kwargs={"minute": "*"},
+                )
+            )
+
         if ingestion_service is not None:
 
             async def _ingest_market_data() -> None:

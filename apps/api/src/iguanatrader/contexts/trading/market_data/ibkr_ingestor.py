@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import structlog
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from iguanatrader.contexts.trading.market_data import MarketDataPacingViolationError
@@ -258,7 +259,17 @@ class IbAsyncMarketDataIngestor:
             }
             for (ts, open_, high, low, close, volume) in bars
         ]
-        stmt = sqlite_insert(MarketDataBar).values(rows)
+        # Dialect-aware UPSERT: sqlite + postgresql both expose
+        # ``insert(...).on_conflict_do_update(index_elements=, set_=)`` with
+        # the same signature, but the dialect-specific ``insert`` builder
+        # differs (the sqlite one yields an ``OnConflictDoUpdate`` that
+        # Postgres' compiler rejects). Pick by the bound engine's dialect.
+        insert_fn = (
+            pg_insert
+            if session.get_bind().dialect.name == "postgresql"
+            else sqlite_insert
+        )
+        stmt = insert_fn(MarketDataBar).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["tenant_id", "symbol", "timeframe", "ts"],
             set_={

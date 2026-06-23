@@ -263,6 +263,15 @@ async def _run_sync(
     ingestor = IbAsyncMarketDataIngestor(ib_client=ib_client)
 
     try:
+        # The daemon connects its IB client via ``IBKRAdapter.start()``;
+        # this standalone CLI path must connect explicitly or the ingestor
+        # sees a disconnected client and every symbol fails "Not connected".
+        # Resolve host/port/client_id from the same env the brokerage model
+        # reads (IBKR_HOST / IBKR_PORT / IBKR_CLIENT_ID).
+        ib_host = os.environ.get("IBKR_HOST", "127.0.0.1")
+        ib_port = int(os.environ.get("IBKR_PORT", "4002"))
+        ib_client_id = int(os.environ.get("IBKR_CLIENT_ID", "1"))
+        await ib_client.connect_async(ib_host, ib_port, ib_client_id)
         async with sm() as session:
             tenant_id_var.set(tenant_id)
             session_var.set(session)
@@ -298,6 +307,10 @@ async def _run_sync(
             bars_written=result.bars_written,
         )
     finally:
+        try:
+            ib_client.disconnect()
+        except Exception:  # noqa: BLE001 — best-effort teardown
+            pass
         await engine.dispose()
 
 
