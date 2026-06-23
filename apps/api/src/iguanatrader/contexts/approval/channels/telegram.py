@@ -55,11 +55,8 @@ class TelegramChannel(ChannelPort):
         request: ApprovalRequestRow,
         recipient: Any,
     ) -> None:
-        """Render an approval prompt + send via the transport."""
-        body = (
-            f"Approve trade proposal {request.proposal_id}? "
-            f"expires_at={request.expires_at.isoformat()}"
-        )
+        """Render a clear buy/sell approval prompt + send via the transport."""
+        body = await self._render_request_body(request)
         message_id = await self._transport.send_message(
             recipient=str(recipient),
             content=body,
@@ -69,6 +66,48 @@ class TelegramChannel(ChannelPort):
             request_id=str(request.id),
             telegram_message_id=message_id,
         )
+
+    async def _render_request_body(self, request: ApprovalRequestRow) -> str:
+        """Load the proposal levels + render the side-aware card.
+
+        Best-effort: any failure loading the proposal falls back to a
+        terse prompt so delivery is never blocked by a render error.
+        """
+        terse = (
+            f"Aprobar propuesta {request.proposal_id}? "
+            f"/approve {request.id}  ·  expira {request.expires_at.isoformat()}"
+        )
+        try:
+            from iguanatrader.contexts.approval.channels.proposal_card import (
+                render_proposal_card,
+            )
+            from iguanatrader.contexts.trading.repository import (
+                TradeProposalRepository,
+            )
+
+            proposal = await TradeProposalRepository().get_by_id(request.proposal_id)
+            if proposal is None:
+                return terse
+            return render_proposal_card(
+                request_id=request.id,
+                proposal_id=request.proposal_id,
+                symbol=proposal.symbol,
+                side=proposal.side,
+                quantity=proposal.quantity,
+                entry_price=proposal.entry_price_indicative,
+                stop_price=proposal.stop_price,
+                target_price=proposal.target_price,
+                expires_at=request.expires_at,
+                reasoning=proposal.reasoning,
+            )
+        except Exception:  # never block delivery on a render error
+            log.warning(
+                "approval.channel.telegram.card_render_failed",
+                request_id=str(request.id),
+                proposal_id=str(request.proposal_id),
+                exc_info=True,
+            )
+            return terse
 
     async def start_listening(self) -> None:
         """Drain one batch of inbound updates + dispatch through command_handler.

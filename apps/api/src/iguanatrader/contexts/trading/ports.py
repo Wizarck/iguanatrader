@@ -197,6 +197,12 @@ class Proposal:
     mode: str
     correlation_id: UUID
     research_brief_id: UUID | None = None
+    # Protective take-profit level the strategy commits to (long: above
+    # entry; short: below entry). Threaded into ``TradeProposal.target_price``
+    # at persist time so the side-aware ``stop_hit_sweep`` can emit a
+    # ``CloseTradeRequested(reason="target")``. ``None`` when the strategy
+    # sets no fixed target (e.g. trailing-only exits).
+    target_price: Decimal | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
