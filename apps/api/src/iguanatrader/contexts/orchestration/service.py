@@ -407,12 +407,10 @@ class OrchestrationService:
                             )
                     except Exception as exc:
                         logger.warning(
-                            "orchestration.routine.symbol_failed",
-                            extra={
-                                "symbol": symbol,
-                                "routine": routine_name,
-                                "error": str(exc),
-                            },
+                            "orchestration.routine.symbol_failed symbol=%s routine=%s err=%r",
+                            symbol,
+                            routine_name,
+                            exc,
                         )
                         continue
 
