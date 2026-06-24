@@ -118,26 +118,44 @@ def build_outbound_message_from_request(
     """Render an :class:`ApprovalRequestRow` into a generic
     :class:`OutboundMessage`.
 
-    When ``proposal`` is supplied (slice ``mcp-hitl-approvals`` §5) the body
-    is enriched with the proposal's symbol / side / quantity / indicative
-    entry / stop / expiry so the operator can decide straight from the
-    message — they never need to open the dashboard. Without it, the sparse
-    proposal-id body is used (backward compatible; the proposal id always
-    appears so downstream correlation + the legacy tests are unaffected).
+    When ``proposal`` is supplied the body is the clear side-aware card
+    (:func:`render_proposal_card`): ``🟢 COMPRAR (LARGO)`` / ``🔴 VENDER EN
+    CORTO`` with entry, take-profit target and protective stop, so the
+    operator decides straight from the Telegram/WhatsApp message — they
+    never need the dashboard. A render error degrades to the sparse
+    proposal-id body (delivery is never blocked). Without a proposal the
+    sparse body is used (the proposal id always appears for correlation).
     """
     expires = request.expires_at.isoformat()
+    sparse = f"Approve trade proposal {request.proposal_id}? expires_at={expires}"
+    body = sparse
     if proposal is not None:
-        entry = getattr(proposal, "entry_price_indicative", None)
-        stop = getattr(proposal, "stop_price", None)
-        body = (
-            f"Approve {getattr(proposal, 'side', '?')} "
-            f"{getattr(proposal, 'quantity', '?')} {getattr(proposal, 'symbol', '?')} "
-            f"@ {entry if entry is not None else 'mkt'} "
-            f"stop {stop if stop is not None else 'n/a'} "
-            f"(proposal {request.proposal_id})? expires_at={expires}"
-        )
-    else:
-        body = f"Approve trade proposal {request.proposal_id}? expires_at={expires}"
+        try:
+            from iguanatrader.contexts.approval.channels.proposal_card import (
+                render_proposal_card,
+            )
+
+            body = render_proposal_card(
+                request_id=request.id,
+                proposal_id=request.proposal_id,
+                symbol=proposal.symbol,
+                side=proposal.side,
+                quantity=proposal.quantity,
+                entry_price=proposal.entry_price_indicative,
+                stop_price=proposal.stop_price,
+                target_price=getattr(proposal, "target_price", None),
+                expires_at=request.expires_at,
+                reasoning=getattr(proposal, "reasoning", None),
+            )
+        except Exception as exc:  # never block fan-out on a render error
+            log.warning(
+                "approval.channel.card_render_failed",
+                request_id=str(request.id),
+                proposal_id=str(request.proposal_id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            body = sparse
     return OutboundMessage(
         body=body,
         correlation_id=str(request.id),
