@@ -45,8 +45,12 @@ services:
   ib-gateway-paper:
     <<: *ib-gateway-base
     environment:
-      - TWS_USERID=${TWS_USERID}
-      - TWS_PASSWORD=${TWS_PASSWORD}
+      # gnzsnz wants TWS_USERID/TWS_PASSWORD, but the SOPS paper.env.enc
+      # stores the same credential as IBKR_USERNAME/IBKR_PASSWORD — fall
+      # back to those so `scripts/iguana-compose.sh paper up` logs in
+      # without the operator having to remap the names by hand.
+      - TWS_USERID=${TWS_USERID:-${IBKR_USERNAME:-}}
+      - TWS_PASSWORD=${TWS_PASSWORD:-${IBKR_PASSWORD:-}}
       - TRADING_MODE=paper
       - EXISTING_SESSION_DETECTED_ACTION=${EXISTING_SESSION_DETECTED_ACTION:-primary}
       - READ_ONLY_API=${READ_ONLY_API_PAPER:-no}
@@ -54,12 +58,17 @@ services:
       - TZ=${TZ:-UTC}
       - TWO_FA_TIMEOUT_ACTION=${TWO_FA_TIMEOUT_ACTION:-restart}
     # NO host port bind for 4002 — daemons reach it over compose-network
-    # DNS as `ib-gateway-paper`. VNC port localhost-only; SSH-tunnel
+    # DNS as `ib-gateway-paper` on the socat-exposed port 4004 (the Java
+    # API binds localhost:4002 only). VNC port localhost-only; SSH-tunnel
     # from operator host (port 5900 on host → 5900 on container).
     ports:
       - "127.0.0.1:5900:5900"
+    # Probe the internal API socket (localhost:4002) with bash's /dev/tcp:
+    # the gnzsnz image ships bash but NOT nc, so the old `nc -z` check
+    # always failed and pinned the container UNHEALTHY (blocking the
+    # daemon's `service_healthy` gate).
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 4002 || exit 1"]
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/4002"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -68,8 +77,8 @@ services:
   ib-gateway-live:
     <<: *ib-gateway-base
     environment:
-      - TWS_USERID=${TWS_USERID_LIVE:-${TWS_USERID:-}}
-      - TWS_PASSWORD=${TWS_PASSWORD_LIVE:-${TWS_PASSWORD:-}}
+      - TWS_USERID=${TWS_USERID_LIVE:-${IBKR_USERNAME_LIVE:-${TWS_USERID:-${IBKR_USERNAME:-}}}}
+      - TWS_PASSWORD=${TWS_PASSWORD_LIVE:-${IBKR_PASSWORD_LIVE:-${TWS_PASSWORD:-${IBKR_PASSWORD:-}}}}
       - TRADING_MODE=live
       - EXISTING_SESSION_DETECTED_ACTION=${EXISTING_SESSION_DETECTED_ACTION:-primary}
       - READ_ONLY_API=${READ_ONLY_API_LIVE:-no}
@@ -78,8 +87,10 @@ services:
       - TWO_FA_TIMEOUT_ACTION=${TWO_FA_TIMEOUT_ACTION:-restart}
     ports:
       - "127.0.0.1:5901:5900"
+    # Live API binds localhost:4001 (socat re-exposes it on 4003). bash
+    # /dev/tcp probe — the image has no nc (see the paper note above).
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 4001 || exit 1"]
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/4001"]
       interval: 30s
       timeout: 10s
       retries: 5

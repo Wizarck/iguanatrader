@@ -44,6 +44,17 @@ IBKR_ORDER_TYPES: frozenset[str] = frozenset(
 
 _PAPER_PORT = 7497
 _LIVE_PORT = 7496
+# Standalone TWS serves the API on 7497 (paper) / 7496 (live). The
+# gnzsnz/ib-gateway container runs the Java API bound to localhost on
+# 4002 (paper) / 4001 (live) and re-exposes it to the container network
+# via socat on 4004 (paper) / 4003 (live). A daemon running in a sibling
+# container therefore connects on 4004/4003 — the 4002/4001 sockets only
+# accept connections from *inside* the gateway container itself (verified
+# in prod: `ib-gateway-paper:4004` connects, `:4002` times out). Accept
+# every per-mode variant so any topology works without weakening the
+# paper/live separation the __post_init__ guard enforces.
+_PAPER_PORTS = frozenset({_PAPER_PORT, 4002, 4004})
+_LIVE_PORTS = frozenset({_LIVE_PORT, 4001, 4003})
 
 
 def translate_order_type(order_type: str) -> str:
@@ -97,10 +108,14 @@ class IBKRBrokerageModel:
     commission_model: Literal["tiered", "fixed"] = "tiered"
 
     def __post_init__(self) -> None:
-        if self.mode == "paper" and self.port != _PAPER_PORT:
-            raise ValueError(f"paper mode requires port {_PAPER_PORT}, got {self.port}")
-        if self.mode == "live" and self.port != _LIVE_PORT:
-            raise ValueError(f"live mode requires port {_LIVE_PORT}, got {self.port}")
+        if self.mode == "paper" and self.port not in _PAPER_PORTS:
+            raise ValueError(
+                f"paper mode requires a paper port {sorted(_PAPER_PORTS)}, got {self.port}"
+            )
+        if self.mode == "live" and self.port not in _LIVE_PORTS:
+            raise ValueError(
+                f"live mode requires a live port {sorted(_LIVE_PORTS)}, got {self.port}"
+            )
 
     def assert_supports_order_type(self, order_type: str) -> None:
         """Raise :class:`UnsupportedOrderTypeError` if ``order_type`` not whitelisted."""
@@ -141,8 +156,17 @@ class IBKRBrokerageModel:
         """
         import os
 
-        host = os.environ.get("IGUANATRADER_IBKR_HOST", "127.0.0.1")
-        client_id = int(os.environ.get("IGUANATRADER_IBKR_CLIENT_ID", "1"))
+        # Prefer the IBKR_HOST / IBKR_PORT names the compose deployment sets
+        # (they point at the ib-gateway-paper container on 4002); fall back to
+        # the legacy IGUANATRADER_* names and the mode-canonical TWS port.
+        host = (
+            os.environ.get("IBKR_HOST") or os.environ.get("IGUANATRADER_IBKR_HOST") or "127.0.0.1"
+        )
+        _canonical_port = _PAPER_PORT if mode == "paper" else _LIVE_PORT
+        port = int(os.environ.get("IBKR_PORT") or _canonical_port)
+        client_id = int(
+            os.environ.get("IBKR_CLIENT_ID") or os.environ.get("IGUANATRADER_IBKR_CLIENT_ID", "1")
+        )
         account_code = os.environ.get("IGUANATRADER_IBKR_ACCOUNT_CODE")
         if mode == "live":
             if not account_code:
@@ -150,14 +174,14 @@ class IBKRBrokerageModel:
             return cls(
                 mode="live",
                 host=host,
-                port=_LIVE_PORT,
+                port=port,
                 client_id=client_id,
                 account_code=account_code,
             )
         return cls(
             mode="paper",
             host=host,
-            port=_PAPER_PORT,
+            port=port,
             client_id=client_id,
             account_code=account_code,
         )
