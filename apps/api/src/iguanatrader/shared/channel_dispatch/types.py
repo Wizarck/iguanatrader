@@ -25,6 +25,11 @@ class OutboundMessage:
     correlation_id: str
     metadata: Mapping[str, str] = field(default_factory=dict)
     subject: str | None = None
+    #: Optional interactive actions rendered as channel-native buttons
+    #: (Telegram inline keyboard; WhatsApp interactive — future). Each is
+    #: ``(label, callback_data)``. Adapters that don't support buttons
+    #: ignore it. Empty tuple = plain message.
+    actions: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

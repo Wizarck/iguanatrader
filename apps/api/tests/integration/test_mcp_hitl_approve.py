@@ -193,6 +193,9 @@ async def test_enriched_notification_includes_proposal_fields(
     assert "COMPRAR" in message.body
     assert "stop" in message.body
     assert str(pid) in message.body
+    # Inline tap-to-act buttons embed the request id for unambiguous taps.
+    assert ("✅ Aprobar", f"approve:{request.id}") in message.actions
+    assert ("❌ Rechazar", f"reject:{request.id}") in message.actions
     # Sparse fallback (no proposal) keeps the proposal id for correlation.
     sparse = build_outbound_message_from_request(request)
     assert str(pid) in sparse.body

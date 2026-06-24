@@ -36,9 +36,18 @@ class _HttpxTelegramTransport:
         self._client = client or httpx.AsyncClient(timeout=10.0)
         self._owns_client = client is None
 
-    async def send(self, *, address: str, body: str) -> str:
+    async def send(
+        self, *, address: str, body: str, actions: tuple[tuple[str, str], ...] = ()
+    ) -> str:
         url = f"https://api.telegram.org/bot{self._bot_token}/sendMessage"
-        resp = await self._client.post(url, json={"chat_id": address, "text": body})
+        payload: dict[str, Any] = {"chat_id": address, "text": body}
+        if actions:
+            payload["reply_markup"] = {
+                "inline_keyboard": [
+                    [{"text": label, "callback_data": data} for label, data in actions]
+                ]
+            }
+        resp = await self._client.post(url, json=payload)
         resp.raise_for_status()
         payload = cast(dict[str, Any], resp.json())
         if not payload.get("ok"):
@@ -91,7 +100,9 @@ class TelegramBotMessageDispatcher:
                 continue
             await self._rate_limit.acquire()
             try:
-                wire_id = await self._transport.send(address=r.address, body=message.body)
+                wire_id = await self._transport.send(
+                    address=r.address, body=message.body, actions=message.actions
+                )
             except Exception as exc:
                 log.warning(
                     "channel_dispatch.telegram.send_failed",

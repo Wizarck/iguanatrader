@@ -709,9 +709,39 @@ async def _run_daemon(
             watchlist_count=len(watchlist_symbols),
         )
 
+        # Telegram inbound — tap-to-approve/reject. Only started when a bot
+        # token is configured; owner-gated (fail-closed) and routed through
+        # the same command dispatcher as typed /approve, so a tap records a
+        # granted decision → ProposalApproved → bracketed execution.
+        from iguanatrader.contexts.approval.channels.telegram_poller import (
+            TelegramCallbackPoller,
+        )
+
+        telegram_poller: TelegramCallbackPoller | None = None
+        telegram_poller_task: asyncio.Task[None] | None = None
+        _tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        if _tg_token:
+            telegram_poller = TelegramCallbackPoller(
+                bot_token=_tg_token,
+                tenant_id=tenant_id,
+                service=approval_service,
+                message_bus=bus,
+                repository=approval_repository,
+                session_factory=sessionmaker,
+            )
+            telegram_poller_task = asyncio.create_task(telegram_poller.run())
+            log.info("trading.daemon.telegram_poller_started")
+
         await shutdown_event.wait()
 
         log.info("trading.daemon.shutdown.draining")
+        if telegram_poller is not None:
+            try:
+                await telegram_poller.stop()
+            except Exception as exc:
+                log.warning("trading.daemon.telegram_poller.shutdown_failed", error=str(exc))
+        if telegram_poller_task is not None:
+            telegram_poller_task.cancel()
         try:
             await scheduler.shutdown()
         except Exception as exc:

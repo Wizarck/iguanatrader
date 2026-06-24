@@ -44,7 +44,9 @@ class _FakeTransport:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
 
-    async def send(self, *, address: str, body: str) -> str:
+    async def send(
+        self, *, address: str, body: str, actions: tuple[tuple[str, str], ...] = ()
+    ) -> str:
         self.sent.append((address, body))
         return f"wire-{len(self.sent)}"
 

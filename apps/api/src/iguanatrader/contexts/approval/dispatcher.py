@@ -163,6 +163,14 @@ def build_outbound_message_from_request(
             "proposal_id": str(request.proposal_id),
             "tenant_id": str(request.tenant_id),
         },
+        # Inline tap-to-act buttons. The request id is embedded in the
+        # callback_data so a tap is unambiguous even when several cards
+        # arrive together (vs a typed /approve, which the operator must
+        # match to the right uuid). Channels without buttons ignore these.
+        actions=(
+            ("✅ Aprobar", f"approve:{request.id}"),
+            ("❌ Rechazar", f"reject:{request.id}"),
+        ),
     )
 
 

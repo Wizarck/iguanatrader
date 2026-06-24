@@ -19,7 +19,9 @@ class _FakeHermesTransport:
         self.calls: list[tuple[str, str]] = []
         self._fail_on = fail_on or set()
 
-    async def send(self, *, address: str, body: str) -> str:
+    async def send(
+        self, *, address: str, body: str, actions: tuple[tuple[str, str], ...] = ()
+    ) -> str:
         self.calls.append((address, body))
         if address in self._fail_on:
             raise RuntimeError(f"forced failure for {address}")
