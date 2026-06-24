@@ -139,9 +139,9 @@ async def test_resolver_restores_session_var_after_resolve(
     try:
         async with with_tenant_context(tenant_id):
             await resolver(config_id)
-        assert session_var.get() is sentinel, (
-            "resolver leaked its read session into session_var (audit #29)"
-        )
+        assert (
+            session_var.get() is sentinel
+        ), "resolver leaked its read session into session_var (audit #29)"
     finally:
         session_var.reset(token)
 

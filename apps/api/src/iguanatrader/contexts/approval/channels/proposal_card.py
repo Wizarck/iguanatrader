@@ -74,9 +74,7 @@ def render_proposal_card(
         lines.append(
             f"🎯 {target_label}: {target_price}  ({_pct(frm=entry_price, to=target_price)})"
         )
-    lines.append(
-        f"🛑 {stop_label}: {stop_price}  ({_pct(frm=entry_price, to=stop_price)})"
-    )
+    lines.append(f"🛑 {stop_label}: {stop_price}  ({_pct(frm=entry_price, to=stop_price)})")
     lines.append("")
     lines.append(f"Aprobar: /approve {request_id}   ·   Rechazar: /reject {request_id}")
     lines.append(f"Propuesta: {proposal_id}  ·  expira: {expires_at.isoformat()}")
