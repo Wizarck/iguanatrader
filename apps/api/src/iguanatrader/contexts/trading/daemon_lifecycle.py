@@ -315,6 +315,26 @@ class DaemonLifecycleService:
                 correlation_id=str(corr),
             )
 
+        # Audit #2/#27: commit the reconcile's writes at this unit-of-work
+        # boundary. The daemon runs on a long-lived session that is otherwise
+        # only committed per-fill inside ``startup_reconcile`` (#308); the
+        # equity snapshot (step 2) and the ``ibkr_reconcile`` orphan-close
+        # mutations (step 3) are only ``add``-ed / mutated in the session here,
+        # so without this commit they are logged as done but rolled back when
+        # the session eventually closes — the orphan trades stay ``open`` and
+        # the equity row never lands. Mirrors the per-tick commit in
+        # ``EquitySnapshotSweepService.sweep`` / ``reconcile_fills_handler``.
+        try:
+            session = session_var.get(None)
+            if session is not None:
+                await session.commit()
+        except Exception as exc:
+            log.warning(
+                "daemon_lifecycle.reconcile.commit_failed",
+                error=str(exc),
+                correlation_id=str(corr),
+            )
+
         log.info(
             "daemon_lifecycle.reconcile.completed",
             mode=self._mode,
