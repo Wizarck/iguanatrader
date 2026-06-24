@@ -545,34 +545,52 @@ async def _run_daemon(
         )
         from iguanatrader.contexts.risk.trailing_stop_sweep import TrailingStopSweepService
 
-        # Shared audit repo — written by the trailing sweep (#38) and read by
-        # the stop-hit sweep (#28). No explicit session (#29): it resolves
-        # session_var at call time, so the SAME instance correctly rides
-        # whichever per-tick sweep session is bound when each sweep fires —
-        # the two sweeps run as separate cron jobs on separate per-tick
-        # sessions now (see ``_sweep_unit_of_work`` below).
-        trailing_audit_repo = TrailingStopAuditRepository()
+        # Audit #6: protection-model selection. With native_bracket ON, the
+        # broker holds a resting STP (+ optional LMT take-profit) submitted
+        # atomically with the entry, so the daemon must NOT also run the
+        # stop_hit/trailing sweeps — both would try to close the position and
+        # double-sell. We therefore skip constructing + registering the sweeps
+        # and leave the protective stop AT THE BROKER. With the flag OFF
+        # (default) the sweeps are built + wired exactly as before.
+        #
+        # NOTE: native-bracket mode currently provides a FIXED protective stop
+        # (+ optional take-profit) and does NOT perform daemon-side trailing
+        # tightening — a documented follow-up.
+        native_bracket = _native_bracket_enabled()
+        stop_hit_sweep_service: Any | None = None
+        trailing_stop_sweep_service: Any | None = None
+        if native_bracket:
+            log.info("trading.daemon.protection_model", model="broker_bracket")
+        else:
+            log.info("trading.daemon.protection_model", model="cron_sweep")
+            # Shared audit repo — written by the trailing sweep (#38) and read
+            # by the stop-hit sweep (#28). No explicit session (#29): it
+            # resolves session_var at call time, so the SAME instance correctly
+            # rides whichever per-tick sweep session is bound when each sweep
+            # fires — the two sweeps run as separate cron jobs on separate
+            # per-tick sessions now (see ``_sweep_unit_of_work`` below).
+            trailing_audit_repo = TrailingStopAuditRepository()
 
-        stop_hit_sweep_service = StopHitSweepService(
-            # No session=... (#29): resolves the per-tick session the sweep
-            # unit-of-work wrapper binds, not the long-lived ambient session.
-            market_data_port=market_data_port,
-            bus=bus,
-            # #28: enforce the tightened trailing stop at close, not just
-            # the proposal's original stop.
-            trailing_audit_repo=trailing_audit_repo,
-        )
+            stop_hit_sweep_service = StopHitSweepService(
+                # No session=... (#29): resolves the per-tick session the sweep
+                # unit-of-work wrapper binds, not the long-lived ambient session.
+                market_data_port=market_data_port,
+                bus=bus,
+                # #28: enforce the tightened trailing stop at close, not just
+                # the proposal's original stop.
+                trailing_audit_repo=trailing_audit_repo,
+            )
 
-        # #38: construct + register the trailing-stop sweep. It is inert by
-        # construction until a tenant sets ``trail_trigger_pct`` (the
-        # ``compute_trailing_stop`` short-circuit), so wiring it is safe;
-        # before this it was never built, so trailing stops never ratcheted.
-        trailing_stop_sweep_service = TrailingStopSweepService(
-            # No session=... (#29): per-tick session via the sweep wrapper.
-            audit_repo=trailing_audit_repo,
-            risk_caps_provider=risk_service.load_caps,
-            market_data_port=market_data_port,
-        )
+            # #38: construct + register the trailing-stop sweep. It is inert by
+            # construction until a tenant sets ``trail_trigger_pct`` (the
+            # ``compute_trailing_stop`` short-circuit), so wiring it is safe;
+            # before this it was never built, so trailing stops never ratcheted.
+            trailing_stop_sweep_service = TrailingStopSweepService(
+                # No session=... (#29): per-tick session via the sweep wrapper.
+                audit_repo=trailing_audit_repo,
+                risk_caps_provider=risk_service.load_caps,
+                market_data_port=market_data_port,
+            )
 
         # Slice ``dual-daemon-mode-toggle-and-reconcile``: per-daemon
         # lifecycle coordinator. Subscribes to DaemonDrainRequested +
@@ -818,6 +836,22 @@ async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter
     return IBKRAdapter(
         brokerage=brokerage,
         client_factory=lambda: cast("IBClient", ib_client),
+        native_bracket=_native_bracket_enabled(),
+    )
+
+
+def _native_bracket_enabled() -> bool:
+    """Audit #6: native IBKR bracket/OCO orders, behind a feature flag.
+
+    ``IGUANATRADER_NATIVE_BRACKET`` truthy ∈ {1,true,yes,on} (case-insensitive),
+    default OFF. When OFF the adapter submits naked orders + the daemon's
+    stop_hit_sweep cron enforces protective stops — byte-identical to today.
+    """
+    return os.environ.get("IGUANATRADER_NATIVE_BRACKET", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 

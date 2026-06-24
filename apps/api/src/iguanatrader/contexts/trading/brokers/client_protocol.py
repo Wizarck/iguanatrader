@@ -215,6 +215,18 @@ class IBClient(Protocol):
         (``perm_id`` as string)."""
         ...
 
+    async def place_bracket_order(
+        self,
+        contract: Contract,
+        parent: IBOrder,
+        stop_loss: IBOrder,
+        take_profit: IBOrder | None,
+    ) -> str:
+        """Submit an entry with broker-side protective children (STP + optional
+        LMT take-profit) transmitted atomically with parent/OCA linkage. Return
+        the parent's broker order id (perm_id)."""
+        ...
+
     async def cancel_order(self, broker_order_id: str) -> None:
         """Cancel a previously-submitted order by broker order ID."""
         ...
