@@ -803,7 +803,16 @@ class TradingService:
             )
             return
 
-        order = await order_repo.get_by_id(fill_event.order_id)
+        # The broker echoes our ``order_ref`` (the deterministic
+        # ``client_order_id``) on every fill, so resolve by that first — this
+        # is what real IBKR executions carry. Fall back to the primary key for
+        # call paths that reference an order by its id directly. Without the
+        # client_order_id lookup, ``get_by_id`` is handed a client_order_id and
+        # never matches, so genuine fills log ``order_missing`` and the position
+        # is never recorded (the trade is left dangling open).
+        order = await order_repo.get_by_client_order_id(
+            fill_event.order_id
+        ) or await order_repo.get_by_id(fill_event.order_id)
         if order is None:
             log.warning(
                 "trading.fill.order_missing",
@@ -816,7 +825,7 @@ class TradingService:
         fill = Fill(
             id=fill_id,
             tenant_id=fill_event.tenant_id,
-            order_id=fill_event.order_id,
+            order_id=order.id,
             quantity_filled=fill_event.quantity_filled,
             fill_price=fill_event.fill_price,
             commission=fill_event.commission,
@@ -826,7 +835,7 @@ class TradingService:
         )
         await fill_repo.add(fill)
 
-        total_filled = await fill_repo.sum_quantity_for_order(fill_event.order_id)
+        total_filled = await fill_repo.sum_quantity_for_order(order.id)
         # `total_filled` already includes the just-added fill via the SUM.
         is_terminal = bool(Decimal(str(total_filled)) >= Decimal(str(order.quantity)))
 
@@ -880,14 +889,14 @@ class TradingService:
         await self._bus.publish(
             OrderFilled(
                 tenant_id=fill_event.tenant_id,
-                order_id=fill_event.order_id,
+                order_id=order.id,
                 fill_id=fill_id,
             )
         )
         log.info(
             "trading.fill.persisted",
             fill_id=str(fill_id),
-            order_id=str(fill_event.order_id),
+            order_id=str(order.id),
             quantity_filled=str(fill_event.quantity_filled),
             fully_filled=is_terminal,
             is_exit_fill=is_exit_fill,
