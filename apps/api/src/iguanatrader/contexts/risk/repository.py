@@ -23,6 +23,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import func, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -420,8 +421,11 @@ class RiskRepository(RiskRepositoryPort):
         if changed.rowcount and changed.rowcount > 0:  # type: ignore[attr-defined]
             return True
 
+        insert_fn = (
+            pg_insert if self._session.get_bind().dialect.name == "postgresql" else sqlite_insert
+        )
         inserted = await self._session.execute(
-            sqlite_insert(KillSwitchStateORM)
+            insert_fn(KillSwitchStateORM)
             .values(
                 tenant_id=tenant_id,
                 is_active=is_active,

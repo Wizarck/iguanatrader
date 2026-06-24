@@ -56,15 +56,17 @@ _SOURCES = [
 def upgrade() -> None:
     bind = op.get_bind()
     timestamp_sql = sa.text("CURRENT_TIMESTAMP" if bind.dialect.name == "sqlite" else "now()")
+    meta_ph = ":metadata" if bind.dialect.name == "sqlite" else "CAST(:metadata AS json)"
     for source in _SOURCES:
         op.execute(
             sa.text(
                 "INSERT INTO research_sources "
                 "(id, display_name, tier, pit_class, enabled, metadata, "
                 "created_at, updated_at) "
-                "VALUES (:id, :display_name, :tier, :pit_class, 1, :metadata, "
+                "VALUES (:id, :display_name, :tier, :pit_class, :enabled, " + meta_ph + ", "
                 f"({timestamp_sql.text}), ({timestamp_sql.text}))"
             ).bindparams(
+                enabled=True,
                 id=source["id"],
                 display_name=source["display_name"],
                 tier=source["tier"],

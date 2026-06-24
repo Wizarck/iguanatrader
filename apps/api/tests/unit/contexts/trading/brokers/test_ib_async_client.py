@@ -236,6 +236,27 @@ async def test_account_summary_translates_sdk_rows(adapter: object) -> None:
     assert rows[0].value == Decimal("100000.50")
 
 
+@pytest.mark.asyncio
+async def test_account_summary_coerces_non_numeric_tags_to_zero(adapter: object) -> None:
+    # Regression: IBKR returns string tags (AccountType, Currency, ...)
+    # alongside the numeric ones. Decimal("INDIVIDUAL") used to raise
+    # ConversionSyntax and fail the whole equity reconcile.
+    sdk_rows = [
+        SimpleNamespace(account="DU123", tag="NetLiquidation", value="100000.50", currency="USD"),
+        SimpleNamespace(account="DU123", tag="AccountType", value="INDIVIDUAL", currency="USD"),
+        SimpleNamespace(account="DU123", tag="Currency", value="USD", currency="USD"),
+        SimpleNamespace(account="DU123", tag="TotalCashValue", value="", currency="USD"),
+    ]
+    adapter._ib.accountSummaryAsync = AsyncMock(return_value=sdk_rows)  # type: ignore[attr-defined]
+
+    rows = {r.tag: r.value for r in await adapter.account_summary()}  # type: ignore[attr-defined]
+
+    assert rows["NetLiquidation"] == Decimal("100000.50")
+    assert rows["AccountType"] == Decimal("0")  # non-numeric → 0, no raise.
+    assert rows["Currency"] == Decimal("0")
+    assert rows["TotalCashValue"] == Decimal("0")  # empty string → 0.
+
+
 def test_value_object_translators_handle_lmt_order() -> None:
     from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
     from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order

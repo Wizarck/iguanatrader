@@ -178,10 +178,13 @@ services:
       - OPENBB_SIDECAR_URL=${OPENBB_SIDECAR_URL:-http://openbb_sidecar:8765}
       - OPENBB_SIDECAR_ENABLED=${OPENBB_SIDECAR_ENABLED:-true}
       # IB Gateway connection — paper side. Defaults match the
-      # ib-gateway-paper service name + port from
-      # compose/ibgateway.yml overlay.
+      # ib-gateway-paper service name + the socat-exposed API port from
+      # the compose/ibgateway.yml overlay. gnzsnz/ib-gateway binds the
+      # Java API to localhost:4002 and re-exposes it on the container
+      # network via socat at 4004 (paper) — sibling containers MUST use
+      # 4004; :4002 is loopback-only and times out from another container.
       - IBKR_HOST=${IBKR_HOST_PAPER:-ib-gateway-paper}
-      - IBKR_PORT=${IBKR_PORT_PAPER:-4002}
+      - IBKR_PORT=${IBKR_PORT_PAPER:-4004}
       - IBKR_CLIENT_ID=${IBKR_CLIENT_ID_PAPER:-1}
       - IBKR_USERNAME=${IBKR_USERNAME:-${TWS_USERID:-}}
       - IBKR_PASSWORD=${IBKR_PASSWORD:-${TWS_PASSWORD:-}}
@@ -224,8 +227,10 @@ services:
       # land in IBKR_USERNAME_LIVE / IBKR_PASSWORD_LIVE per the
       # .secrets/live.env.enc convention (operator populates before
       # flipping the live daemon enabled=true via the /settings UI).
+      # Port 4003 is the socat-exposed live API (gateway binds
+      # localhost:4001 internally — see the paper-side note above).
       - IBKR_HOST=${IBKR_HOST_LIVE:-ib-gateway-live}
-      - IBKR_PORT=${IBKR_PORT_LIVE:-4001}
+      - IBKR_PORT=${IBKR_PORT_LIVE:-4003}
       - IBKR_CLIENT_ID=${IBKR_CLIENT_ID_LIVE:-2}
       - IBKR_USERNAME=${IBKR_USERNAME_LIVE:-${TWS_USERID_LIVE:-}}
       - IBKR_PASSWORD=${IBKR_PASSWORD_LIVE:-${TWS_PASSWORD_LIVE:-}}

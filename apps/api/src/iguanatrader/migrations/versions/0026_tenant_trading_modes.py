@@ -43,7 +43,7 @@ def upgrade() -> None:
             "enabled",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("0"),
+            server_default=sa.false(),
         ),
         sa.Column(
             "last_toggled_at",
@@ -80,14 +80,14 @@ def upgrade() -> None:
         sa.text(
             "INSERT INTO tenant_trading_modes "
             "(tenant_id, mode, enabled, last_toggled_at) "
-            "SELECT id, 'paper', 1, CURRENT_TIMESTAMP FROM tenants"
+            "SELECT id, 'paper', true, CURRENT_TIMESTAMP FROM tenants"
         )
     )
     op.execute(
         sa.text(
             "INSERT INTO tenant_trading_modes "
             "(tenant_id, mode, enabled, last_toggled_at) "
-            "SELECT id, 'live', 0, CURRENT_TIMESTAMP FROM tenants"
+            "SELECT id, 'live', false, CURRENT_TIMESTAMP FROM tenants"
         )
     )
 
