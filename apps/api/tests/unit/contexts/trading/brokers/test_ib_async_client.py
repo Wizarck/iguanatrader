@@ -286,6 +286,76 @@ def test_value_object_translator_rejects_lmt_without_price() -> None:
         _to_order(bad)
 
 
+def test_to_order_snaps_stop_price_to_penny_tick() -> None:
+    """IBKR Error 110: an ATR-derived sub-penny stop must be snapped to the
+    minimum price variation ($0.01) before submission."""
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(
+        action="SELL",
+        total_quantity=Decimal("4"),
+        order_type="STP",
+        aux_price=Decimal("120.29428571"),
+    )
+    sdk = _to_order(order)
+    assert sdk.auxPrice == 120.29
+
+
+def test_to_order_snaps_limit_price_to_penny_tick() -> None:
+    """A sub-penny take-profit limit (e.g. 318.235) is rounded to $0.01."""
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(
+        action="SELL",
+        total_quantity=Decimal("7"),
+        order_type="LMT",
+        limit_price=Decimal("318.235"),
+    )
+    sdk = _to_order(order)
+    assert sdk.lmtPrice == 318.24  # HALF_UP
+
+
+@pytest.mark.asyncio
+async def test_await_perm_id_returns_when_stamped() -> None:
+    """The perm-id wait must NOT call the SDK's removed ``waitOnUpdateAsync``;
+    when the broker has stamped a permId it returns cleanly."""
+    from iguanatrader.contexts.trading.brokers.ib_async_client import IbAsyncIBClient
+
+    class _Order:
+        permId = 953410504
+
+    class _Status:
+        status = "Submitted"
+
+    class _Trade:
+        order = _Order()
+        orderStatus = _Status()
+
+    await IbAsyncIBClient._await_perm_id(_Trade())  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_await_perm_id_raises_on_cancel_before_perm_id() -> None:
+    """A parent cancelled/rejected before a permId lands surfaces as an error
+    (so the execute handler persists a rejected/reconcilable order)."""
+    from iguanatrader.contexts.trading.brokers.ib_async_client import IbAsyncIBClient
+
+    class _Order:
+        permId = 0
+
+    class _Status:
+        status = "Cancelled"
+
+    class _Trade:
+        order = _Order()
+        orderStatus = _Status()
+
+    with pytest.raises(RuntimeError, match="rejected before perm_id"):
+        await IbAsyncIBClient._await_perm_id(_Trade(), what="bracket parent")
+
+
 def test_value_object_translator_rejects_unsupported_sec_type() -> None:
     """Slice ``ib-translators-full`` supports STK/FUT/OPT/CASH/CRYPTO/CFD/IND.
     Anything else (warrant, bag, fund) still raises."""

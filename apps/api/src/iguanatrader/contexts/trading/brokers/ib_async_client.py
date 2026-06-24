@@ -18,9 +18,10 @@ nothing more.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
 from iguanatrader.contexts.trading.brokers.client_protocol import (
@@ -34,6 +35,30 @@ from iguanatrader.contexts.trading.brokers.client_protocol import (
 
 if TYPE_CHECKING:
     from ib_async import IB as _IBAsyncIB
+
+#: US-equity minimum price variation. IBKR rejects orders whose limit/stop
+#: prices are not a multiple of the contract tick (Error 110); ATR-derived
+#: donchian stop/target levels carry many decimals, so we snap order prices
+#: to the penny before submission. (Sub-$1 / non-US-equity ticks are out of
+#: scope for the MVP universe — all watchlist names trade above $1.)
+_PRICE_TICK: Decimal = Decimal("0.01")
+
+#: ``ib_async`` stamps ``permId`` on a placed order asynchronously via the
+#: event loop. We yield with ``asyncio.sleep`` (NOT the SDK's removed
+#: ``waitOnUpdateAsync``) and re-poll until the broker assigns it or the order
+#: is rejected/cancelled, bounded by a hard timeout.
+_PERMID_POLL_SECONDS: float = 0.1
+_PERMID_WAIT_TIMEOUT_SECONDS: float = 10.0
+
+
+def _round_to_tick(price: Decimal) -> float:
+    """Snap an order price to the US-equity minimum price variation ($0.01).
+
+    Returns a float (the SDK expects float prices). Prevents IBKR Error 110
+    ("price does not conform to the minimum price variation") for the
+    ATR-derived stop/target levels threaded into bracket child orders.
+    """
+    return float(Decimal(price).quantize(_PRICE_TICK, rounding=ROUND_HALF_UP))
 
 
 def _to_contract(c: Contract) -> Any:
@@ -140,15 +165,17 @@ def _to_order(o: IBOrder) -> Any:
     elif o.order_type == "LMT":
         if o.limit_price is None:
             raise ValueError("LMT order requires limit_price")
-        order = LimitOrder(o.action, qty, float(o.limit_price))
+        order = LimitOrder(o.action, qty, _round_to_tick(o.limit_price))
     elif o.order_type == "STP":
         if o.aux_price is None:
             raise ValueError("STP order requires aux_price")
-        order = StopOrder(o.action, qty, float(o.aux_price))
+        order = StopOrder(o.action, qty, _round_to_tick(o.aux_price))
     elif o.order_type == "STP LMT":
         if o.aux_price is None or o.limit_price is None:
             raise ValueError("STP LMT order requires limit_price and aux_price")
-        order = StopLimitOrder(o.action, qty, float(o.limit_price), float(o.aux_price))
+        order = StopLimitOrder(
+            o.action, qty, _round_to_tick(o.limit_price), _round_to_tick(o.aux_price)
+        )
     elif o.order_type in ("TRAIL", "TRAIL LIMIT", "MOC", "LOC"):
         # The SDK ``Order`` base class accepts arbitrary ``orderType``;
         # the higher-level helpers (``MarketOrder`` etc.) only cover the
@@ -373,18 +400,8 @@ class IbAsyncIBClient:
         ib = self._ensure()
         trade = ib.placeOrder(_to_contract(contract), _to_order(order))
         # placeOrder returns a Trade synchronously; perm_id arrives async via the
-        # event loop. Wait for the broker to stamp it.
-        while not trade.order.permId:
-            await ib.waitOnUpdateAsync(timeout=1.0)
-            if not trade.order.permId and trade.orderStatus.status in {
-                "Cancelled",
-                "ApiCancelled",
-                "Inactive",
-            }:
-                raise RuntimeError(
-                    f"placeOrder rejected before perm_id assignment: status="
-                    f"{trade.orderStatus.status}"
-                )
+        # event loop. Yield to let ib_async process broker updates, then re-poll.
+        await self._await_perm_id(trade)
         return str(trade.order.permId)
 
     async def place_bracket_order(
@@ -423,17 +440,36 @@ class IbAsyncIBClient:
         trade = ib.placeOrder(ib_contract, parent_ord)
         for child in children:
             ib.placeOrder(ib_contract, child)
+        await self._await_perm_id(trade, what="bracket parent")
+        return str(trade.order.permId)
+
+    @staticmethod
+    async def _await_perm_id(trade: Any, *, what: str = "order") -> None:
+        """Poll until ib_async stamps ``permId`` on a placed order.
+
+        Replaces the SDK's removed ``waitOnUpdateAsync``: ``asyncio.sleep``
+        yields to the event loop so ib_async can process broker updates, and we
+        re-check the trade. Raises if the order is rejected/cancelled before a
+        ``permId`` lands, or if the bounded wait elapses.
+        """
+        waited = 0.0
         while not trade.order.permId:
-            await ib.waitOnUpdateAsync(timeout=1.0)
+            await asyncio.sleep(_PERMID_POLL_SECONDS)
+            waited += _PERMID_POLL_SECONDS
             if not trade.order.permId and trade.orderStatus.status in {
                 "Cancelled",
                 "ApiCancelled",
                 "Inactive",
             }:
                 raise RuntimeError(
-                    f"bracket parent rejected before perm_id: status={trade.orderStatus.status}"
+                    f"{what} rejected before perm_id assignment: "
+                    f"status={trade.orderStatus.status}"
                 )
-        return str(trade.order.permId)
+            if waited >= _PERMID_WAIT_TIMEOUT_SECONDS:
+                raise TimeoutError(
+                    f"{what} perm_id not stamped within {_PERMID_WAIT_TIMEOUT_SECONDS}s; "
+                    f"status={trade.orderStatus.status}"
+                )
 
     async def cancel_order(self, broker_order_id: str) -> None:
         ib = self._ensure()
