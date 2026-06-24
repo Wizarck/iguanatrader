@@ -615,3 +615,90 @@ async def test_execute_on_approval_rejects_below_min_size(
     assert len(rejections) == 1
     assert rejections[0].reason == "below_min_size"
     assert rejections[0].proposal_id == proposal_id
+
+
+@pytest.mark.asyncio
+async def test_reconcile_matches_fill_by_client_order_id(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Real IBKR executions echo our ``order_ref`` (the deterministic
+    ``client_order_id``), NOT the order's primary key. The fill reconcile must
+    resolve the order by ``client_order_id`` so the fill is recorded against
+    the order — otherwise a genuine fill logs ``order_missing`` and the
+    position is never tracked (the trade dangles open)."""
+    from datetime import UTC, datetime
+
+    from iguanatrader.contexts.trading.models import Fill, Order
+    from iguanatrader.contexts.trading.ports import FillEvent, derive_client_order_id
+    from sqlalchemy import select
+
+    tenant_id = await _seed_tenant(schema_session_factory, "t-cid-match")
+    _sc_id, proposal_id = await _seed_proposal(schema_session_factory, tenant_id=tenant_id)
+    cid = derive_client_order_id(tenant_id, "entry", proposal_id)
+
+    trade_id = uuid4()
+    order_id = uuid4()
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        s.add(
+            Trade(
+                id=trade_id,
+                tenant_id=tenant_id,
+                proposal_id=proposal_id,
+                symbol="SPY",
+                side="buy",
+                quantity=Decimal("3"),
+                mode="paper",
+                state="open",
+                opened_at=utc_now(),
+            )
+        )
+        await s.commit()
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        s.add(
+            Order(
+                id=order_id,
+                tenant_id=tenant_id,
+                trade_id=trade_id,
+                broker="ibkr",
+                broker_order_id="BR-CID-9",
+                order_type="market",
+                side="buy",
+                quantity=Decimal("3"),
+                state="submitted",
+                client_order_id=cid,
+                submitted_at=utc_now(),
+            )
+        )
+        await s.commit()
+
+    class _FillBroker(_HangingBroker):
+        async def reconcile_fills(self, since: datetime) -> Any:
+            yield FillEvent(
+                tenant_id=tenant_id,
+                order_id=cid,  # broker echoes the client_order_id, NOT order.id
+                quantity_filled=Decimal("3"),
+                fill_price=Decimal("100"),
+                commission=Decimal("1"),
+                commission_currency="USD",
+                filled_at=datetime.now(UTC),
+                broker_fill_id="F-CID-1",
+            )
+
+    broker = _FillBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+        )
+        await service.startup_reconcile()
+        fills = list(
+            (await s.execute(select(Fill).where(Fill.order_id == order_id))).scalars().all()
+        )
+
+    # The fill was matched by client_order_id and recorded against the order PK
+    # (not dropped as order_missing).
+    assert len(fills) == 1
+    assert fills[0].broker_fill_id == "F-CID-1"
