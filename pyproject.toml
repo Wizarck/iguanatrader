@@ -52,6 +52,11 @@ langfuse = ">=2.40,<4.0"
 # CI (tests/ci/test_license_boundary.py) verifies all six are non-AGPL.
 anthropic = ">=0.40,<1.0"
 ib_async = ">=1.0,<2.0"
+# ib_async parses IBKR execution-report timestamps (e.g. "... US/Eastern")
+# with ``zoneinfo``; slim container images carry no system IANA tz database,
+# so without this the fill/reconcile handler raises ZoneInfoNotFoundError and
+# no execution is ingested. The ``tzdata`` package ships the database in-wheel.
+tzdata = ">=2024.1"
 apscheduler = { version = ">=3.10,<4.0", extras = ["sqlalchemy"] }
 playwright = ">=1.45,<2.0"
 camoufox = ">=0.4,<1.0"
