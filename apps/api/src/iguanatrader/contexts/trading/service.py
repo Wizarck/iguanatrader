@@ -706,6 +706,69 @@ class TradingService:
             submitted_at=utc_now(),
         )
         await order_repo.add(order)
+
+        # Native-bracket exit tracking: when the broker attaches protective
+        # child legs at submit (STP + optional LMT, OCA-linked), persist them
+        # as exit Order rows (opposite side) keyed by the SAME deterministic
+        # client_order_ids the adapter stamps on each child's broker order_ref.
+        # That lets fill reconciliation match a stop/target execution to its
+        # exit order and close the trade with a real exit price + realised P&L,
+        # rather than the position only being noticed later by the flat-position
+        # sweep. OCA cancels the unfilled sibling broker-side; its row stays
+        # 'submitted' (no fill, no P&L impact) until an open-order reconcile
+        # marks it cancelled.
+        if (
+            getattr(self._broker, "native_bracket_enabled", False)
+            and new_order.stop_price is not None
+        ):
+            exit_side = "sell" if new_order.side == "buy" else "buy"
+            await order_repo.add(
+                Order(
+                    id=uuid4(),
+                    tenant_id=event.tenant_id,
+                    trade_id=trade_id,
+                    broker="ibkr",
+                    broker_order_id=None,
+                    client_order_id=derive_client_order_id(
+                        event.tenant_id, "bracket_stop", new_order.client_order_id
+                    ),
+                    order_type="stop",
+                    side=exit_side,
+                    quantity=new_order.quantity,
+                    limit_price=None,
+                    stop_price=new_order.stop_price,
+                    state="submitted",
+                    submitted_at=utc_now(),
+                )
+            )
+            if new_order.target_price is not None:
+                await order_repo.add(
+                    Order(
+                        id=uuid4(),
+                        tenant_id=event.tenant_id,
+                        trade_id=trade_id,
+                        broker="ibkr",
+                        broker_order_id=None,
+                        client_order_id=derive_client_order_id(
+                            event.tenant_id, "bracket_tp", new_order.client_order_id
+                        ),
+                        order_type="limit",
+                        side=exit_side,
+                        quantity=new_order.quantity,
+                        limit_price=new_order.target_price,
+                        stop_price=None,
+                        state="submitted",
+                        submitted_at=utc_now(),
+                    )
+                )
+            log.info(
+                "trading.order.bracket_children_persisted",
+                order_id=str(order_id),
+                trade_id=str(trade_id),
+                proposal_id=str(event.proposal_id),
+                has_target=new_order.target_price is not None,
+            )
+
         await self._bus.publish(
             OrderPlaced(
                 tenant_id=event.tenant_id,
@@ -880,11 +943,21 @@ class TradingService:
                 order_repo=order_repo,
             )
             closed_at = utc_now()
+            # A close via ``close_trade`` already stamped the trade's
+            # ``exit_reason`` (stop/target/manual/expiry). A native-bracket leg
+            # filling does NOT go through ``close_trade`` (the stop/target rest
+            # at the broker), so the reason is still NULL here — infer it from
+            # the filled leg so the journal records a stop-out as "stop", not a
+            # misleading "manual".
+            exit_reason = trade.exit_reason
+            if exit_reason is None:
+                exit_reason = "stop" if order.order_type == "stop" else "target"
             await trade_repo.update_state(
                 trade.id,
                 state="closed",
                 closed_at=closed_at,
                 realised_pnl=realised_pnl,
+                exit_reason=exit_reason,
             )
 
             # Slice A3 — publish TradeClosed for the auto-journal
@@ -901,7 +974,7 @@ class TradingService:
                     side=trade.side,
                     quantity=trade.quantity,
                     realised_pnl=realised_pnl,
-                    exit_reason=str(trade.exit_reason or "manual"),
+                    exit_reason=str(exit_reason),
                     closed_at=closed_at,
                 )
             )
