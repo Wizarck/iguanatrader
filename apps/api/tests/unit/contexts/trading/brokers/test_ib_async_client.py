@@ -302,6 +302,17 @@ def test_to_order_snaps_stop_price_to_penny_tick() -> None:
     assert sdk.auxPrice == 120.29
 
 
+def test_to_order_stamps_day_tif() -> None:
+    """An explicit DAY TIF is set so the Gateway order preset has nothing to
+    rewrite (Error 10349 cancels held bracket parents otherwise)."""
+    from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_order
+
+    order = IBOrder(action="BUY", total_quantity=Decimal("3"), order_type="MKT")
+    sdk = _to_order(order)
+    assert sdk.tif == "DAY"
+
+
 def test_to_order_snaps_limit_price_to_penny_tick() -> None:
     """A sub-penny take-profit limit (e.g. 318.235) is rounded to $0.01."""
     from iguanatrader.contexts.trading.brokers.client_protocol import IBOrder
