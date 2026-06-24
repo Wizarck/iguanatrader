@@ -96,9 +96,7 @@ async def _enforce_live_paper_history_gate(
         return
     if await audit_repo.event_exists(_PAPER_SESSION_EVENT):
         return  # prior paper history → --confirm-live alone is sufficient
-    acknowledged = i_understand_the_risks or _env_truthy(
-        "IGUANATRADER_I_UNDERSTAND_THE_RISKS"
-    )
+    acknowledged = i_understand_the_risks or _env_truthy("IGUANATRADER_I_UNDERSTAND_THE_RISKS")
     if not acknowledged:
         log.error("trading.daemon.live_blocked.no_paper_history")
         typer.echo(
