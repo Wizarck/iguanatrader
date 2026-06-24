@@ -264,11 +264,7 @@ class IbAsyncMarketDataIngestor:
         # the same signature, but the dialect-specific ``insert`` builder
         # differs (the sqlite one yields an ``OnConflictDoUpdate`` that
         # Postgres' compiler rejects). Pick by the bound engine's dialect.
-        insert_fn = (
-            pg_insert
-            if session.get_bind().dialect.name == "postgresql"
-            else sqlite_insert
-        )
+        insert_fn = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
         stmt = insert_fn(MarketDataBar).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["tenant_id", "symbol", "timeframe", "ts"],

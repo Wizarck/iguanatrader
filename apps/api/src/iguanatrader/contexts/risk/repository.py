@@ -422,9 +422,7 @@ class RiskRepository(RiskRepositoryPort):
             return True
 
         insert_fn = (
-            pg_insert
-            if self._session.get_bind().dialect.name == "postgresql"
-            else sqlite_insert
+            pg_insert if self._session.get_bind().dialect.name == "postgresql" else sqlite_insert
         )
         inserted = await self._session.execute(
             insert_fn(KillSwitchStateORM)

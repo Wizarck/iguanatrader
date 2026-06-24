@@ -85,8 +85,7 @@ def _do_run_migrations(connection: Connection) -> None:
             "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"
         )
         connection.exec_driver_sql(
-            "ALTER TABLE alembic_version "
-            "ALTER COLUMN version_num TYPE VARCHAR(255)"
+            "ALTER TABLE alembic_version " "ALTER COLUMN version_num TYPE VARCHAR(255)"
         )
         # Close this autobegun transaction before Alembic takes over its
         # own per-migration transaction lifecycle — otherwise the widening

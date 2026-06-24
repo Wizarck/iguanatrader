@@ -18,6 +18,7 @@ Heavy imports kept lazy per gotcha #29 (``--help`` performance).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from typing import TYPE_CHECKING
 
@@ -307,10 +308,8 @@ async def _run_sync(
             bars_written=result.bars_written,
         )
     finally:
-        try:
+        with contextlib.suppress(Exception):  # best-effort teardown
             ib_client.disconnect()
-        except Exception:  # noqa: BLE001 — best-effort teardown
-            pass
         await engine.dispose()
 
 

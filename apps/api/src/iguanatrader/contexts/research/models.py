@@ -45,8 +45,6 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
-    false,
-    true,
     CHAR,
     JSON,
     Boolean,
@@ -60,8 +58,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    false,
     func,
     text,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 

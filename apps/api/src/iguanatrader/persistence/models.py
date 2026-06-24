@@ -43,7 +43,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, Uuid, func, false, true
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, Uuid, false, func, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from iguanatrader.persistence.base import Base

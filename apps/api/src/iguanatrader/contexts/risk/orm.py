@@ -32,8 +32,6 @@ from typing import Any, ClassVar
 from uuid import UUID
 
 from sqlalchemy import (
-    false,
-    true,
     JSON,
     Boolean,
     CheckConstraint,
@@ -43,6 +41,7 @@ from sqlalchemy import (
     Numeric,
     Text,
     Uuid,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column

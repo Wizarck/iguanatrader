@@ -41,8 +41,6 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import (
-    false,
-    true,
     JSON,
     Boolean,
     CheckConstraint,
@@ -54,7 +52,9 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     event,
+    false,
     func,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 

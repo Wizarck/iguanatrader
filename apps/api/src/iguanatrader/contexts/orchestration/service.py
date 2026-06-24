@@ -460,16 +460,11 @@ class OrchestrationService:
         # for the next market-hours cron. Disable again after verifying.
         import os as _os
 
-        if (
-            wire_propose_loops
-            and _os.environ.get("IGUANATRADER_PROPOSE_NOW", "").lower() == "true"
-        ):
+        if wire_propose_loops and _os.environ.get("IGUANATRADER_PROPOSE_NOW", "").lower() == "true":
             scheduler.add_job(
                 JobSpec(
                     name="propose_now",
-                    fn=_wrap_in_uow(
-                        _make_propose_fn("premarket"), propose_unit_of_work
-                    ),
+                    fn=_wrap_in_uow(_make_propose_fn("premarket"), propose_unit_of_work),
                     cron_kwargs={"minute": "*"},
                 )
             )
