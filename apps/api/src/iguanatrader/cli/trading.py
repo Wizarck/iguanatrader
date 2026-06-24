@@ -51,6 +51,96 @@ def _parse_watchlist(raw: str | None) -> list[str]:
     return [sym.strip().upper() for sym in csv.split(",") if sym.strip()]
 
 
+# ----------------------------------------------------------------------
+# #15: LIVE-daemon paper-history gate (AGENTS.md §7 override 2026-04-28)
+# ----------------------------------------------------------------------
+# The system ALWAYS recommends paper trading. Starting LIVE for a tenant with
+# NO recorded paper-trading history requires BOTH --confirm-live AND
+# --i-understand-the-risks; absence of a paper record emits a WARNING (it does
+# not block once the risk is acknowledged) and records the override decision in
+# audit_log with the literal acknowledgment text. A durable per-boot
+# session-start row (the ``.paper`` variant is what a later LIVE start reads as
+# paper history) also satisfies the "immutable execution logs" hard rule.
+_LIVE_OVERRIDE_EVENT = "trading.daemon.live_override.no_paper_history"
+_RISK_ACK_TEXT = (
+    "I understand this starts LIVE real-money trading for a tenant with no "
+    "recorded paper-trading history, and I accept the risk."
+)
+
+
+def _session_started_event(mode: str) -> str:
+    return f"trading.daemon.session.started.{mode}"
+
+
+#: The event a prior PAPER boot writes; the LIVE gate reads it as "paper history".
+_PAPER_SESSION_EVENT = _session_started_event("paper")
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+async def _enforce_live_paper_history_gate(
+    *, audit_repo: Any, mode: str, i_understand_the_risks: bool, log: Any
+) -> None:
+    """Gate LIVE startup on paper-trading history (#15 / AGENTS.md §7).
+
+    No-op for paper mode and for LIVE when the tenant has prior paper history.
+    For LIVE WITHOUT paper history: requires ``--i-understand-the-risks`` (or
+    the env equivalent) — blocks (exit 2) if absent, else emits a WARNING and
+    records the override decision in ``audit_log``. Must run inside an open
+    session + tenant scope (it reads/writes ``audit_log`` via the ambient
+    unit of work).
+    """
+    if mode != "live":
+        return
+    if await audit_repo.event_exists(_PAPER_SESSION_EVENT):
+        return  # prior paper history → --confirm-live alone is sufficient
+    acknowledged = i_understand_the_risks or _env_truthy("IGUANATRADER_I_UNDERSTAND_THE_RISKS")
+    if not acknowledged:
+        log.error("trading.daemon.live_blocked.no_paper_history")
+        typer.echo(
+            "Refusing to start LIVE: this tenant has NO recorded paper-trading "
+            "history. Paper trading is strongly recommended first. To proceed "
+            "anyway, re-run with --i-understand-the-risks (or set "
+            "IGUANATRADER_I_UNDERSTAND_THE_RISKS=true)."
+        )
+        raise typer.Exit(code=2)
+    log.warning(
+        "trading.daemon.live_override.no_paper_history",
+        risk_acknowledgment=_RISK_ACK_TEXT,
+    )
+    typer.echo(
+        "WARNING: starting LIVE real-money trading with NO paper-trading "
+        "history for this tenant. Recorded as an acknowledged override. "
+        f"Acknowledgment: {_RISK_ACK_TEXT}"
+    )
+    await _insert_audit_row(
+        audit_repo,
+        event=_LIVE_OVERRIDE_EVENT,
+        metadata={"mode": "live", "risk_acknowledgment": _RISK_ACK_TEXT},
+    )
+
+
+async def _record_daemon_session_start(*, audit_repo: Any, mode: str) -> None:
+    """Record a durable session-start audit row (#15 + immutable-logs rule)."""
+    await _insert_audit_row(
+        audit_repo,
+        event=_session_started_event(mode),
+        metadata={"mode": mode},
+    )
+
+
+async def _insert_audit_row(audit_repo: Any, *, event: str, metadata: dict[str, Any]) -> None:
+    from uuid import uuid4
+
+    from iguanatrader.contexts.observability.models import AuditLog
+
+    await audit_repo.insert_for_tenant(
+        AuditLog(id=uuid4(), actor_kind="system", event=event, metadata_json=metadata)
+    )
+
+
 @app.command("run")
 def run(
     mode: str = typer.Option(..., "--mode", help=f"One of: {', '.join(_VALID_MODES)}."),
@@ -63,6 +153,15 @@ def run(
         False,
         "--confirm-live",
         help="Required to start the LIVE (real-money) daemon. Ignored in paper mode.",
+    ),
+    i_understand_the_risks: bool = typer.Option(
+        False,
+        "--i-understand-the-risks",
+        help=(
+            "Required (with --confirm-live) to start LIVE when this tenant has "
+            "NO prior paper-trading history. Ignored in paper mode and when "
+            "paper history exists."
+        ),
     ),
 ) -> None:
     """Run the iguanatrader trading daemon (long-running)."""
@@ -89,10 +188,18 @@ def run(
             )
             raise typer.Exit(code=2)
 
-    asyncio.run(_run_daemon(mode=mode, tenant=tenant))
+    asyncio.run(
+        _run_daemon(
+            mode=mode,
+            tenant=tenant,
+            i_understand_the_risks=i_understand_the_risks,
+        )
+    )
 
 
-async def _run_daemon(*, mode: str, tenant: str | None) -> None:
+async def _run_daemon(
+    *, mode: str, tenant: str | None, i_understand_the_risks: bool = False
+) -> None:
     """Async daemon body — orchestrates startup → run → shutdown.
 
     Per slice T4 §2.2 + the deployment-foundation retro carry-forward:
@@ -163,6 +270,25 @@ async def _run_daemon(*, mode: str, tenant: str | None) -> None:
     scheduler = build_apscheduler_adapter_from_env()
 
     log.info("trading.daemon.adapters_built", broker_mode=mode)
+
+    # #15: gate LIVE startup on paper-trading history BEFORE connecting the
+    # broker (so a blocked LIVE start never opens a real-money socket). Uses a
+    # short-lived session + tenant scope; the long-lived daemon session opens
+    # further below. Also records a durable per-boot session-start audit row.
+    async with sessionmaker() as gate_session:
+        tenant_id_var.set(tenant_id)
+        session_var.set(gate_session)
+        from iguanatrader.contexts.observability.repository import AuditLogRepository
+
+        gate_audit = AuditLogRepository()
+        await _enforce_live_paper_history_gate(
+            audit_repo=gate_audit,
+            mode=mode,
+            i_understand_the_risks=i_understand_the_risks,
+            log=log,
+        )
+        await _record_daemon_session_start(audit_repo=gate_audit, mode=mode)
+        await gate_session.commit()
 
     broker = await _build_broker(ib_client=ib_client, mode=mode)
     # Open the IBKR connection before any broker call. Without this the

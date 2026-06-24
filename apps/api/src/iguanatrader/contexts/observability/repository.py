@@ -218,6 +218,24 @@ class AuditLogRepository(BaseRepository):
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
+    async def event_exists(self, event: str) -> bool:
+        """Return True iff at least one audit row with ``event`` exists for
+        the active tenant.
+
+        #15: the live-daemon gate uses this to detect prior paper-trading
+        history (event ``trading.daemon.session.started.paper``). The tenant
+        scoping listener already constrains the SELECT to the ambient tenant;
+        the explicit ``tenant_id`` predicate makes the gate's tenant intent
+        unmistakable and independent of listener registration order.
+        """
+        session = cast(AsyncSession, self.session)
+        stmt = select(AuditLog.id).where(AuditLog.event == event)
+        tenant = tenant_id_var.get()
+        if tenant is not None:
+            stmt = stmt.where(AuditLog.tenant_id == tenant)
+        result = await session.execute(stmt.limit(1))
+        return result.first() is not None
+
 
 __all__ = [
     "ApiCostEventRepository",
