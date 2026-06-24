@@ -109,9 +109,13 @@ class IBKRBrokerageModel:
 
     def __post_init__(self) -> None:
         if self.mode == "paper" and self.port not in _PAPER_PORTS:
-            raise ValueError(f"paper mode requires a paper port {sorted(_PAPER_PORTS)}, got {self.port}")
+            raise ValueError(
+                f"paper mode requires a paper port {sorted(_PAPER_PORTS)}, got {self.port}"
+            )
         if self.mode == "live" and self.port not in _LIVE_PORTS:
-            raise ValueError(f"live mode requires a live port {sorted(_LIVE_PORTS)}, got {self.port}")
+            raise ValueError(
+                f"live mode requires a live port {sorted(_LIVE_PORTS)}, got {self.port}"
+            )
 
     def assert_supports_order_type(self, order_type: str) -> None:
         """Raise :class:`UnsupportedOrderTypeError` if ``order_type`` not whitelisted."""
@@ -156,15 +160,12 @@ class IBKRBrokerageModel:
         # (they point at the ib-gateway-paper container on 4002); fall back to
         # the legacy IGUANATRADER_* names and the mode-canonical TWS port.
         host = (
-            os.environ.get("IBKR_HOST")
-            or os.environ.get("IGUANATRADER_IBKR_HOST")
-            or "127.0.0.1"
+            os.environ.get("IBKR_HOST") or os.environ.get("IGUANATRADER_IBKR_HOST") or "127.0.0.1"
         )
         _canonical_port = _PAPER_PORT if mode == "paper" else _LIVE_PORT
         port = int(os.environ.get("IBKR_PORT") or _canonical_port)
         client_id = int(
-            os.environ.get("IBKR_CLIENT_ID")
-            or os.environ.get("IGUANATRADER_IBKR_CLIENT_ID", "1")
+            os.environ.get("IBKR_CLIENT_ID") or os.environ.get("IGUANATRADER_IBKR_CLIENT_ID", "1")
         )
         account_code = os.environ.get("IGUANATRADER_IBKR_ACCOUNT_CODE")
         if mode == "live":

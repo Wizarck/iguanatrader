@@ -114,7 +114,7 @@ async def test_real_scheduler_starts_with_non_picklable_job() -> None:
     pytest.importorskip("apscheduler.schedulers.asyncio")  # SDK absent in some local envs.
     calls: list[int] = []
 
-    def _tick() -> None:  # closure → not importable → not picklable
+    async def _tick() -> None:  # closure → not importable → not picklable
         calls.append(1)
 
     adapter = APSchedulerAdapter(jobstore_url="sqlite:///:memory:")

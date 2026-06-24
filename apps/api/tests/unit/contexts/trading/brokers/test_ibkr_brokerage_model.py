@@ -85,7 +85,7 @@ def test_live_accepts_ib_gateway_socat_port_4003() -> None:
     assert model.mode == "live"
 
 
-def test_from_env_reads_ibkr_host_and_port(monkeypatch) -> None:
+def test_from_env_reads_ibkr_host_and_port(monkeypatch: pytest.MonkeyPatch) -> None:
     # The compose deployment sets IBKR_HOST/IBKR_PORT (pointing at the
     # ib-gateway-paper container); from_env must honour them over the
     # mode-canonical TWS defaults.
