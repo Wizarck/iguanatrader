@@ -214,6 +214,15 @@ def _to_order(o: IBOrder) -> Any:
             "MKT / LMT / STP / STP LMT / TRAIL / TRAIL LIMIT / MOC / LOC."
         )
 
+    # Stamp an explicit DAY time-in-force. ib_async leaves ``tif`` empty,
+    # which the IBKR Gateway's order preset rewrites to DAY (Error 10349
+    # "Order TIF was set to DAY based on order preset"); rewriting the TIF of
+    # a HELD bracket parent (transmit=False) cancels it before a perm-id ever
+    # lands. Sending DAY up-front means the preset has nothing to rewrite, so
+    # the bracket transmits cleanly. (Note: this caps bracket stop/target legs
+    # at intraday persistence; multi-day protection leans on the daemon's
+    # re-evaluation / cron stop-sweep.)
+    order.tif = "DAY"
     order.transmit = o.transmit
     if o.account is not None:
         order.account = o.account
