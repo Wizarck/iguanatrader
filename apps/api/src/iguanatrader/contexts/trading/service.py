@@ -76,7 +76,11 @@ from iguanatrader.contexts.trading.repository import (
     TradeProposalRepository,
     TradeRepository,
 )
-from iguanatrader.shared.contextvars import tenant_id_var, with_tenant_context
+from iguanatrader.shared.contextvars import (
+    session_var,
+    tenant_id_var,
+    with_tenant_context,
+)
 from iguanatrader.shared.errors import IguanaError, IntegrationError
 from iguanatrader.shared.messagebus import MessageBus
 from iguanatrader.shared.time import now as utc_now
@@ -789,6 +793,15 @@ class TradingService:
                     trade_repo=trade_repo,
                     equity_repo=equity_repo,
                 )
+                # Audit #2: commit each reconciled fill at its unit-of-work
+                # boundary. The boot/heartbeat reconcile runs on a long-lived
+                # session that is otherwise never committed, so without this the
+                # fill (and any terminal close/equity write) is logged as
+                # persisted but rolled back when the session closes — the
+                # position never lands in the ledger.
+                session = session_var.get(None)
+                if session is not None:
+                    await session.commit()
         log.info("trading.fills.reconcile.completed")
 
     async def _reconcile_one_fill(
