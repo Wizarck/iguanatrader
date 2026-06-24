@@ -187,9 +187,10 @@ async def test_enriched_notification_includes_proposal_fields(
         )
         message = build_outbound_message_from_request(request, proposal)
 
-    # Enriched body carries the decision-relevant fields + the proposal id.
+    # Enriched body is the clear side-aware card (buy → COMPRAR/LARGO) with
+    # the symbol, the protective stop and the proposal id for correlation.
     assert "AAPL" in message.body
-    assert "buy" in message.body
+    assert "COMPRAR" in message.body
     assert "stop" in message.body
     assert str(pid) in message.body
     # Sparse fallback (no proposal) keeps the proposal id for correlation.
