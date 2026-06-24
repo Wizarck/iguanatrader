@@ -76,7 +76,7 @@ from iguanatrader.contexts.trading.repository import (
     TradeProposalRepository,
     TradeRepository,
 )
-from iguanatrader.shared.contextvars import tenant_id_var
+from iguanatrader.shared.contextvars import tenant_id_var, with_tenant_context
 from iguanatrader.shared.errors import IguanaError, IntegrationError
 from iguanatrader.shared.messagebus import MessageBus
 from iguanatrader.shared.time import now as utc_now
@@ -775,13 +775,20 @@ class TradingService:
         equity_repo = EquitySnapshotRepository()
 
         async for fill_event in self._broker.reconcile_fills(since):
-            await self._reconcile_one_fill(
-                fill_event,
-                fill_repo=fill_repo,
-                order_repo=order_repo,
-                trade_repo=trade_repo,
-                equity_repo=equity_repo,
-            )
+            # Bind the fill's tenant so the append-only / tenant guard accepts
+            # the fills/equity inserts. The reconcile runs at boot + on the
+            # heartbeat, outside any request/bus tenant scope, so tenant_id_var
+            # would otherwise be unset and the insert raises
+            # TenantContextMismatchError (audit #33). Per-fill scope keeps each
+            # write bound to its own tenant.
+            async with with_tenant_context(fill_event.tenant_id):
+                await self._reconcile_one_fill(
+                    fill_event,
+                    fill_repo=fill_repo,
+                    order_repo=order_repo,
+                    trade_repo=trade_repo,
+                    equity_repo=equity_repo,
+                )
         log.info("trading.fills.reconcile.completed")
 
     async def _reconcile_one_fill(
