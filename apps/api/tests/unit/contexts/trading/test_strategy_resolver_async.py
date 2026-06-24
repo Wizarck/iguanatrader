@@ -99,6 +99,54 @@ async def test_resolver_returns_strategy_for_existing_config(
 
 
 @pytest.mark.asyncio
+async def test_resolver_restores_session_var_after_resolve(
+    sf: async_sessionmaker[AsyncSession],
+    tenant_id: Any,
+) -> None:
+    """Regression (audit #29): the resolver must NOT leak its throwaway read
+    session into the caller's ``session_var``.
+
+    A bare ``session_var.set(session)`` left the resolver's already-closed
+    read session bound after the lookup, so the daemon's per-tick
+    ``TradingService.propose`` then ``session.add``-ed the proposal row into
+    that dead session — which the per-tick ``run_in_session_scope`` never
+    committed. Result: no proposal ever persisted and the connection leaked.
+    The resolver must restore the caller's prior session on exit.
+    """
+    from iguanatrader.shared.contextvars import session_var
+
+    config_id = uuid4()
+    async with with_tenant_context(tenant_id), sf() as s:
+        s.add(
+            StrategyConfig(
+                id=config_id,
+                tenant_id=tenant_id,
+                strategy_kind="donchian_atr",
+                symbol="AAPL",
+                params={"lookback": 20, "atr_period": 14, "atr_mult": "2"},
+                enabled=True,
+                version=1,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await s.commit()
+
+    resolver = _make_strategy_resolver(session_factory=sf)
+
+    sentinel = object()
+    token = session_var.set(sentinel)
+    try:
+        async with with_tenant_context(tenant_id):
+            await resolver(config_id)
+        assert (
+            session_var.get() is sentinel
+        ), "resolver leaked its read session into session_var (audit #29)"
+    finally:
+        session_var.reset(token)
+
+
+@pytest.mark.asyncio
 async def test_resolver_raises_lookup_error_on_missing_config(
     sf: async_sessionmaker[AsyncSession],
     tenant_id: Any,

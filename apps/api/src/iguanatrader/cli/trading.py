@@ -704,13 +704,20 @@ def _make_strategy_resolver(
     from iguanatrader.contexts.trading.ports import StrategyConfigSnapshot
     from iguanatrader.contexts.trading.repository import StrategyConfigRepository
     from iguanatrader.contexts.trading.strategies.manager import StrategyManager
-    from iguanatrader.shared.contextvars import session_var
+    from iguanatrader.shared.contextvars import with_session_context
 
     manager = StrategyManager()
 
     async def _resolve(strategy_config_id: UUID) -> StrategyPort:
-        async with session_factory() as session:
-            session_var.set(session)
+        # Bind the resolver's read session for the duration of the lookup
+        # ONLY, then restore the caller's session (audit #29 unit-of-work
+        # fix). A bare ``session_var.set(session)`` here leaks the throwaway
+        # read session into the caller's context: the subsequent
+        # ``TradingService.propose`` would then ``session.add`` the proposal
+        # row into this already-closed resolver session (never committed by
+        # the per-tick ``run_in_session_scope``), so no proposal ever
+        # persisted and the connection leaked.
+        async with session_factory() as session, with_session_context(session):
             repo = StrategyConfigRepository()
             row = await repo.get_by_id(strategy_config_id)
             if row is None:
