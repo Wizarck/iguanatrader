@@ -9,12 +9,12 @@ flag-OFF / no-stop paths stay on the unchanged single-order path.
 from __future__ import annotations
 
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from iguanatrader.contexts.trading.brokers.ibkr_adapter import IBKRAdapter
 from iguanatrader.contexts.trading.brokers.ibkr_brokerage_model import IBKRBrokerageModel
-from iguanatrader.contexts.trading.ports import NewOrder
+from iguanatrader.contexts.trading.ports import NewOrder, derive_client_order_id
 
 from tests._fakes.ib_async_fake import FakeIBClient
 
@@ -141,6 +141,47 @@ async def test_native_bracket_off_with_stop_uses_single_path() -> None:
 
         assert len(fake.placed_brackets) == 0
         assert len(fake.placed_orders) == 1
+    finally:
+        await adapter.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_bracket_child_order_refs_are_resolvable_exit_ids() -> None:
+    """Regression for the dropped-exit-fill bug: each child leg carries a
+    DETERMINISTIC UUID ``client_order_id`` as its ``order_ref`` (not a
+    ``<entry>:stop`` suffix), so IBKR's echoed execution ``order_ref`` parses
+    straight back — via ``_order_id_from_ref`` — to the exit order the service
+    persisted under the SAME id. The old suffix scheme failed ``UUID(...)`` →
+    zero id → the close-flow silently dropped the exit fill (``order_missing``).
+    """
+    adapter, fake = _make_adapter(native_bracket=True)
+    await adapter.connect()
+    try:
+        tenant_id = uuid4()
+        entry_cid = uuid4()
+        order = _new_order(
+            tenant_id=tenant_id,
+            client_order_id=entry_cid,
+            stop_price=Decimal("95"),
+            target_price=Decimal("110"),
+        )
+        await adapter.place_order(order)
+
+        _contract, _parent, stop_loss, take_profit = fake.placed_brackets[0]
+        expected_stop = derive_client_order_id(tenant_id, "bracket_stop", entry_cid)
+        expected_tp = derive_client_order_id(tenant_id, "bracket_tp", entry_cid)
+
+        # The order_ref is the bare derived UUID (no suffix).
+        assert stop_loss.order_ref == str(expected_stop)
+        assert take_profit is not None
+        assert take_profit.order_ref == str(expected_tp)
+
+        # ...and it round-trips back to a non-zero exit id the reconciler can
+        # match (the old suffix would have collapsed to UUID(int=0)).
+        assert adapter._order_id_from_ref(stop_loss.order_ref) == expected_stop
+        assert adapter._order_id_from_ref(take_profit.order_ref) == expected_tp
+        assert expected_stop != UUID(int=0)
+        assert expected_stop != expected_tp
     finally:
         await adapter.disconnect()
 

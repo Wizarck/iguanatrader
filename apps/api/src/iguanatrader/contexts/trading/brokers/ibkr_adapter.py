@@ -54,6 +54,7 @@ from iguanatrader.contexts.trading.ports import (
     FillEvent,
     NewOrder,
     Position,
+    derive_client_order_id,
 )
 from iguanatrader.shared.backoff import backoff_seconds
 from iguanatrader.shared.errors import IntegrationError
@@ -300,6 +301,17 @@ class IBKRAdapter(HeartbeatMixin):
     # BrokerPort: place_order + cancel_order + get_position + get_account_equity
     # ------------------------------------------------------------------
 
+    @property
+    def native_bracket_enabled(self) -> bool:
+        """True when the feature-flagged native bracket/OCO path is active.
+
+        The service reads this (best-effort via ``getattr``) to know the broker
+        will attach protective child legs — STP + optional LMT — at submit
+        time, so it can persist the matching exit Order rows keyed by the same
+        derived ``client_order_id`` the adapter stamps on each child leg.
+        """
+        return self._native_bracket
+
     async def place_order(self, order: NewOrder) -> BrokerOrderId:
         """Submit ``order`` to IBKR. Idempotent against ``client_order_id``."""
         # Translate the domain order-type (lowercase ``market``/``limit``/…
@@ -336,13 +348,26 @@ class IBKRAdapter(HeartbeatMixin):
         if self._native_bracket and order.stop_price is not None:
             reverse = "SELL" if order.side.upper() == "BUY" else "BUY"
             parent = self._build_ib_order(order, ib_order_type=ib_order_type)
+            # Stamp each child leg with a DETERMINISTIC client_order_id (a valid
+            # UUID, not a ``<entry>:stop`` suffix). IBKR echoes this back as the
+            # execution ``order_ref`` when the leg fills; ``_order_id_from_ref``
+            # parses it straight to the matching exit Order row the service
+            # persisted under the SAME derived id, so the close-flow records a
+            # real exit price + P&L. The suffix scheme failed ``UUID(...)`` →
+            # zero id → the exit fill was silently dropped (``order_missing``).
+            stop_child_ref = str(
+                derive_client_order_id(order.tenant_id, "bracket_stop", order.client_order_id)
+            )
+            tp_child_ref = str(
+                derive_client_order_id(order.tenant_id, "bracket_tp", order.client_order_id)
+            )
             stop_loss = IBOrder(
                 action=reverse,
                 total_quantity=order.quantity,
                 order_type="STP",
                 aux_price=order.stop_price,
                 account=self._brokerage.account_code,
-                order_ref=(f"{order.client_order_id}:stop" if order.client_order_id else None),
+                order_ref=stop_child_ref,
             )
             take_profit: IBOrder | None = None
             if order.target_price is not None:
@@ -352,7 +377,7 @@ class IBKRAdapter(HeartbeatMixin):
                     order_type="LMT",
                     limit_price=order.target_price,
                     account=self._brokerage.account_code,
-                    order_ref=(f"{order.client_order_id}:tp" if order.client_order_id else None),
+                    order_ref=tp_child_ref,
                 )
             broker_order_id_raw = await self._client.place_bracket_order(
                 contract, parent, stop_loss, take_profit

@@ -702,3 +702,108 @@ async def test_reconcile_matches_fill_by_client_order_id(
     # (not dropped as order_missing).
     assert len(fills) == 1
     assert fills[0].broker_fill_id == "F-CID-1"
+
+
+@pytest.mark.asyncio
+async def test_native_bracket_exit_fill_closes_trade_end_to_end(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """End-to-end exit tracking for native brackets.
+
+    Approving a proposal with a broker whose ``native_bracket_enabled`` is on
+    persists THREE orders: the entry plus two protective exit legs (STP + LMT)
+    keyed by deterministic ``bracket_stop`` / ``bracket_tp`` client_order_ids.
+    When the broker reports a stop-leg execution (echoing that derived id as
+    the order_ref), the fill reconcile matches it to the exit order, records a
+    real exit price, closes the trade with the correct realised P&L, and labels
+    the exit ``stop`` (not a misleading ``manual``). Before the fix the child
+    refs failed to parse → the exit fill was dropped (``order_missing``) and the
+    trade dangled open.
+    """
+    from datetime import UTC, datetime
+
+    from iguanatrader.contexts.trading.models import Fill, Order
+    from iguanatrader.contexts.trading.ports import FillEvent, derive_client_order_id
+    from sqlalchemy import select
+
+    tenant_id = await _seed_tenant(schema_session_factory, "t-bracket-e2e")
+    _sc_id, proposal_id = await _seed_proposal(
+        schema_session_factory,
+        tenant_id=tenant_id,
+        stop_price=Decimal("90"),
+        target_price=Decimal("120"),
+        quantity=Decimal("3"),
+    )
+    entry_cid = derive_client_order_id(tenant_id, "entry", proposal_id)
+    stop_cid = derive_client_order_id(tenant_id, "bracket_stop", entry_cid)
+    tp_cid = derive_client_order_id(tenant_id, "bracket_tp", entry_cid)
+
+    class _BracketBroker(_HangingBroker):
+        native_bracket_enabled = True
+
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            return BrokerOrderId("BR-BRACKET-1")
+
+        async def reconcile_fills(self, since: datetime) -> Any:
+            # Entry fill (3 @ 100) then the protective stop firing (3 @ 90).
+            yield FillEvent(
+                tenant_id=tenant_id,
+                order_id=entry_cid,
+                quantity_filled=Decimal("3"),
+                fill_price=Decimal("100"),
+                commission=Decimal("0"),
+                commission_currency="USD",
+                filled_at=datetime.now(UTC),
+                broker_fill_id="F-ENTRY",
+            )
+            yield FillEvent(
+                tenant_id=tenant_id,
+                order_id=stop_cid,
+                quantity_filled=Decimal("3"),
+                fill_price=Decimal("90"),
+                commission=Decimal("0"),
+                commission_currency="USD",
+                filled_at=datetime.now(UTC),
+                broker_fill_id="F-STOP",
+            )
+
+    broker = _BracketBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+        )
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+        await service.startup_reconcile()
+
+    # Read back in a FRESH session — proves the close-flow was committed durably.
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        orders = {o.client_order_id: o for o in (await s.execute(select(Order))).scalars().all()}
+        trades = list((await s.execute(select(Trade))).scalars().all())
+        fills = list((await s.execute(select(Fill))).scalars().all())
+
+    # Three orders: entry + two exit legs keyed by the derived child ids.
+    assert set(orders) == {entry_cid, stop_cid, tp_cid}
+    assert orders[entry_cid].side == "buy"
+    assert orders[entry_cid].order_type == "market"
+    assert orders[stop_cid].side == "sell"
+    assert orders[stop_cid].order_type == "stop"
+    assert orders[stop_cid].stop_price == Decimal("90")
+    assert orders[tp_cid].side == "sell"
+    assert orders[tp_cid].order_type == "limit"
+    assert orders[tp_cid].limit_price == Decimal("120")
+
+    # Both fills recorded; the trade closed with the real stop-out P&L.
+    assert len(fills) == 2
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade.state == "closed"
+    assert trade.exit_reason == "stop"
+    # Long stop-out: 3*90 proceeds - 3*100 cost - 0 commission = -30.
+    assert Decimal(str(trade.realised_pnl)) == Decimal("-30")
