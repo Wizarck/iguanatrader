@@ -43,7 +43,7 @@ def upgrade() -> None:
             "ib_connected",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("0"),
+            server_default=sa.false(),
         ),
         sa.PrimaryKeyConstraint(
             "tenant_id",

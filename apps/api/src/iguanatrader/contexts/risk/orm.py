@@ -41,6 +41,7 @@ from sqlalchemy import (
     Numeric,
     Text,
     Uuid,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -179,7 +180,7 @@ class KillSwitchStateORM(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        server_default="0",
+        server_default=false(),
     )
     last_event_id: Mapped[UUID | None] = mapped_column(
         Uuid,
