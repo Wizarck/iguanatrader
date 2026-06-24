@@ -290,7 +290,7 @@ async def _run_daemon(
         await _record_daemon_session_start(audit_repo=gate_audit, mode=mode)
         await gate_session.commit()
 
-    broker = await _build_broker(ib_client=ib_client, mode=mode)
+    broker = await _build_broker(ib_client=ib_client, mode=mode, tenant_id=tenant_id)
     # Open the IBKR connection before any broker call. Without this the
     # adapter's ``_client`` stays None and the first broker use in
     # ``startup_reconcile`` → ``reconcile_fills`` raises
@@ -849,12 +849,18 @@ async def _run_scheduler_only_daemon(
     log.info("trading.daemon.scheduler_only.shutdown.complete")
 
 
-async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter:
+async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str, tenant_id: UUID) -> IBKRAdapter:
     """Construct the production :class:`IBKRAdapter` with the supplied IB client.
 
     `IbAsyncIBClient` is structurally compatible with the `IBClient`
     Protocol (per slice T2 design D7), so we cast() to bypass mypy's
     nominal-typing check on the `client_factory` callable arg.
+
+    ``tenant_id`` is the daemon's tenant: IBKR executions carry no tenant of
+    their own, so the adapter stamps reconciled ``FillEvent``s with it. Without
+    it fills were stamped with the zero UUID, the tenant-scoped order lookup
+    never matched (``order_missing``) and the fill insert tripped the tenant
+    guard.
     """
     from iguanatrader.contexts.trading.brokers.client_protocol import IBClient
     from iguanatrader.contexts.trading.brokers.ibkr_adapter import IBKRAdapter
@@ -867,6 +873,7 @@ async def _build_broker(*, ib_client: IbAsyncIBClient, mode: str) -> IBKRAdapter
         brokerage=brokerage,
         client_factory=lambda: cast("IBClient", ib_client),
         native_bracket=_native_bracket_enabled(),
+        tenant_id=tenant_id,
     )
 
 
