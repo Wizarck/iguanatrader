@@ -34,6 +34,7 @@ from uuid import UUID, uuid4
 import pytest
 from iguanatrader.contexts.trading.daemon_lifecycle import DaemonLifecycleService
 from iguanatrader.contexts.trading.models import (
+    EquitySnapshot,
     StrategyConfig,
     TenantTradingMode,
     Trade,
@@ -405,3 +406,57 @@ async def test_reconcile_closes_orphan_local_trade(
     assert row.state == "closed"
     assert row.exit_reason == "ibkr_reconcile"
     assert row.closed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_with_ibkr_commits_orphan_close_durably(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Regression (#2/#27 in the reconcile path): the PUBLIC
+    ``reconcile_with_ibkr`` must COMMIT its orphan-close + equity-snapshot
+    writes at the unit-of-work boundary.
+
+    The daemon runs on a long-lived session that nothing else commits, so a
+    missing commit here logged ``positions_closed`` while the trade stayed
+    ``open`` in the DB (observed in production). Unlike
+    ``test_reconcile_closes_orphan_local_trade``, this drives the FULL public
+    path and does NOT commit in the harness — committing in the test was
+    exactly what masked the bug. Durability is asserted via a FRESH session.
+    """
+    tid = await _seed_tenant(session_maker)
+    pid = await _seed_pending_proposal(session_maker, tenant_id=tid)
+    trade_id = await _seed_open_trade(session_maker, tenant_id=tid, proposal_id=pid, symbol="AAPL")
+
+    # Broker book empty — AAPL flat-closed broker-side while the daemon was down.
+    broker = _FakeBroker(tenant_id=tid, positions=[])
+
+    async with session_maker() as s, with_tenant_context(tid):
+        session_var.set(s)
+        service = DaemonLifecycleService(
+            mode="paper",
+            tenant_id=tid,
+            bus=MessageBus(),
+            trading_service=cast("TradingService", _FakeTradingService()),
+            trading_mode_repo=TradingModeRepository(),
+            broker=cast("BrokerPort", broker),
+            equity_repo=EquitySnapshotRepository(),
+            trade_repo=TradeRepository(),
+        )
+        # NO manual commit — the production path must commit itself.
+        await service.reconcile_with_ibkr()
+
+    async with session_maker() as s, with_tenant_context(tid):
+        from sqlalchemy import select
+
+        row = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
+        equity_rows = (
+            (await s.execute(select(EquitySnapshot).where(EquitySnapshot.tenant_id == tid)))
+            .scalars()
+            .all()
+        )
+    # Orphan-close persisted durably (the bug: this stayed "open").
+    assert row.state == "closed"
+    assert row.exit_reason == "ibkr_reconcile"
+    assert row.closed_at is not None
+    # The equity snapshot (reconcile step 2) also landed.
+    assert len(equity_rows) >= 1
