@@ -153,7 +153,7 @@ def upgrade() -> None:
         sa.Column("display_name", sa.Text(), nullable=False),
         sa.Column("tier", sa.Integer(), nullable=False),
         sa.Column("pit_class", sa.Text(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("last_health_check_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("metadata", sa.JSON(), nullable=True),
@@ -241,7 +241,7 @@ def upgrade() -> None:
         sa.Column("methodology_params", sa.JSON(), nullable=True),
         sa.Column("brief_refresh_schedule", sa.Text(), nullable=False),
         sa.Column("brief_refresh_cron", sa.Text(), nullable=True),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -438,7 +438,7 @@ def upgrade() -> None:
             "partial",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("0"),
+            server_default=sa.false(),
         ),
         sa.Column(
             "created_at",

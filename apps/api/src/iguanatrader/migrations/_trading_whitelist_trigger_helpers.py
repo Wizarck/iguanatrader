@@ -120,6 +120,23 @@ NON_WHITELISTED_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 
+#: Non-whitelisted columns whose Postgres type is ``json`` (NOT ``jsonb``).
+#: Postgres defines no ``=`` operator for ``json``, so a bare
+#: ``OLD.reasoning IS DISTINCT FROM NEW.reasoning`` raises
+#: ``UndefinedFunctionError: operator does not exist: json = json`` and the
+#: trigger blocks EVERY whitelisted state transition (pending→rejected, etc.).
+#: These columns are compared via a ``::text`` cast instead. SQLite stores JSON
+#: as TEXT so its ``IS NOT`` branch needs no special-casing.
+_PG_JSON_COLUMNS: frozenset[str] = frozenset({"reasoning"})
+
+
+def _pg_change_predicate(col: str) -> str:
+    """Postgres null-safe change check for one column, json-type-aware."""
+    if col in _PG_JSON_COLUMNS:
+        return f"OLD.{col}::text IS DISTINCT FROM NEW.{col}::text"
+    return f"OLD.{col} IS DISTINCT FROM NEW.{col}"
+
+
 def _whitelist_update_trigger(table: str) -> str:
     """SQLite BEFORE UPDATE trigger: RAISE iff a non-whitelisted column changed.
 
@@ -170,9 +187,7 @@ def emit_postgres_trading_whitelist_triggers(op: object) -> None:
     """
     execute = op.execute  # type: ignore[attr-defined]
     for table in WHITELISTED_TRADING_TABLES:
-        changed = " OR ".join(
-            f"OLD.{col} IS DISTINCT FROM NEW.{col}" for col in NON_WHITELISTED_COLUMNS[table]
-        )
+        changed = " OR ".join(_pg_change_predicate(col) for col in NON_WHITELISTED_COLUMNS[table])
         allowed = ",".join(MUTABLE_COLUMNS[table])
         upd_fn = f"trg_{table}_block_nonwhitelisted_update"
         del_fn = f"trg_{table}_block_delete"

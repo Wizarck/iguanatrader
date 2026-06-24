@@ -407,12 +407,10 @@ class OrchestrationService:
                             )
                     except Exception as exc:
                         logger.warning(
-                            "orchestration.routine.symbol_failed",
-                            extra={
-                                "symbol": symbol,
-                                "routine": routine_name,
-                                "error": str(exc),
-                            },
+                            "orchestration.routine.symbol_failed symbol=%s routine=%s err=%r",
+                            symbol,
+                            routine_name,
+                            exc,
                         )
                         continue
 
@@ -452,6 +450,22 @@ class OrchestrationService:
                 cron_kwargs=cron_kwargs,
             )
             scheduler.add_job(spec)
+
+        # Ops/verification hook (off by default): when
+        # ``IGUANATRADER_PROPOSE_NOW=true`` also register a propose that
+        # fires every minute, so an operator can exercise the full
+        # propose→risk→approve→notify chain on demand instead of waiting
+        # for the next market-hours cron. Disable again after verifying.
+        import os as _os
+
+        if wire_propose_loops and _os.environ.get("IGUANATRADER_PROPOSE_NOW", "").lower() == "true":
+            scheduler.add_job(
+                JobSpec(
+                    name="propose_now",
+                    fn=_wrap_in_uow(_make_propose_fn("premarket"), propose_unit_of_work),
+                    cron_kwargs={"minute": "*"},
+                )
+            )
 
         if ingestion_service is not None:
 

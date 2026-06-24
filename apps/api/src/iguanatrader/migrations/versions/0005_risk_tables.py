@@ -205,7 +205,7 @@ def upgrade() -> None:
             "is_active",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("0"),
+            server_default=sa.false(),
         ),
         sa.Column("last_event_id", sa.CHAR(36), nullable=True),
         sa.Column(
