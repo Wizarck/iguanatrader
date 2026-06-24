@@ -30,7 +30,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -493,6 +493,36 @@ class TradingService:
             )
             return
 
+        # Whole-share guard (last line of defence before the broker): IBKR
+        # rejects bracket/STP orders with fractional quantities. ``donchian_atr``
+        # already floors at propose time, but coerce here too so a proposal from
+        # any other strategy — or a legacy fractional row — never reaches
+        # ``place_order``. Flooring is risk-conservative; if it floors below one
+        # share the entry can't be sized, so reject cleanly (no Trade/Order to
+        # orphan) instead of submitting a zero/fractional order.
+        whole_quantity = Decimal(proposal_row.quantity).to_integral_value(rounding=ROUND_DOWN)
+        if whole_quantity <= Decimal("0"):
+            await self._bus.publish(
+                ProposalRejected(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    reason="below_min_size",
+                )
+            )
+            log.warning(
+                "trading.execute.below_min_size",
+                proposal_id=str(event.proposal_id),
+                requested_quantity=str(proposal_row.quantity),
+            )
+            return
+        if whole_quantity != proposal_row.quantity:
+            log.warning(
+                "trading.execute.quantity_floored_to_whole_shares",
+                proposal_id=str(event.proposal_id),
+                requested_quantity=str(proposal_row.quantity),
+                submitted_quantity=str(whole_quantity),
+            )
+
         await proposal_repo.set_state(
             proposal_id=event.proposal_id,
             state="approved",
@@ -507,7 +537,7 @@ class TradingService:
             proposal_id=event.proposal_id,
             symbol=proposal_row.symbol,
             side=proposal_row.side,
-            quantity=proposal_row.quantity,
+            quantity=whole_quantity,
             mode=proposal_row.mode,
             state="open",
             opened_at=opened_at,
@@ -532,7 +562,7 @@ class TradingService:
             trade_id=trade_id,
             symbol=proposal_row.symbol,
             side=proposal_row.side,
-            quantity=proposal_row.quantity,
+            quantity=whole_quantity,
             order_type="market",
             stop_price=proposal_row.stop_price,
             target_price=proposal_row.target_price,

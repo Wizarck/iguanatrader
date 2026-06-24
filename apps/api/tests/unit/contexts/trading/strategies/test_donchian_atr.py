@@ -128,6 +128,42 @@ def test_donchian_emits_short_on_lower_breakout() -> None:
     assert proposal.reasoning["direction"] == "short"
 
 
+def test_donchian_quantity_is_whole_shares() -> None:
+    """Sizing floors to an integer share count — IBKR rejects bracket/STP
+    orders with fractional quantities (and the paper account isn't
+    fractional-enabled)."""
+    strategy = DonchianATRStrategy()
+    proposal = strategy.evaluate(symbol="AAPL", bars=_ramp_history(), config=_config())
+    assert proposal is not None
+    assert proposal.quantity >= Decimal("1")
+    assert proposal.quantity == proposal.quantity.to_integral_value()
+
+
+def test_donchian_skips_when_risk_budget_below_one_share() -> None:
+    """When ``risk_pct * equity`` can't afford even one whole share at this
+    stop distance the signal is skipped — flooring to 0 trips the existing
+    ``<= 0`` guard rather than forcing 1 share (which would breach the
+    ``risk_pct`` envelope)."""
+    strategy = DonchianATRStrategy()
+    tiny_equity = StrategyConfigSnapshot(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        strategy_kind="donchian_atr",
+        symbol="AAPL",
+        params={
+            "lookback": 20,
+            "atr_period": 14,
+            "atr_mult": "2.0",
+            "risk_pct": "0.01",
+            "equity": "1",
+        },
+        enabled=True,
+        version=1,
+    )
+    proposal = strategy.evaluate(symbol="AAPL", bars=_ramp_history(), config=tiny_equity)
+    assert proposal is None
+
+
 def test_donchian_returns_none_on_flat_history() -> None:
     strategy = DonchianATRStrategy()
     proposal = strategy.evaluate(symbol="AAPL", bars=_flat_history(), config=_config())

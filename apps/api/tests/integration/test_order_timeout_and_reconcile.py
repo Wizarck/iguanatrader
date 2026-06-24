@@ -26,6 +26,7 @@ import pytest
 from iguanatrader.contexts.trading.events import (
     OrderRejected,
     ProposalApproved,
+    ProposalRejected,
 )
 from iguanatrader.contexts.trading.models import (
     Fill,
@@ -116,6 +117,7 @@ async def _seed_proposal(
     tenant_id: UUID,
     stop_price: Decimal = Decimal("90"),
     target_price: Decimal | None = None,
+    quantity: Decimal = Decimal("10"),
 ) -> tuple[UUID, UUID]:
     """Seed a strategy_config + an approved-ready trade proposal."""
     sc_id = uuid4()
@@ -142,7 +144,7 @@ async def _seed_proposal(
                 correlation_id=uuid4(),
                 symbol="SPY",
                 side="buy",
-                quantity=Decimal("10"),
+                quantity=quantity,
                 entry_price_indicative=Decimal("100"),
                 stop_price=stop_price,
                 target_price=target_price,
@@ -520,3 +522,96 @@ async def test_execute_on_approval_generic_broker_error_is_caught(
     rejections = [e for e in bus.published if isinstance(e, OrderRejected)]
     assert len(rejections) == 1
     assert rejections[0].reason == "broker_other"
+
+
+@pytest.mark.asyncio
+async def test_execute_on_approval_floors_fractional_quantity_to_whole_shares(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Defensive whole-share guard: IBKR rejects bracket/STP orders with
+    fractional quantities, so a proposal carrying a fractional quantity is
+    floored to whole shares before the order reaches the broker (and on the
+    persisted Order/Trade rows)."""
+    from sqlalchemy import select
+
+    tenant_id = await _seed_tenant(schema_session_factory, "t-fractional")
+    _sc_id, proposal_id = await _seed_proposal(
+        schema_session_factory, tenant_id=tenant_id, quantity=Decimal("2.5431")
+    )
+
+    placed: list[NewOrder] = []
+
+    class _OkBroker(_HangingBroker):
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            placed.append(order)
+            return BrokerOrderId("BR-FLOOR-1")
+
+    broker = _OkBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+        )
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+        orders = list((await s.execute(select(Order))).scalars().all())
+        trades = list((await s.execute(select(Trade))).scalars().all())
+
+    assert len(placed) == 1
+    assert placed[0].quantity == Decimal("2")
+    assert len(orders) == 1
+    assert orders[0].quantity == Decimal("2")
+    assert len(trades) == 1
+    assert trades[0].quantity == Decimal("2")
+
+
+@pytest.mark.asyncio
+async def test_execute_on_approval_rejects_below_min_size(
+    schema_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A proposal whose quantity floors below one whole share cannot be sized
+    for the broker. The handler rejects it cleanly with
+    ``ProposalRejected(reason="below_min_size")`` and creates no Trade/Order
+    (nothing to orphan), never contacting the broker."""
+    from sqlalchemy import select
+
+    tenant_id = await _seed_tenant(schema_session_factory, "t-below-min")
+    _sc_id, proposal_id = await _seed_proposal(
+        schema_session_factory, tenant_id=tenant_id, quantity=Decimal("0.5439")
+    )
+
+    placed: list[NewOrder] = []
+
+    class _RecordingBroker(_HangingBroker):
+        async def place_order(self, order: NewOrder) -> BrokerOrderId:
+            placed.append(order)
+            return BrokerOrderId("SHOULD-NOT-HAPPEN")
+
+    broker = _RecordingBroker(tenant_id=tenant_id, hang_seconds=0.0)
+    bus = _RecordingBus()
+
+    async with with_tenant_context(tenant_id), schema_session_factory() as s:
+        session_var.set(s)
+        service = TradingService(
+            bus=bus,
+            broker=broker,
+            strategy_resolver=_stub_resolver(),
+        )
+        await service.execute_on_approval_handler(
+            ProposalApproved(tenant_id=tenant_id, proposal_id=proposal_id)
+        )
+        orders = list((await s.execute(select(Order))).scalars().all())
+        trades = list((await s.execute(select(Trade))).scalars().all())
+
+    assert placed == []  # broker never contacted
+    assert orders == []
+    assert trades == []
+    rejections = [e for e in bus.published if isinstance(e, ProposalRejected)]
+    assert len(rejections) == 1
+    assert rejections[0].reason == "below_min_size"
+    assert rejections[0].proposal_id == proposal_id

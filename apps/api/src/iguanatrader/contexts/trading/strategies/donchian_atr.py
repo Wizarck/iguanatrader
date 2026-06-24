@@ -7,8 +7,9 @@ Bidirectional (long + short) v0.2:
 * **Short** entry when ``close <= min(prior-lookback lows)``;
   stop ``= entry + atr_mult * ATR``; target ``= entry - target_mult * ATR``.
 
-Position size: ``risk_pct * equity / abs(entry - stop)`` (all Decimal) —
-identical risk envelope on both sides. The exit levels are consumed by the
+Position size: ``floor(risk_pct * equity / abs(entry - stop))`` (whole
+shares — IBKR rejects fractional bracket/STP quantities) — identical risk
+envelope on both sides. The exit levels are consumed by the
 side-aware ``stop_hit_sweep`` (long: close<=stop / close>=target; short:
 close>=stop / close<=target).
 
@@ -25,7 +26,7 @@ Default params (overridable via :class:`StrategyConfigSnapshot.params`):
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -120,7 +121,14 @@ class DonchianATRStrategy(Strategy):
         if risk_per_share <= Decimal("0") or target <= Decimal("0"):
             return None
         risk_dollars = risk_pct * equity
-        quantity = (risk_dollars / risk_per_share).quantize(Decimal("0.0001"))
+        # Whole-share sizing: IBKR rejects bracket/STP orders with fractional
+        # quantities (and the paper account isn't fractional-enabled), so floor
+        # to an integer share count. Flooring is the risk-conservative direction
+        # (actual risk <= risk_dollars). When 1% of equity can't afford even a
+        # single share at this stop distance the signal is skipped by the <=0
+        # guard below rather than forced up to 1 share (which would breach the
+        # risk_pct envelope).
+        quantity = (risk_dollars / risk_per_share).to_integral_value(rounding=ROUND_DOWN)
         if quantity <= Decimal("0"):
             return None
 
