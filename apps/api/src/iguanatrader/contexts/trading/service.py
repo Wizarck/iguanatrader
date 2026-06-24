@@ -306,6 +306,7 @@ class TradingService:
             quantity=proposal.quantity,
             entry_price_indicative=proposal.entry_price_indicative,
             stop_price=proposal.stop_price,
+            target_price=proposal.target_price,
             confidence_score=proposal.confidence_score,
             reasoning=proposal.reasoning,
             research_brief_id=proposal.research_brief_id,

@@ -38,8 +38,12 @@ WORKDIR /build
 # Copy only the dep manifests first to maximise Docker layer caching.
 COPY pyproject.toml poetry.lock README.md ./
 
-# Install runtime deps into a project-local .venv. Skip dev deps.
-RUN poetry install --no-root --without dev
+# Install runtime deps into a project-local .venv. Skip dev deps, but
+# include the optional `postgres` group (asyncpg) so the image can run
+# against a Postgres IGUANA_DATABASE_URL — required by the compose
+# postgres.yml overlay. SQLite needs no extra driver (stdlib + aiosqlite
+# is in the main group), so this stays harmless for the SQLite path.
+RUN poetry install --no-root --without dev --with postgres
 
 
 # ---------------------------------------------------------------------------

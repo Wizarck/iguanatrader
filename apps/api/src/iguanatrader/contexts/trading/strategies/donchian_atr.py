@@ -1,14 +1,23 @@
-"""Donchian-channel breakout with ATR-based stop sizing (slice T3 MVP).
+"""Donchian-channel breakout with ATR-based stop + target sizing (slice T3).
 
-Long-only entry: ``bars[-1].high >= max(bars[-lookback:].high)``.
-Stop: ``entry - atr_mult * ATR(atr_period)``.
-Position size: ``risk_pct * equity / (entry - stop)`` (all Decimal).
+Bidirectional (long + short) v0.2:
+
+* **Long** entry when ``close >= max(prior-lookback highs)``;
+  stop ``= entry - atr_mult * ATR``; target ``= entry + target_mult * ATR``.
+* **Short** entry when ``close <= min(prior-lookback lows)``;
+  stop ``= entry + atr_mult * ATR``; target ``= entry - target_mult * ATR``.
+
+Position size: ``risk_pct * equity / abs(entry - stop)`` (all Decimal) —
+identical risk envelope on both sides. The exit levels are consumed by the
+side-aware ``stop_hit_sweep`` (long: close<=stop / close>=target; short:
+close>=stop / close<=target).
 
 Default params (overridable via :class:`StrategyConfigSnapshot.params`):
 
 * ``lookback = 20`` (Turtle Traders system 1 minimum).
 * ``atr_period = 14``.
-* ``atr_mult = 2.0``.
+* ``atr_mult = 2.0`` (protective stop distance, in ATRs).
+* ``target_mult = 3.0`` (take-profit distance, in ATRs).
 * ``risk_pct = 0.01`` (1% of equity per trade, NFR-R6).
 * ``equity = 10000.0`` (default fallback when broker equity not yet
   available; production caller passes the real equity).
@@ -32,18 +41,19 @@ from iguanatrader.shared.time import now as utc_now
 DEFAULT_LOOKBACK: int = 20
 DEFAULT_ATR_PERIOD: int = 14
 DEFAULT_ATR_MULT: Decimal = Decimal("2.0")
+DEFAULT_TARGET_MULT: Decimal = Decimal("3.0")
 DEFAULT_RISK_PCT: Decimal = Decimal("0.01")
 DEFAULT_EQUITY: Decimal = Decimal("10000")
 
 
 class DonchianATRStrategy(Strategy):
-    """Donchian breakout v0 — long-only, ATR-stop, risk-pct sizing."""
+    """Donchian breakout v0.2 — long+short, ATR stop+target, risk-pct sizing."""
 
     def name(self) -> str:
         return "donchian_atr"
 
     def version(self) -> str:
-        return "0.1.0"
+        return "0.2.0"
 
     @property
     def MIN_BARS(self) -> int:  # type: ignore[override]
@@ -61,6 +71,7 @@ class DonchianATRStrategy(Strategy):
         lookback = int(params.get("lookback", DEFAULT_LOOKBACK))
         atr_period = int(params.get("atr_period", DEFAULT_ATR_PERIOD))
         atr_mult = _to_decimal(params.get("atr_mult"), default=DEFAULT_ATR_MULT)
+        target_mult = _to_decimal(params.get("target_mult"), default=DEFAULT_TARGET_MULT)
         risk_pct = _to_decimal(params.get("risk_pct"), default=DEFAULT_RISK_PCT)
         equity = _to_decimal(params.get("equity"), default=DEFAULT_EQUITY)
 
@@ -69,15 +80,22 @@ class DonchianATRStrategy(Strategy):
             return None
 
         latest_close = bars[-1].close
-        # Donchian channel: max of the prior `lookback` bars' high,
+        # Donchian channel: max high / min low of the prior `lookback` bars,
         # EXCLUDING the current bar (we test whether the current close
-        # breaks the prior channel; including bars[-1] would make the
+        # breaks the prior channel; including bars[-1] would make the upper
         # comparison trivially fail because bars[-1].high >= bars[-1].close).
-        window_highs = [bar.high for bar in bars[-lookback - 1 : -1]]
-        channel_high = max(window_highs)
+        window = bars[-lookback - 1 : -1]
+        channel_high = max(bar.high for bar in window)
+        channel_low = min(bar.low for bar in window)
 
-        # Breakout test: today's close >= channel_high.
-        if latest_close < channel_high:
+        # Direction: upper-channel break → long; lower-channel break → short.
+        # Long takes precedence (a single close cannot break both unless the
+        # channel is degenerate). No break → no signal.
+        if latest_close >= channel_high:
+            side = "buy"
+        elif latest_close <= channel_low:
+            side = "sell"
+        else:
             return None
 
         # ATR(atr_period) over the trailing window — Wilder's smoothing.
@@ -86,11 +104,20 @@ class DonchianATRStrategy(Strategy):
             return None
 
         entry = latest_close
-        stop = entry - atr_mult * atr
-        if stop >= entry:
-            return None
-        risk_per_share = entry - stop
-        if risk_per_share <= Decimal("0"):
+        stop_distance = atr_mult * atr
+        target_distance = target_mult * atr
+        if side == "buy":
+            stop = entry - stop_distance
+            target = entry + target_distance
+            breakout_level = channel_high
+        else:  # short
+            stop = entry + stop_distance
+            target = entry - target_distance
+            breakout_level = channel_low
+
+        # Sanity: stop on the protective side of entry; target positive.
+        risk_per_share = abs(entry - stop)
+        if risk_per_share <= Decimal("0") or target <= Decimal("0"):
             return None
         risk_dollars = risk_pct * equity
         quantity = (risk_dollars / risk_per_share).quantize(Decimal("0.0001"))
@@ -102,21 +129,27 @@ class DonchianATRStrategy(Strategy):
             tenant_id=config.tenant_id,
             strategy_config_id=config.id,
             symbol=symbol,
-            side="buy",
+            side=side,
             quantity=quantity,
             entry_price_indicative=entry,
             stop_price=stop,
+            target_price=target,
             confidence_score=None,
             reasoning={
                 "strategy": "donchian_atr",
+                "direction": "long" if side == "buy" else "short",
                 "lookback": lookback,
                 "channel_high": str(channel_high),
+                "channel_low": str(channel_low),
+                "breakout_level": str(breakout_level),
                 "atr": str(atr),
                 "atr_mult": str(atr_mult),
+                "target_mult": str(target_mult),
                 "risk_pct": str(risk_pct),
                 "equity": str(equity),
                 "entry": str(entry),
                 "stop": str(stop),
+                "target": str(target),
                 "computed_at": utc_now().isoformat(),
             },
             mode=str(params.get("mode", "paper")),
@@ -139,5 +172,6 @@ __all__ = [
     "DEFAULT_ATR_PERIOD",
     "DEFAULT_LOOKBACK",
     "DEFAULT_RISK_PCT",
+    "DEFAULT_TARGET_MULT",
     "DonchianATRStrategy",
 ]
