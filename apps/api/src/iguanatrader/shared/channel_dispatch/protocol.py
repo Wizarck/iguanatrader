@@ -47,7 +47,9 @@ class OutboundTransport(Protocol):
     :class:`DispatchResult`.
     """
 
-    async def send(self, *, address: str, body: str) -> str: ...
+    async def send(
+        self, *, address: str, body: str, actions: tuple[tuple[str, str], ...] = ()
+    ) -> str: ...
 
 
 @runtime_checkable

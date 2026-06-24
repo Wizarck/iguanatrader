@@ -19,10 +19,14 @@ class _FakeTelegramTransport:
 
     def __init__(self, *, fail_on: set[str] | None = None) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.actions_seen: list[tuple[tuple[str, str], ...]] = []
         self._fail_on = fail_on or set()
 
-    async def send(self, *, address: str, body: str) -> str:
+    async def send(
+        self, *, address: str, body: str, actions: tuple[tuple[str, str], ...] = ()
+    ) -> str:
         self.calls.append((address, body))
+        self.actions_seen.append(actions)
         if address in self._fail_on:
             raise RuntimeError(f"forced failure for {address}")
         return f"tg-{address}"
@@ -52,6 +56,21 @@ async def test_delivers_to_telegram_recipients() -> None:
     assert results[0].wire_message_id == "tg-111"
     assert results[1].wire_message_id == "tg-222"
     assert transport.calls == [("111", "approve?"), ("222", "approve?")]
+
+
+@pytest.mark.asyncio
+async def test_passes_inline_action_buttons_to_transport() -> None:
+    transport = _FakeTelegramTransport()
+    dispatcher = TelegramBotMessageDispatcher(
+        transport=transport,
+        rate_limit=AsyncTokenBucket(rate_per_second=1000.0, burst=10),
+    )
+    actions = (("✅ Aprobar", "approve:req-9"), ("❌ Rechazar", "reject:req-9"))
+    message = OutboundMessage(body="approve?", correlation_id="req-9", actions=actions)
+    await dispatcher.dispatch(
+        message=message, recipients=[Recipient(channel=TELEGRAM_CHANNEL, address="111")]
+    )
+    assert transport.actions_seen == [actions]
 
 
 @pytest.mark.asyncio

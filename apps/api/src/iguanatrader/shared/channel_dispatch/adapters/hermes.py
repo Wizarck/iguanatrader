@@ -45,7 +45,10 @@ class _HttpxHermesTransport:
         self._client = client or httpx.AsyncClient(timeout=10.0)
         self._owns_client = client is None
 
-    async def send(self, *, address: str, body: str) -> str:
+    async def send(
+        self, *, address: str, body: str, actions: tuple[tuple[str, str], ...] = ()
+    ) -> str:
+        # Hermes/WhatsApp interactive buttons are a future slice; ignore ``actions``.
         url = f"{self._base_url}/messages"
         payload_obj: dict[str, str] = {"recipient": address, "body": body}
         payload_bytes = json.dumps(payload_obj, separators=(",", ":")).encode("utf-8")
