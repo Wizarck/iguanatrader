@@ -75,4 +75,16 @@
   .shell__main:focus {
     outline: none;
   }
+
+  /* Mobile: the sidebar becomes a fixed off-canvas drawer (see
+     Sidebar.svelte), so it no longer occupies a grid column — the body fills
+     the full viewport width. */
+  @media (max-width: 768px) {
+    .shell {
+      grid-template-columns: 1fr;
+    }
+    .shell__main {
+      padding: 16px;
+    }
+  }
 </style>

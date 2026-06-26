@@ -15,6 +15,13 @@ class NavStore {
   collapsed = $state(false);
   activeHref = $state<string>('/');
 
+  /**
+   * Mobile drawer open state. Deliberately NOT persisted (a drawer should
+   * always start closed on load) and orthogonal to `collapsed` (which is the
+   * desktop icon-rail toggle). Only consumed under the mobile breakpoint.
+   */
+  mobileOpen = $state(false);
+
   constructor() {
     // Hydrate from localStorage on browser-only mount.
     if (typeof window !== 'undefined') {
