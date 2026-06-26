@@ -140,18 +140,40 @@
   function toggleCollapsed(): void {
     navStore.collapsed = !navStore.collapsed;
   }
+
+  function closeMobile(): void {
+    navStore.mobileOpen = false;
+  }
+
+  function handleKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && navStore.mobileOpen) {
+      navStore.mobileOpen = false;
+    }
+  }
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
+<!-- Mobile-only tap-to-close backdrop (hidden on desktop via CSS). -->
+<button
+  type="button"
+  class="sidebar-backdrop"
+  class:sidebar-backdrop--open={navStore.mobileOpen}
+  onclick={closeMobile}
+  aria-label="Close navigation menu"
+  tabindex={navStore.mobileOpen ? 0 : -1}
+></button>
+
 <nav
+  id="primary-nav"
   class="sidebar"
   class:sidebar--collapsed={navStore.collapsed}
+  class:sidebar--mobile-open={navStore.mobileOpen}
   aria-label="Primary"
 >
   <div class="sidebar__brand">
     <span class="sidebar__brand-mark" aria-hidden="true">i</span>
-    {#if !navStore.collapsed}
-      <span class="sidebar__brand-text">iguanatrader</span>
-    {/if}
+    <span class="sidebar__brand-text">iguanatrader</span>
   </div>
 
   <ul class="sidebar__items">
@@ -165,20 +187,19 @@
           class:sidebar__link--active={active}
           aria-current={active ? 'page' : undefined}
           title={navStore.collapsed ? meta.label : undefined}
+          onclick={closeMobile}
         >
           <span class="sidebar__icon" aria-hidden="true">
             <Icon size={18} strokeWidth={1.75} />
           </span>
-          {#if !navStore.collapsed}
-            <span class="sidebar__label">{meta.label}</span>
-          {/if}
+          <span class="sidebar__label">{meta.label}</span>
         </a>
       </li>
     {/each}
   </ul>
 
   <div class="sidebar__footer">
-    {#if user && !navStore.collapsed}
+    {#if user}
       <div class="sidebar__user" aria-label="Signed in user">
         <span class="sidebar__user-email">{user.email}</span>
         <span class="sidebar__user-role">{user.role}</span>
@@ -323,5 +344,68 @@
   .sidebar__toggle:hover {
     background: var(--surface-2);
     color: var(--ink);
+  }
+
+  /* Backdrop button — absent on desktop; becomes the tap-to-close overlay
+     behind the mobile drawer (below). */
+  .sidebar-backdrop {
+    display: none;
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Desktop: collapsing to the 64px icon rail hides the text. The sidebar is
+     a full-width drawer on mobile (see below), so this hiding is desktop-only
+     — a phone always shows full labels. */
+  @media (min-width: 769px) {
+    .sidebar--collapsed .sidebar__brand-text,
+    .sidebar--collapsed .sidebar__label,
+    .sidebar--collapsed .sidebar__user {
+      display: none;
+    }
+  }
+
+  /* Mobile (<= 768px): off-canvas drawer toggled by the TopBar hamburger,
+     with a tap-to-close backdrop. The desktop collapse state is ignored. */
+  @media (max-width: 768px) {
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: min(82vw, 300px);
+      transform: translateX(-100%);
+      transition: transform 200ms ease;
+      z-index: 50;
+      will-change: transform;
+    }
+    .sidebar--collapsed {
+      width: min(82vw, 300px);
+    }
+    .sidebar--mobile-open {
+      transform: translateX(0);
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.28);
+    }
+    /* The icon-rail collapse toggle is meaningless in drawer mode. */
+    .sidebar__toggle {
+      display: none;
+    }
+
+    .sidebar-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms ease;
+      z-index: 49;
+      cursor: pointer;
+    }
+    .sidebar-backdrop--open {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 </style>

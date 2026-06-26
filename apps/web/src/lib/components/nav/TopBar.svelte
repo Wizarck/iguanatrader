@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { Moon, Sun } from 'lucide-svelte';
+  import { Menu, Moon, Sun } from 'lucide-svelte';
 
   import ConnectionIndicator from '$lib/components/nav/ConnectionIndicator.svelte';
   import DaemonModeChip from '$lib/components/DaemonModeChip.svelte';
+  import { navStore } from '$lib/stores/nav.svelte';
   import { themeStore } from '$lib/stores/theme.svelte';
 
   /**
@@ -27,6 +28,16 @@
 
 <header class="topbar" aria-label="Top bar">
   <div class="topbar__title">
+    <button
+      type="button"
+      class="topbar__menu-toggle"
+      onclick={() => (navStore.mobileOpen = !navStore.mobileOpen)}
+      aria-label="Toggle navigation menu"
+      aria-controls="primary-nav"
+      aria-expanded={navStore.mobileOpen}
+    >
+      <Menu size={18} strokeWidth={1.75} />
+    </button>
     <span class="topbar__welcome">
       {#if user}
         Signed in as <strong>{user.email}</strong>
@@ -87,6 +98,30 @@
   }
   .topbar__welcome strong {
     color: var(--ink);
+  }
+
+  .topbar__menu-toggle {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--mute);
+    border-radius: var(--r-2);
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .topbar__menu-toggle:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  /* The hamburger only exists at the mobile drawer breakpoint. */
+  @media (max-width: 768px) {
+    .topbar__menu-toggle {
+      display: inline-flex;
+    }
   }
 
   .topbar__actions {
