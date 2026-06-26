@@ -310,4 +310,234 @@ async def _register_symbol_async(
     )
 
 
+#: US-ETF → UCITS substitution map (WS-B2). Arturo's EU retail account
+#: cannot trade US-listed ETFs (KID/PRIIPs block — IBKR Error 201,
+#: confirmed on the LIVE account, not just paper), so a live watchlist
+#: MUST swap these 11 tickers for their UCITS equivalents. Symbols not
+#: in this map pass through unchanged. Exchange/currency resolution
+#: (LSE/USD; VUSA AEB/EUR) happens at gateway contract-qualify time, not
+#: here — this only rewrites the ticker the strategy config is keyed on.
+_UCITS_SWAP_MAP: dict[str, str] = {
+    "SPY": "VUSA",
+    "QQQ": "EQQQ",
+    "IWM": "R2US",
+    "XLE": "IUES",
+    "XLF": "IUFS",
+    "XLK": "IUIT",
+    "XLV": "IUHC",
+    "GLD": "IGLN",
+    "SLV": "ISLN",
+    "USO": "CRUD",
+    "TLT": "IDTL",
+}
+
+
+def _parse_symbols(raw: str) -> list[str]:
+    """Split a comma-separated symbol list into deduped, uppercased tickers.
+
+    Order is preserved (first occurrence wins) so the printed plan reads
+    in the operator's input order.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for tok in raw.split(","):
+        sym = tok.strip().upper()
+        if sym and sym not in seen:
+            seen.add(sym)
+            out.append(sym)
+    return out
+
+
+@app.command("seed-watchlist")
+def seed_watchlist(
+    symbols: str = typer.Option(
+        ...,
+        "--symbols",
+        help=(
+            "Comma-separated tickers to seed (e.g. 'AMD,NVDA,SPY'). The "
+            "authoritative list — nothing is hard-coded. Pass the daemon's "
+            "IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS to keep them in sync."
+        ),
+    ),
+    tenant: str = typer.Option(
+        ...,
+        "--tenant",
+        "-t",
+        help="Tenant slug (matches Tenant.name from bootstrap-tenant).",
+    ),
+    strategies: str = typer.Option(
+        "all",
+        "--strategies",
+        help=(
+            "'all' (every registered strategy) or a comma-separated list of "
+            "strategy kinds (e.g. 'donchian_atr,sma_cross')."
+        ),
+    ),
+    ucits_swap: bool = typer.Option(
+        False,
+        "--ucits-swap/--no-ucits-swap",
+        help=(
+            "Rewrite the 11 US ETFs to their UCITS equivalents (SPY→VUSA, "
+            "GLD→IGLN, …) — the paper→LIVE transform for an EU account that "
+            "cannot trade US ETFs. Other symbols pass through unchanged."
+        ),
+    ),
+    wipe: bool = typer.Option(
+        True,
+        "--wipe/--no-wipe",
+        help=(
+            "Soft-disable EVERY existing config for the tenant before "
+            "reseeding (clean slate; audit history preserved, no DELETE). "
+            "Configs not in the new grid stay disabled."
+        ),
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help=(
+            "Actually write the changes. Omit for a DRY RUN that prints the "
+            "plan and touches nothing (the default — this command mutates "
+            "real trading config)."
+        ),
+    ),
+) -> None:
+    """Wipe + reseed ``strategy_configs`` for ``tenant`` (WS-B1).
+
+    Seeds the cartesian product ``strategies x symbols`` with each
+    strategy's documented defaults (``params={}`` → risk-based 1%,
+    whole-share sizing). The propose loop evaluates a symbol only when it
+    is BOTH in the daemon's ``IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS`` env
+    AND has an enabled config here, so keep the two in lockstep.
+
+    ``strategy_configs`` are mode-agnostic (shared by the paper + live
+    daemons); "for live" is expressed by the symbol set (``--ucits-swap``)
+    plus which daemon runs — NOT a column on the row.
+
+    Usage (dry run, then apply)::
+
+        iguanatrader admin seed-watchlist --tenant arturo-trading \\
+            --symbols "$IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS" --ucits-swap
+        iguanatrader admin seed-watchlist --tenant arturo-trading \\
+            --symbols "$IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS" --ucits-swap --apply
+    """
+    from iguanatrader.contexts.trading.strategies.manager import STRATEGY_REGISTRY
+
+    if strategies.strip().lower() == "all":
+        kinds = sorted(STRATEGY_REGISTRY)
+    else:
+        kinds = []
+        seen_kinds: set[str] = set()
+        for tok in strategies.split(","):
+            kind = tok.strip()
+            if kind and kind not in seen_kinds:
+                seen_kinds.add(kind)
+                kinds.append(kind)
+        unknown = [k for k in kinds if k not in STRATEGY_REGISTRY]
+        if unknown:
+            typer.echo(
+                f"ERROR: unknown strategy kind(s) {unknown}. "
+                f"Valid: {sorted(STRATEGY_REGISTRY)}."
+            )
+            raise typer.Exit(code=2)
+
+    parsed = _parse_symbols(symbols)
+    if not parsed:
+        typer.echo("ERROR: --symbols is empty after parsing.")
+        raise typer.Exit(code=2)
+    if ucits_swap:
+        parsed = [_UCITS_SWAP_MAP.get(sym, sym) for sym in parsed]
+
+    asyncio.run(
+        _seed_watchlist_async(
+            tenant_slug=tenant,
+            symbols=parsed,
+            kinds=kinds,
+            wipe=wipe,
+            apply=apply,
+        )
+    )
+
+
+async def _seed_watchlist_async(
+    *,
+    tenant_slug: str,
+    symbols: list[str],
+    kinds: list[str],
+    wipe: bool,
+    apply: bool,
+) -> None:
+    """Async body of the ``seed-watchlist`` command.
+
+    Dry-run path computes the plan with ZERO mutation (no upsert, no
+    disable, no flush) so the ``before_update`` version-bump hook never
+    fires. The apply path runs the disable + upserts inside one
+    ``with_tenant_context`` session and commits once.
+    """
+    from sqlalchemy import select
+
+    from iguanatrader.contexts.trading.repository import StrategyConfigRepository
+    from iguanatrader.persistence import Tenant, engine_factory, session_factory
+    from iguanatrader.shared.contextvars import with_session_context, with_tenant_context
+
+    engine = engine_factory(_db_url())
+    try:
+        sessionmaker = session_factory(engine)
+
+        async with sessionmaker() as session:
+            tenant_row = (
+                (await session.execute(select(Tenant).where(Tenant.name == tenant_slug)))
+                .scalars()
+                .first()
+            )
+            if tenant_row is None:
+                typer.echo(
+                    f"ERROR: tenant {tenant_slug!r} not found. Run "
+                    f"`iguanatrader admin bootstrap-tenant {tenant_slug} ...` first."
+                )
+                raise typer.Exit(code=1)
+            tenant_id = tenant_row.id
+
+        grid = [(kind, sym) for sym in symbols for kind in kinds]
+
+        async with (
+            with_tenant_context(tenant_id),
+            sessionmaker() as session,
+            with_session_context(session),
+        ):
+            repo = StrategyConfigRepository()
+            existing = await repo.list_for_tenant()
+            existing_pairs = {(c.strategy_kind, c.symbol) for c in existing}
+            enabled_before = sum(1 for c in existing if c.enabled)
+
+            created = [pair for pair in grid if pair not in existing_pairs]
+            updated = [pair for pair in grid if pair in existing_pairs]
+
+            typer.echo(
+                f"tenant={tenant_slug} (id={tenant_id})\n"
+                f"strategies ({len(kinds)}): {', '.join(kinds)}\n"
+                f"symbols ({len(symbols)}): {', '.join(symbols)}\n"
+                f"grid: {len(kinds)} x {len(symbols)} = {len(grid)} configs "
+                f"({len(created)} new, {len(updated)} updated)\n"
+                f"wipe: {'soft-disable ' + str(enabled_before) + ' currently-enabled configs first' if wipe else 'no'}"
+            )
+
+            if not apply:
+                typer.echo("\nDRY RUN — nothing written. Re-run with --apply to commit.")
+                return
+
+            if wipe:
+                await repo.disable_all_for_tenant()
+            for kind, sym in grid:
+                await repo.upsert(symbol=sym, strategy_kind=kind, params={}, enabled=True)
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+    typer.echo(
+        f"\nOK — seeded {len(symbols) * len(kinds)} configs for tenant {tenant_slug} "
+        f"({len(symbols)} symbols x {len(kinds)} strategies). "
+        f"Active set now = exactly this grid."
+    )
+
+
 __all__ = ["app"]

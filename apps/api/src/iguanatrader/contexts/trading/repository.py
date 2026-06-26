@@ -179,6 +179,29 @@ class StrategyConfigRepository(BaseRepository):
                 touched += 1
         return touched
 
+    async def disable_all_for_tenant(self) -> int:
+        """Soft-disable every enabled config for the current tenant.
+
+        The clean-slate primitive behind ``iguanatrader admin
+        seed-watchlist --wipe``: set ``enabled=False`` on every row the
+        tenant owns so a subsequent reseed starts from an empty active
+        set. Per-row UPDATE through the ORM (NOT a bulk
+        ``update().where()``) for the same three reasons as
+        :meth:`disable_all_by_symbol`: the slice-3 ``tenant_listener``
+        scopes the preceding SELECT, the ``before_update`` hook bumps
+        ``version`` + logs ``trading.config.changed`` per row, and no
+        DELETE is issued so audit history survives. Returns the number
+        of rows actually flipped (already-disabled rows are skipped, so
+        re-running is idempotent and counts zero).
+        """
+        rows = await self.list_for_tenant()
+        touched = 0
+        for row in rows:
+            if row.enabled:
+                row.enabled = False
+                touched += 1
+        return touched
+
 
 class TradeProposalRepository(BaseRepository):
     """Persistence operations for :class:`TradeProposal` (slice T4).
