@@ -236,6 +236,23 @@ def test_bollinger_target_above_entry_atr_based() -> None:
     assert proposal.reasoning["target_mult"] == str(DEFAULT_TARGET_MULT)
 
 
+def test_bollinger_rejects_nonpositive_target_mult() -> None:
+    """WS-C review: target_mult=0 → long target == entry → inverted bracket → None."""
+    strategy = BollingerBreakoutStrategy()
+    history = _bars_from_closes(_breakout_closes())
+    assert strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_mult="0")) is None
+
+
+def test_bollinger_nan_param_falls_back_to_default() -> None:
+    """WS-C review: a poisoned 'nan' multiplier falls back to the default, no crash."""
+    strategy = BollingerBreakoutStrategy()
+    history = _bars_from_closes(_breakout_closes())
+    proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_mult="nan"))
+    assert proposal is not None
+    atr = Decimal(proposal.reasoning["atr"])
+    assert proposal.target_price == proposal.entry_price_indicative + DEFAULT_TARGET_MULT * atr
+
+
 def test_bollinger_position_size_respects_risk_pct() -> None:
     """quantity == floor((risk_pct * equity) / (entry - stop)) — whole shares."""
     strategy = BollingerBreakoutStrategy()

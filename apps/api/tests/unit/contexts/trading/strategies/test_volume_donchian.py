@@ -206,6 +206,13 @@ def test_volume_donchian_target_above_entry_atr_based() -> None:
     assert proposal.reasoning["target_mult"] == str(DEFAULT_TARGET_MULT)
 
 
+def test_volume_donchian_rejects_nonpositive_target_mult() -> None:
+    """WS-C review: target_mult=0 → long target == entry → inverted bracket → None."""
+    strategy = VolumeDonchianStrategy()
+    history = _breakout_with_volume(volume_multiplier=Decimal("2.0"))
+    assert strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_mult="0")) is None
+
+
 def test_volume_donchian_position_size_respects_risk_pct() -> None:
     """quantity == floor((risk_pct * equity) / (entry - stop)) — whole shares."""
     strategy = VolumeDonchianStrategy()

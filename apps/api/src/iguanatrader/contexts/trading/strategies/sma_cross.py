@@ -109,8 +109,16 @@ class SMACrossStrategy(Strategy):
         if risk_per_share <= Decimal("0"):
             return None
         # No ATR here: take-profit is a reward:risk multiple of the
-        # (volatility-based) stop distance. Long-only → always above entry.
+        # (volatility-based) stop distance.
         target = entry + target_rr * risk_per_share
+        # Bracket sanity (WS-C review): extreme volatility (vol >= 0.5) drives
+        # stop = entry*(1 - 2*vol) non-positive, and a misconfigured
+        # target_rr <= 0 puts the long target at/below entry — both emit an
+        # inverted/degenerate bracket the broker rejects or that self-closes
+        # the long on the first stop_hit_sweep tick. (risk_per_share stays > 0
+        # even when stop <= 0, so the guard above does not catch it.)
+        if stop <= Decimal("0") or target <= entry:
+            return None
         quantity = calculate_quantity(
             sizing_mode=sizing_mode,
             entry=entry,
@@ -164,9 +172,11 @@ def _to_decimal(value: Any, *, default: Decimal) -> Decimal:
     if value is None:
         return default
     try:
-        return Decimal(str(value))
+        result = Decimal(str(value))
     except Exception:
         return default
+    # Reject NaN/Inf — see donchian_atr._to_decimal (WS-C review).
+    return result if result.is_finite() else default
 
 
 __all__ = [

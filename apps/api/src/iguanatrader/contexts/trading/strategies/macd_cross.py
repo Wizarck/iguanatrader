@@ -137,6 +137,12 @@ class MACDCrossStrategy(Strategy):
         if stop <= Decimal("0"):
             return None
         target = entry + target_mult * atr
+        # Bracket sanity (WS-C review): a misconfigured target_mult <= 0 puts
+        # the long take-profit at/below entry, emitting an inverted bracket
+        # that self-closes on the first stop_hit_sweep tick. (stop <= 0 is
+        # already guarded above.)
+        if target <= entry:
+            return None
         risk_per_share = entry - stop
         if risk_per_share <= Decimal("0"):
             return None
@@ -194,9 +200,11 @@ def _to_decimal(value: Any, *, default: Decimal) -> Decimal:
     if value is None:
         return default
     try:
-        return Decimal(str(value))
+        result = Decimal(str(value))
     except Exception:
         return default
+    # Reject NaN/Inf — see donchian_atr._to_decimal (WS-C review).
+    return result if result.is_finite() else default
 
 
 def _to_optional_str(value: Any) -> str | None:

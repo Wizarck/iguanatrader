@@ -117,6 +117,13 @@ def test_sma_cross_target_is_reward_risk_multiple() -> None:
     assert proposal.reasoning["target_rr"] == str(DEFAULT_TARGET_RR)
 
 
+def test_sma_cross_rejects_nonpositive_target_rr() -> None:
+    """WS-C review: target_rr=0 → long target == entry → inverted bracket → None."""
+    strategy = SMACrossStrategy()
+    history = _bars_from_closes(_golden_cross_closes())
+    assert strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_rr="0")) is None
+
+
 def test_sma_cross_quantity_is_whole_shares() -> None:
     """Sizing floors to an integer share count — the fractional .quantize(0.0001)
     bug (which IBKR would reject) is fixed via the shared sizing helper."""
