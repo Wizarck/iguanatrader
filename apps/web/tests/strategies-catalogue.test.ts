@@ -57,6 +57,7 @@ describe('STRATEGY_CATALOGUE', () => {
       lookback: 20,
       atr_period: 14,
       atr_mult: 2.0,
+      target_mult: 3.0,
       risk_pct: 0.01,
     });
   });
@@ -66,6 +67,7 @@ describe('STRATEGY_CATALOGUE', () => {
       fast: 50,
       slow: 200,
       vol_window: 20,
+      target_rr: 1.5,
       risk_pct: 0.01,
     });
   });
@@ -87,6 +89,7 @@ describe('validateParamForm', () => {
       lookback: '20.5',
       atr_period: '14',
       atr_mult: '2',
+      target_mult: '3',
       risk_pct: '1',
     });
     expect(result.ok).toBe(false);
@@ -101,6 +104,7 @@ describe('validateParamForm', () => {
       lookback: '500', // max is 200
       atr_period: '14',
       atr_mult: '2',
+      target_mult: '3',
       risk_pct: '1',
     });
     expect(result.ok).toBe(false);
@@ -115,6 +119,7 @@ describe('validateParamForm', () => {
       lookback: '20',
       atr_period: '14',
       atr_mult: '2',
+      target_mult: '3',
       risk_pct: '1',
     });
     expect(result.ok).toBe(true);
@@ -132,6 +137,7 @@ describe('validateParamForm', () => {
       squeeze_lookback: '6',
       atr_period: '14',
       atr_mult: '2',
+      target_mult: '3',
       risk_pct: '1',
     });
     expect(result.ok).toBe(true);
@@ -149,6 +155,7 @@ describe('validateParamForm', () => {
       squeeze_lookback: '6',
       atr_period: '14',
       atr_mult: '2',
+      target_mult: '3',
       risk_pct: '1',
     });
     expect(result.ok).toBe(true);
@@ -166,6 +173,7 @@ describe('validateParamForm', () => {
       bias_filter: '',
       atr_period: '14',
       atr_mult: '2',
+      target_mult: '3',
       risk_pct: '1',
     });
     expect(result.ok).toBe(true);

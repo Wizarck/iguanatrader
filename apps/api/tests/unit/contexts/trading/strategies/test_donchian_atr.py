@@ -11,7 +11,10 @@ from iguanatrader.contexts.trading.ports import (
     BarHistory,
     StrategyConfigSnapshot,
 )
-from iguanatrader.contexts.trading.strategies.donchian_atr import DonchianATRStrategy
+from iguanatrader.contexts.trading.strategies.donchian_atr import (
+    DEFAULT_TARGET_MULT,
+    DonchianATRStrategy,
+)
 
 
 def _bar(*, t: datetime, close: Decimal, high: Decimal, low: Decimal) -> Bar:
@@ -98,6 +101,47 @@ def _config() -> StrategyConfigSnapshot:
         enabled=True,
         version=1,
     )
+
+
+def _config_with(**params_overrides: object) -> StrategyConfigSnapshot:
+    params: dict[str, object] = {
+        "lookback": 20,
+        "atr_period": 14,
+        "atr_mult": "2.0",
+        "risk_pct": "0.01",
+    }
+    params.update(params_overrides)
+    return StrategyConfigSnapshot(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        strategy_kind="donchian_atr",
+        symbol="AAPL",
+        params=params,
+        enabled=True,
+        version=1,
+    )
+
+
+def test_donchian_rejects_nonpositive_target_mult() -> None:
+    """WS-C review: target_mult=0 puts the target AT entry (long) / AT entry
+    (short) → inverted/degenerate bracket → the strategy returns None rather
+    than emitting a proposal that self-closes on the first sweep tick."""
+    strategy = DonchianATRStrategy()
+    long_cfg = _config_with(target_mult="0")
+    assert strategy.evaluate(symbol="AAPL", bars=_ramp_history(), config=long_cfg) is None
+    assert strategy.evaluate(symbol="AAPL", bars=_drop_history(), config=long_cfg) is None
+
+
+def test_donchian_nan_param_falls_back_to_default() -> None:
+    """WS-C review: a poisoned 'nan' multiplier must fall back to the default
+    (Decimal('nan') parses fine) instead of raising InvalidOperation."""
+    strategy = DonchianATRStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL", bars=_ramp_history(), config=_config_with(target_mult="nan")
+    )
+    assert proposal is not None  # default 3.0 used, no crash
+    atr = Decimal(proposal.reasoning["atr"])
+    assert proposal.target_price == proposal.entry_price_indicative + DEFAULT_TARGET_MULT * atr
 
 
 def test_donchian_emits_proposal_on_breakout() -> None:

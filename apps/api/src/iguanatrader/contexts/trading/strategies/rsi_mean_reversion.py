@@ -13,7 +13,8 @@ Default params (overridable via :class:`StrategyConfigSnapshot.params`):
 * ``oversold = 30``.
 * ``overbought = 70`` (informational only; v1.5 is long-only).
 * ``atr_period = 14``.
-* ``atr_mult = 2.0``.
+* ``atr_mult = 2.0`` (protective stop distance, in ATRs).
+* ``target_mult = 3.0`` (take-profit distance, in ATRs).
 * ``risk_pct = 0.01`` (NFR-R6).
 * ``equity = 10000`` (default fallback when broker equity not yet
   available; production caller passes the real equity).
@@ -43,6 +44,7 @@ DEFAULT_OVERSOLD: Decimal = Decimal("30")
 DEFAULT_OVERBOUGHT: Decimal = Decimal("70")
 DEFAULT_ATR_PERIOD: int = 14
 DEFAULT_ATR_MULT: Decimal = Decimal("2.0")
+DEFAULT_TARGET_MULT: Decimal = Decimal("3.0")
 DEFAULT_RISK_PCT: Decimal = Decimal("0.01")
 DEFAULT_EQUITY: Decimal = Decimal("10000")
 
@@ -54,7 +56,7 @@ class RSIMeanReversionStrategy(Strategy):
         return "rsi_mean_reversion"
 
     def version(self) -> str:
-        return "0.1.0"
+        return "0.2.0"
 
     @property
     def MIN_BARS(self) -> int:  # type: ignore[override]
@@ -75,6 +77,7 @@ class RSIMeanReversionStrategy(Strategy):
         oversold = _to_decimal(params.get("oversold"), default=DEFAULT_OVERSOLD)
         atr_period = int(params.get("atr_period", DEFAULT_ATR_PERIOD))
         atr_mult = _to_decimal(params.get("atr_mult"), default=DEFAULT_ATR_MULT)
+        target_mult = _to_decimal(params.get("target_mult"), default=DEFAULT_TARGET_MULT)
         risk_pct = _to_decimal(params.get("risk_pct"), default=DEFAULT_RISK_PCT)
         equity = _to_decimal(params.get("equity"), default=DEFAULT_EQUITY)
         sizing_mode = str(params.get("sizing_mode", SIZING_MODE_RISK))
@@ -107,6 +110,13 @@ class RSIMeanReversionStrategy(Strategy):
         stop = entry - atr_mult * atr
         if stop >= entry:
             return None
+        target = entry + target_mult * atr
+        # Bracket sanity (WS-C review): a non-positive stop (huge ATR) or a
+        # misconfigured target_mult <= 0 (long target at/below entry) would
+        # emit an inverted/degenerate bracket the broker rejects or that
+        # self-closes the long on the first stop_hit_sweep tick.
+        if stop <= Decimal("0") or target <= entry:
+            return None
         risk_per_share = entry - stop
         if risk_per_share <= Decimal("0"):
             return None
@@ -130,6 +140,7 @@ class RSIMeanReversionStrategy(Strategy):
             quantity=quantity,
             entry_price_indicative=entry,
             stop_price=stop,
+            target_price=target,
             confidence_score=None,
             reasoning={
                 "strategy": "rsi_mean_reversion",
@@ -139,12 +150,14 @@ class RSIMeanReversionStrategy(Strategy):
                 "rsi_now": str(rsi_now),
                 "atr": str(atr),
                 "atr_mult": str(atr_mult),
+                "target_mult": str(target_mult),
                 "risk_pct": str(risk_pct),
                 "equity": str(equity),
                 "sizing_mode": sizing_mode,
                 "target_cash": str(target_cash),
                 "entry": str(entry),
                 "stop": str(stop),
+                "target": str(target),
                 "computed_at": utc_now().isoformat(),
             },
             mode=str(params.get("mode", "paper")),
@@ -157,9 +170,11 @@ def _to_decimal(value: Any, *, default: Decimal) -> Decimal:
     if value is None:
         return default
     try:
-        return Decimal(str(value))
+        result = Decimal(str(value))
     except Exception:
         return default
+    # Reject NaN/Inf — see donchian_atr._to_decimal (WS-C review).
+    return result if result.is_finite() else default
 
 
 def _compute_rsi_prev_now(closes: list[Decimal], rsi_period: int) -> tuple[Decimal, Decimal] | None:
@@ -227,5 +242,6 @@ __all__ = [
     "DEFAULT_OVERSOLD",
     "DEFAULT_RISK_PCT",
     "DEFAULT_RSI_PERIOD",
+    "DEFAULT_TARGET_MULT",
     "RSIMeanReversionStrategy",
 ]

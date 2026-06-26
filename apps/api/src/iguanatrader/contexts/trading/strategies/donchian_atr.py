@@ -122,9 +122,20 @@ class DonchianATRStrategy(Strategy):
             target = entry - target_distance
             breakout_level = channel_low
 
-        # Sanity: stop on the protective side of entry; target positive.
+        # Bracket sanity (WS-C review): reject a degenerate/inverted bracket
+        # before it reaches the broker. A misconfigured atr_mult/target_mult
+        # (<= 0) or a non-positive price would put the take-profit on the wrong
+        # side of entry — a long whose target <= entry self-closes on the first
+        # stop_hit_sweep tick; a short whose target >= entry does likewise; a
+        # non-positive stop/target price is rejected by IBKR.
         risk_per_share = abs(entry - stop)
-        if risk_per_share <= Decimal("0") or target <= Decimal("0"):
+        if (
+            risk_per_share <= Decimal("0")
+            or stop <= Decimal("0")
+            or target <= Decimal("0")
+            or (side == "buy" and target <= entry)
+            or (side == "sell" and target >= entry)
+        ):
             return None
         # Whole-share sizing via the shared helper (risk or cash mode). IBKR
         # rejects fractional bracket/STP quantities, so the helper floors DOWN to
@@ -181,9 +192,13 @@ def _to_decimal(value: Any, *, default: Decimal) -> Decimal:
     if value is None:
         return default
     try:
-        return Decimal(str(value))
+        result = Decimal(str(value))
     except Exception:
         return default
+    # Reject NaN/Inf — ``Decimal("nan")`` parses without raising, and a
+    # non-finite multiplier poisons the stop/target math and makes the
+    # downstream guard comparisons raise InvalidOperation (WS-C review).
+    return result if result.is_finite() else default
 
 
 __all__ = [

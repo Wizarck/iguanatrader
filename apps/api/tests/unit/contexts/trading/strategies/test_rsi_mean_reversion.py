@@ -19,6 +19,7 @@ from iguanatrader.contexts.trading.strategies.rsi_mean_reversion import (
     DEFAULT_ATR_MULT,
     DEFAULT_EQUITY,
     DEFAULT_RISK_PCT,
+    DEFAULT_TARGET_MULT,
     RSIMeanReversionStrategy,
 )
 
@@ -157,6 +158,28 @@ def test_rsi_stop_below_entry() -> None:
     proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
     assert proposal is not None
     assert proposal.stop_price < proposal.entry_price_indicative
+
+
+def test_rsi_target_above_entry_atr_based() -> None:
+    """Bracket-complete (WS-C): target = entry + target_mult x ATR, above entry."""
+    strategy = RSIMeanReversionStrategy()
+    history = _bars_from_closes(_cross_up_closes())
+    proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
+    assert proposal is not None
+    entry = proposal.entry_price_indicative
+    atr = Decimal(proposal.reasoning["atr"])
+    assert proposal.target_price is not None
+    assert proposal.target_price == entry + DEFAULT_TARGET_MULT * atr
+    assert proposal.stop_price < entry < proposal.target_price
+    assert proposal.reasoning["target"] == str(proposal.target_price)
+    assert proposal.reasoning["target_mult"] == str(DEFAULT_TARGET_MULT)
+
+
+def test_rsi_rejects_nonpositive_target_mult() -> None:
+    """WS-C review: target_mult=0 → long target == entry → inverted bracket → None."""
+    strategy = RSIMeanReversionStrategy()
+    history = _bars_from_closes(_cross_up_closes())
+    assert strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_mult="0")) is None
 
 
 def test_rsi_position_size_respects_risk_pct() -> None:

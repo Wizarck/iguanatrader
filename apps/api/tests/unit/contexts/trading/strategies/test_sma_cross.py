@@ -16,7 +16,10 @@ from iguanatrader.contexts.trading.ports import (
     BarHistory,
     StrategyConfigSnapshot,
 )
-from iguanatrader.contexts.trading.strategies.sma_cross import SMACrossStrategy
+from iguanatrader.contexts.trading.strategies.sma_cross import (
+    DEFAULT_TARGET_RR,
+    SMACrossStrategy,
+)
 
 
 def _bar(*, t: datetime, close: Decimal, high: Decimal, low: Decimal) -> Bar:
@@ -96,6 +99,29 @@ def test_sma_cross_no_signal_on_flat_history() -> None:
         symbol="AAPL", bars=_bars_from_closes([Decimal("100")] * 205), config=_config()
     )
     assert proposal is None
+
+
+def test_sma_cross_target_is_reward_risk_multiple() -> None:
+    """Bracket-complete (WS-C): no ATR, so target = entry + target_rr x stop-distance."""
+    strategy = SMACrossStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL", bars=_bars_from_closes(_golden_cross_closes()), config=_config()
+    )
+    assert proposal is not None
+    entry = proposal.entry_price_indicative
+    stop = proposal.stop_price
+    assert proposal.target_price is not None
+    assert proposal.target_price == entry + DEFAULT_TARGET_RR * (entry - stop)
+    assert stop < entry < proposal.target_price
+    assert proposal.reasoning["target"] == str(proposal.target_price)
+    assert proposal.reasoning["target_rr"] == str(DEFAULT_TARGET_RR)
+
+
+def test_sma_cross_rejects_nonpositive_target_rr() -> None:
+    """WS-C review: target_rr=0 → long target == entry → inverted bracket → None."""
+    strategy = SMACrossStrategy()
+    history = _bars_from_closes(_golden_cross_closes())
+    assert strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_rr="0")) is None
 
 
 def test_sma_cross_quantity_is_whole_shares() -> None:

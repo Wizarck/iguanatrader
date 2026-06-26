@@ -22,6 +22,7 @@ from iguanatrader.contexts.trading.strategies.bollinger_breakout import (
     DEFAULT_ATR_MULT,
     DEFAULT_EQUITY,
     DEFAULT_RISK_PCT,
+    DEFAULT_TARGET_MULT,
     BollingerBreakoutStrategy,
 )
 
@@ -218,6 +219,38 @@ def test_bollinger_stop_below_entry() -> None:
     proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
     assert proposal is not None
     assert proposal.stop_price < proposal.entry_price_indicative
+
+
+def test_bollinger_target_above_entry_atr_based() -> None:
+    """Bracket-complete (WS-C): target = entry + target_mult x ATR, above entry."""
+    strategy = BollingerBreakoutStrategy()
+    history = _bars_from_closes(_breakout_closes())
+    proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
+    assert proposal is not None
+    entry = proposal.entry_price_indicative
+    atr = Decimal(proposal.reasoning["atr"])
+    assert proposal.target_price is not None
+    assert proposal.target_price == entry + DEFAULT_TARGET_MULT * atr
+    assert proposal.stop_price < entry < proposal.target_price
+    assert proposal.reasoning["target"] == str(proposal.target_price)
+    assert proposal.reasoning["target_mult"] == str(DEFAULT_TARGET_MULT)
+
+
+def test_bollinger_rejects_nonpositive_target_mult() -> None:
+    """WS-C review: target_mult=0 → long target == entry → inverted bracket → None."""
+    strategy = BollingerBreakoutStrategy()
+    history = _bars_from_closes(_breakout_closes())
+    assert strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_mult="0")) is None
+
+
+def test_bollinger_nan_param_falls_back_to_default() -> None:
+    """WS-C review: a poisoned 'nan' multiplier falls back to the default, no crash."""
+    strategy = BollingerBreakoutStrategy()
+    history = _bars_from_closes(_breakout_closes())
+    proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config(target_mult="nan"))
+    assert proposal is not None
+    atr = Decimal(proposal.reasoning["atr"])
+    assert proposal.target_price == proposal.entry_price_indicative + DEFAULT_TARGET_MULT * atr
 
 
 def test_bollinger_position_size_respects_risk_pct() -> None:

@@ -69,6 +69,17 @@ def test_atr_strategies_include_atr_block() -> None:
         names = {p.name for p in d.params}
         assert "atr_period" in names, f"{d.kind!r} missing atr_period"
         assert "atr_mult" in names, f"{d.kind!r} missing atr_mult"
+        # WS-C: the ATR strategies' take-profit is an ATR multiple.
+        assert "target_mult" in names, f"{d.kind!r} missing target_mult"
+
+
+def test_sma_cross_uses_target_rr_not_target_mult() -> None:
+    """sma_cross has no ATR, so its take-profit (WS-C) is a reward:risk
+    multiple of the volatility-based stop distance, not an ATR multiple."""
+    sma = next(d for d in _build_catalogue() if d.kind == "sma_cross")
+    names = {p.name for p in sma.params}
+    assert "target_rr" in names
+    assert "target_mult" not in names
 
 
 def test_param_types_are_in_the_allowed_set() -> None:
