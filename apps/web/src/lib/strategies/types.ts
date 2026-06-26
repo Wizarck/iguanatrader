@@ -107,6 +107,30 @@ const RISK_PARAM: ParamSpec = {
   help: 'Fraction of account equity to put at risk per trade. 1% is a common cap; NFR-R6 enforces a hard ceiling.',
 };
 
+// Position-sizing mode shared across every strategy. Mirrors the Python
+// `_SIZING_PARAMS` in `strategies_catalogue.py`. "risk" (default, blank) sizes
+// by risk_pct of equity; "cash" buys a fixed dollar amount (target_cash ÷
+// price), the way orders are often placed by hand at IB. Both floor to whole
+// shares. Null defaults → omitted from the params payload (risk is the default).
+const SIZING_PARAMS: ParamSpec[] = [
+  {
+    name: 'sizing_mode',
+    label: 'Position sizing mode',
+    type: 'optional-string',
+    default: null,
+    help: 'How the share quantity is sized. Leave empty (or "risk") to size by risk-per-trade (risk_pct of equity); set to "cash" to buy a fixed dollar amount (target_cash ÷ price). Always floored to whole shares.',
+  },
+  {
+    name: 'target_cash',
+    label: 'Target cash per trade ($)',
+    type: 'optional-decimal',
+    default: null,
+    min: 0,
+    step: 50,
+    help: 'Dollar amount to deploy per trade when sizing mode is "cash". Ignored in risk mode. Floored to whole shares at the entry price.',
+  },
+];
+
 /**
  * Per-kind catalogue. Order matters — first entry is the default in
  * the new-strategy form. Defaults are kept in sync with the Python
@@ -132,6 +156,7 @@ export const STRATEGY_CATALOGUE: readonly StrategySpec[] = [
       },
       ...ATR_PARAMS,
       RISK_PARAM,
+      ...SIZING_PARAMS,
     ],
   },
   {
@@ -171,6 +196,7 @@ export const STRATEGY_CATALOGUE: readonly StrategySpec[] = [
         help: 'Bars used to estimate return stdev for sizing.',
       },
       RISK_PARAM,
+      ...SIZING_PARAMS,
     ],
   },
   {
@@ -221,6 +247,7 @@ export const STRATEGY_CATALOGUE: readonly StrategySpec[] = [
       },
       ...ATR_PARAMS,
       RISK_PARAM,
+      ...SIZING_PARAMS,
     ],
   },
   {
@@ -261,6 +288,7 @@ export const STRATEGY_CATALOGUE: readonly StrategySpec[] = [
       },
       ...ATR_PARAMS,
       RISK_PARAM,
+      ...SIZING_PARAMS,
     ],
   },
   {
@@ -308,6 +336,7 @@ export const STRATEGY_CATALOGUE: readonly StrategySpec[] = [
       },
       ...ATR_PARAMS,
       RISK_PARAM,
+      ...SIZING_PARAMS,
     ],
   },
   {
@@ -348,6 +377,7 @@ export const STRATEGY_CATALOGUE: readonly StrategySpec[] = [
       },
       ...ATR_PARAMS,
       RISK_PARAM,
+      ...SIZING_PARAMS,
     ],
   },
 ] as const;

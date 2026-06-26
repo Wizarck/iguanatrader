@@ -105,6 +105,35 @@ _RISK_PARAM: dict[str, object] = {
     ),
 }
 
+# Position-sizing mode shared across every strategy. "risk" (default) sizes by
+# risk_pct of equity; "cash" buys a fixed dollar amount (target_cash / price),
+# the way orders are often placed by hand at IB. Both floor to whole shares.
+_SIZING_PARAMS: list[dict[str, object]] = [
+    {
+        "name": "sizing_mode",
+        "label": "Position sizing mode",
+        "type": "optional-string",
+        "default": None,
+        "help": (
+            'How the share quantity is sized. Leave empty (or "risk") to size by '
+            'risk-per-trade (risk_pct of equity); set to "cash" to buy a fixed '
+            "dollar amount (target_cash ÷ price). Always floored to whole shares."
+        ),
+    },
+    {
+        "name": "target_cash",
+        "label": "Target cash per trade ($)",
+        "type": "optional-decimal",
+        "default": None,
+        "min": 0,
+        "step": 50,
+        "help": (
+            'Dollar amount to deploy per trade when sizing mode is "cash". '
+            "Ignored in risk mode. Floored to whole shares at the entry price."
+        ),
+    },
+]
+
 
 def _build_catalogue() -> list[StrategyDescriptor]:
     """Build the canonical catalogue. Idempotent + side-effect free."""
@@ -134,6 +163,7 @@ def _build_catalogue() -> list[StrategyDescriptor]:
                 ),
                 *[ParamSpec(**p) for p in _ATR_PARAMS],  # type: ignore[arg-type]
                 ParamSpec(**_RISK_PARAM),  # type: ignore[arg-type]
+                *[ParamSpec(**p) for p in _SIZING_PARAMS],  # type: ignore[arg-type]
             ],
         ),
         StrategyDescriptor(
@@ -176,6 +206,7 @@ def _build_catalogue() -> list[StrategyDescriptor]:
                     help="Bars used to estimate return stdev for sizing.",
                 ),
                 ParamSpec(**_RISK_PARAM),  # type: ignore[arg-type]
+                *[ParamSpec(**p) for p in _SIZING_PARAMS],  # type: ignore[arg-type]
             ],
         ),
         StrategyDescriptor(
@@ -242,6 +273,7 @@ def _build_catalogue() -> list[StrategyDescriptor]:
                 ),
                 *[ParamSpec(**p) for p in _ATR_PARAMS],  # type: ignore[arg-type]
                 ParamSpec(**_RISK_PARAM),  # type: ignore[arg-type]
+                *[ParamSpec(**p) for p in _SIZING_PARAMS],  # type: ignore[arg-type]
             ],
         ),
         StrategyDescriptor(
@@ -292,6 +324,7 @@ def _build_catalogue() -> list[StrategyDescriptor]:
                 ),
                 *[ParamSpec(**p) for p in _ATR_PARAMS],  # type: ignore[arg-type]
                 ParamSpec(**_RISK_PARAM),  # type: ignore[arg-type]
+                *[ParamSpec(**p) for p in _SIZING_PARAMS],  # type: ignore[arg-type]
             ],
         ),
         StrategyDescriptor(
@@ -346,6 +379,7 @@ def _build_catalogue() -> list[StrategyDescriptor]:
                 ),
                 *[ParamSpec(**p) for p in _ATR_PARAMS],  # type: ignore[arg-type]
                 ParamSpec(**_RISK_PARAM),  # type: ignore[arg-type]
+                *[ParamSpec(**p) for p in _SIZING_PARAMS],  # type: ignore[arg-type]
             ],
         ),
         StrategyDescriptor(
@@ -396,6 +430,7 @@ def _build_catalogue() -> list[StrategyDescriptor]:
                 ),
                 *[ParamSpec(**p) for p in _ATR_PARAMS],  # type: ignore[arg-type]
                 ParamSpec(**_RISK_PARAM),  # type: ignore[arg-type]
+                *[ParamSpec(**p) for p in _SIZING_PARAMS],  # type: ignore[arg-type]
             ],
         ),
     ]

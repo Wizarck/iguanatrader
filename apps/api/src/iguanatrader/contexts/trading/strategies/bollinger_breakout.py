@@ -39,6 +39,10 @@ from iguanatrader.contexts.trading.ports import (
 )
 from iguanatrader.contexts.trading.strategies._indicators import _compute_atr
 from iguanatrader.contexts.trading.strategies.base import Strategy
+from iguanatrader.contexts.trading.strategies.sizing import (
+    SIZING_MODE_RISK,
+    calculate_quantity,
+)
 from iguanatrader.shared.time import now as utc_now
 
 DEFAULT_PERIOD: int = 20
@@ -82,6 +86,8 @@ class BollingerBreakoutStrategy(Strategy):
         atr_mult = _to_decimal(params.get("atr_mult"), default=DEFAULT_ATR_MULT)
         risk_pct = _to_decimal(params.get("risk_pct"), default=DEFAULT_RISK_PCT)
         equity = _to_decimal(params.get("equity"), default=DEFAULT_EQUITY)
+        sizing_mode = str(params.get("sizing_mode", SIZING_MODE_RISK))
+        target_cash = _to_decimal(params.get("target_cash"), default=Decimal("0"))
 
         bars = history.bars
         # Need ``period`` closes for the current band, ``atr_period + 1``
@@ -126,8 +132,14 @@ class BollingerBreakoutStrategy(Strategy):
         risk_per_share = entry - stop
         if risk_per_share <= Decimal("0"):
             return None
-        risk_dollars = risk_pct * equity
-        quantity = (risk_dollars / risk_per_share).quantize(Decimal("0.0001"))
+        quantity = calculate_quantity(
+            sizing_mode=sizing_mode,
+            entry=entry,
+            stop=stop,
+            risk_pct=risk_pct,
+            equity=equity,
+            target_cash=target_cash,
+        )
         if quantity <= Decimal("0"):
             return None
 
@@ -159,6 +171,8 @@ class BollingerBreakoutStrategy(Strategy):
                 "atr_mult": str(atr_mult),
                 "risk_pct": str(risk_pct),
                 "equity": str(equity),
+                "sizing_mode": sizing_mode,
+                "target_cash": str(target_cash),
                 "entry": str(entry),
                 "stop": str(stop),
                 "computed_at": utc_now().isoformat(),

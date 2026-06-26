@@ -11,7 +11,7 @@ the end so the wrapper's ``bars[:-1]`` truncation keeps the intended
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from uuid import uuid4
 
 from iguanatrader.contexts.trading.ports import (
@@ -224,7 +224,7 @@ def test_macd_stop_below_entry() -> None:
 
 
 def test_macd_position_size_respects_risk_pct() -> None:
-    """quantity ≈ (risk_pct * equity) / (entry - stop), quantised to 4 dp."""
+    """quantity == floor((risk_pct * equity) / (entry - stop)) — whole shares."""
     strategy = MACDCrossStrategy()
     history = _bars_from_closes(_positive_cross_closes())
     proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
@@ -232,8 +232,47 @@ def test_macd_position_size_respects_risk_pct() -> None:
     entry = proposal.entry_price_indicative
     stop = proposal.stop_price
     risk_per_share = entry - stop
-    expected = (DEFAULT_RISK_PCT * DEFAULT_EQUITY / risk_per_share).quantize(Decimal("0.0001"))
+    expected = (DEFAULT_RISK_PCT * DEFAULT_EQUITY / risk_per_share).to_integral_value(
+        rounding=ROUND_DOWN
+    )
     assert proposal.quantity == expected
     # Sanity: stop sits ``atr_mult * atr`` below entry.
     atr = Decimal(proposal.reasoning["atr"])
     assert stop == entry - DEFAULT_ATR_MULT * atr
+
+
+def test_macd_quantity_is_whole_shares() -> None:
+    """Sizing floors to an integer share count — the fractional sizing bug is fixed."""
+    strategy = MACDCrossStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL", bars=_bars_from_closes(_positive_cross_closes()), config=_config()
+    )
+    assert proposal is not None
+    assert proposal.quantity >= Decimal("1")
+    assert proposal.quantity == proposal.quantity.to_integral_value()
+
+
+def test_macd_skips_when_risk_budget_below_one_share() -> None:
+    strategy = MACDCrossStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL",
+        bars=_bars_from_closes(_positive_cross_closes()),
+        config=_config(equity="1"),
+    )
+    assert proposal is None
+
+
+def test_macd_cash_sizing_buys_fixed_dollar_amount() -> None:
+    strategy = MACDCrossStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL",
+        bars=_bars_from_closes(_positive_cross_closes()),
+        config=_config(sizing_mode="cash", target_cash="1000"),
+    )
+    assert proposal is not None
+    entry = proposal.entry_price_indicative
+    expected = (Decimal("1000") / entry).to_integral_value(rounding=ROUND_DOWN)
+    assert proposal.quantity == expected
+    assert proposal.quantity == proposal.quantity.to_integral_value()
+    assert proposal.reasoning["sizing_mode"] == "cash"
+    assert proposal.reasoning["target_cash"] == "1000"
