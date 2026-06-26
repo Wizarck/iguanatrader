@@ -20,7 +20,8 @@ Default params (overridable via :class:`StrategyConfigSnapshot.params`):
 * ``squeeze_lookback = 6`` (how many recent bars must show compressed
   bandwidth when the squeeze filter is active).
 * ``atr_period = 14``.
-* ``atr_mult = 2.0``.
+* ``atr_mult = 2.0`` (protective stop distance, in ATRs).
+* ``target_mult = 3.0`` (take-profit distance, in ATRs).
 * ``risk_pct = 0.01`` (NFR-R6).
 * ``equity = 10000`` (default fallback when broker equity not yet
   available; production caller passes the real equity).
@@ -51,6 +52,7 @@ DEFAULT_SQUEEZE_THRESHOLD: Decimal | None = None
 DEFAULT_SQUEEZE_LOOKBACK: int = 6
 DEFAULT_ATR_PERIOD: int = 14
 DEFAULT_ATR_MULT: Decimal = Decimal("2.0")
+DEFAULT_TARGET_MULT: Decimal = Decimal("3.0")
 DEFAULT_RISK_PCT: Decimal = Decimal("0.01")
 DEFAULT_EQUITY: Decimal = Decimal("10000")
 
@@ -62,7 +64,7 @@ class BollingerBreakoutStrategy(Strategy):
         return "bollinger_breakout"
 
     def version(self) -> str:
-        return "0.1.0"
+        return "0.2.0"
 
     @property
     def MIN_BARS(self) -> int:  # type: ignore[override]
@@ -84,6 +86,7 @@ class BollingerBreakoutStrategy(Strategy):
         squeeze_lookback = int(params.get("squeeze_lookback", DEFAULT_SQUEEZE_LOOKBACK))
         atr_period = int(params.get("atr_period", DEFAULT_ATR_PERIOD))
         atr_mult = _to_decimal(params.get("atr_mult"), default=DEFAULT_ATR_MULT)
+        target_mult = _to_decimal(params.get("target_mult"), default=DEFAULT_TARGET_MULT)
         risk_pct = _to_decimal(params.get("risk_pct"), default=DEFAULT_RISK_PCT)
         equity = _to_decimal(params.get("equity"), default=DEFAULT_EQUITY)
         sizing_mode = str(params.get("sizing_mode", SIZING_MODE_RISK))
@@ -129,6 +132,7 @@ class BollingerBreakoutStrategy(Strategy):
         stop = entry - atr_mult * atr
         if stop >= entry:
             return None
+        target = entry + target_mult * atr
         risk_per_share = entry - stop
         if risk_per_share <= Decimal("0"):
             return None
@@ -156,6 +160,7 @@ class BollingerBreakoutStrategy(Strategy):
             quantity=quantity,
             entry_price_indicative=entry,
             stop_price=stop,
+            target_price=target,
             confidence_score=None,
             reasoning={
                 "strategy": "bollinger_breakout",
@@ -169,12 +174,14 @@ class BollingerBreakoutStrategy(Strategy):
                 "squeeze_filter_active": squeeze_threshold is not None,
                 "atr": str(atr),
                 "atr_mult": str(atr_mult),
+                "target_mult": str(target_mult),
                 "risk_pct": str(risk_pct),
                 "equity": str(equity),
                 "sizing_mode": sizing_mode,
                 "target_cash": str(target_cash),
                 "entry": str(entry),
                 "stop": str(stop),
+                "target": str(target),
                 "computed_at": utc_now().isoformat(),
             },
             mode=str(params.get("mode", "paper")),
@@ -270,5 +277,6 @@ __all__ = [
     "DEFAULT_RISK_PCT",
     "DEFAULT_SQUEEZE_LOOKBACK",
     "DEFAULT_SQUEEZE_THRESHOLD",
+    "DEFAULT_TARGET_MULT",
     "BollingerBreakoutStrategy",
 ]

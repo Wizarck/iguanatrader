@@ -19,7 +19,8 @@ Default params (overridable via :class:`StrategyConfigSnapshot.params`):
   require ``macd > 0`` at cross or ``"negative"`` to require
   ``macd < 0``).
 * ``atr_period = 14``.
-* ``atr_mult = 2.0``.
+* ``atr_mult = 2.0`` (protective stop distance, in ATRs).
+* ``target_mult = 3.0`` (take-profit distance, in ATRs).
 * ``risk_pct = 0.01`` (NFR-R6).
 * ``equity = 10000`` (default fallback when broker equity not yet
   available; production caller passes the real equity).
@@ -50,6 +51,7 @@ DEFAULT_SIGNAL: int = 9
 DEFAULT_BIAS_FILTER: str | None = None
 DEFAULT_ATR_PERIOD: int = 14
 DEFAULT_ATR_MULT: Decimal = Decimal("2.0")
+DEFAULT_TARGET_MULT: Decimal = Decimal("3.0")
 DEFAULT_RISK_PCT: Decimal = Decimal("0.01")
 DEFAULT_EQUITY: Decimal = Decimal("10000")
 
@@ -61,7 +63,7 @@ class MACDCrossStrategy(Strategy):
         return "macd_cross"
 
     def version(self) -> str:
-        return "0.1.0"
+        return "0.2.0"
 
     @property
     def MIN_BARS(self) -> int:  # type: ignore[override]
@@ -86,6 +88,7 @@ class MACDCrossStrategy(Strategy):
         bias_filter = _to_optional_str(params.get("bias_filter", DEFAULT_BIAS_FILTER))
         atr_period = int(params.get("atr_period", DEFAULT_ATR_PERIOD))
         atr_mult = _to_decimal(params.get("atr_mult"), default=DEFAULT_ATR_MULT)
+        target_mult = _to_decimal(params.get("target_mult"), default=DEFAULT_TARGET_MULT)
         risk_pct = _to_decimal(params.get("risk_pct"), default=DEFAULT_RISK_PCT)
         equity = _to_decimal(params.get("equity"), default=DEFAULT_EQUITY)
         sizing_mode = str(params.get("sizing_mode", SIZING_MODE_RISK))
@@ -133,6 +136,7 @@ class MACDCrossStrategy(Strategy):
         # invariant `stop_price > 0` and would crash downstream sizing.
         if stop <= Decimal("0"):
             return None
+        target = entry + target_mult * atr
         risk_per_share = entry - stop
         if risk_per_share <= Decimal("0"):
             return None
@@ -156,6 +160,7 @@ class MACDCrossStrategy(Strategy):
             quantity=quantity,
             entry_price_indicative=entry,
             stop_price=stop,
+            target_price=target,
             confidence_score=None,
             reasoning={
                 "strategy": "macd_cross",
@@ -169,12 +174,14 @@ class MACDCrossStrategy(Strategy):
                 "signal_now": str(signal_now),
                 "atr": str(atr),
                 "atr_mult": str(atr_mult),
+                "target_mult": str(target_mult),
                 "risk_pct": str(risk_pct),
                 "equity": str(equity),
                 "sizing_mode": sizing_mode,
                 "target_cash": str(target_cash),
                 "entry": str(entry),
                 "stop": str(stop),
+                "target": str(target),
                 "computed_at": utc_now().isoformat(),
             },
             mode=str(params.get("mode", "paper")),
@@ -284,5 +291,6 @@ __all__ = [
     "DEFAULT_RISK_PCT",
     "DEFAULT_SIGNAL",
     "DEFAULT_SLOW",
+    "DEFAULT_TARGET_MULT",
     "MACDCrossStrategy",
 ]

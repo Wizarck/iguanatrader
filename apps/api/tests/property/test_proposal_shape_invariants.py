@@ -14,6 +14,8 @@ For every strategy in :data:`STRATEGY_REGISTRY` and every random
 6. ``proposal.mode in {"paper", "live"}``.
 7. ``proposal.symbol == bars.symbol``.
 8. ``proposal.tenant_id == config.tenant_id``.
+9. **Bracket-complete (WS-C)**: ``target_price`` is set, ``> 0``, and on
+   the correct side (buy -> target > entry; sell -> target < entry).
 
 If a strategy returns None, the test confirms the call did not raise.
 
@@ -173,6 +175,26 @@ def test_proposal_shape_invariants_hold_for_every_strategy(
     assert (
         proposal.tenant_id == config.tenant_id
     ), f"{strategy_kind}: proposal.tenant_id != config.tenant_id"
+
+    # Invariant 9 - bracket-complete: every strategy emits a take-profit
+    # target on the correct side (WS-C). A native IBKR bracket needs both
+    # the protective stop AND the take-profit leg.
+    assert (
+        proposal.target_price is not None
+    ), f"{strategy_kind}: target_price is None (bracket take-profit leg missing)"
+    assert proposal.target_price > Decimal(
+        "0"
+    ), f"{strategy_kind}: target_price={proposal.target_price} is not > 0"
+    if proposal.side == "buy":
+        assert proposal.target_price > proposal.entry_price_indicative, (
+            f"{strategy_kind}: buy target_price={proposal.target_price} <= "
+            f"entry={proposal.entry_price_indicative} (long target must be above entry)"
+        )
+    else:  # sell
+        assert proposal.target_price < proposal.entry_price_indicative, (
+            f"{strategy_kind}: sell target_price={proposal.target_price} >= "
+            f"entry={proposal.entry_price_indicative} (short target must be below entry)"
+        )
 
 
 @pytest.mark.property

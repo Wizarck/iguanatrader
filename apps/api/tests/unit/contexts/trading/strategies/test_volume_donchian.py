@@ -24,6 +24,7 @@ from iguanatrader.contexts.trading.strategies.volume_donchian import (
     DEFAULT_ATR_MULT,
     DEFAULT_EQUITY,
     DEFAULT_RISK_PCT,
+    DEFAULT_TARGET_MULT,
     VolumeDonchianStrategy,
 )
 
@@ -188,6 +189,21 @@ def test_volume_donchian_stop_below_entry() -> None:
     proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
     assert proposal is not None
     assert proposal.stop_price < proposal.entry_price_indicative
+
+
+def test_volume_donchian_target_above_entry_atr_based() -> None:
+    """Bracket-complete (WS-C): target = entry + target_mult x ATR, above entry."""
+    strategy = VolumeDonchianStrategy()
+    history = _breakout_with_volume(volume_multiplier=Decimal("2.0"))
+    proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
+    assert proposal is not None
+    entry = proposal.entry_price_indicative
+    atr = Decimal(proposal.reasoning["atr"])
+    assert proposal.target_price is not None
+    assert proposal.target_price == entry + DEFAULT_TARGET_MULT * atr
+    assert proposal.stop_price < entry < proposal.target_price
+    assert proposal.reasoning["target"] == str(proposal.target_price)
+    assert proposal.reasoning["target_mult"] == str(DEFAULT_TARGET_MULT)
 
 
 def test_volume_donchian_position_size_respects_risk_pct() -> None:

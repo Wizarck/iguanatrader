@@ -94,6 +94,16 @@ const ATR_PARAMS: ParamSpec[] = [
     step: 0.1,
     help: 'Stop loss is placed at entry − atr_mult × ATR. 2.0 is a common middle ground; 1.0 is tight, 3.0 wide.',
   },
+  {
+    name: 'target_mult',
+    label: 'ATR target multiplier',
+    type: 'decimal',
+    default: 3.0,
+    min: 0.5,
+    max: 20,
+    step: 0.1,
+    help: 'Take-profit is placed at entry + target_mult × ATR (long). 3.0 with atr_mult 2.0 = a 1.5:1 reward:risk bracket.',
+  },
 ];
 
 const RISK_PARAM: ParamSpec = {
@@ -194,6 +204,16 @@ export const STRATEGY_CATALOGUE: readonly StrategySpec[] = [
         max: 100,
         step: 1,
         help: 'Bars used to estimate return stdev for sizing.',
+      },
+      {
+        name: 'target_rr',
+        label: 'Reward:risk target multiple',
+        type: 'decimal',
+        default: 1.5,
+        min: 0.5,
+        max: 10,
+        step: 0.1,
+        help: "Take-profit distance as a multiple of the stop distance (reward:risk). No ATR here, so the target is derived from the volatility-based stop. 1.5 matches the ATR strategies' default.",
       },
       RISK_PARAM,
       ...SIZING_PARAMS,
