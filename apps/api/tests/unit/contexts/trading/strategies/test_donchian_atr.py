@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from uuid import uuid4
 
 from iguanatrader.contexts.trading.ports import (
@@ -222,3 +222,64 @@ def test_donchian_name_and_version_constants() -> None:
     strategy = DonchianATRStrategy()
     assert strategy.name() == "donchian_atr"
     assert strategy.version().startswith("0.")
+
+
+def _cash_config(target_cash: str) -> StrategyConfigSnapshot:
+    return StrategyConfigSnapshot(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        strategy_kind="donchian_atr",
+        symbol="AAPL",
+        params={
+            "lookback": 20,
+            "atr_period": 14,
+            "atr_mult": "2.0",
+            "risk_pct": "0.01",
+            "sizing_mode": "cash",
+            "target_cash": target_cash,
+        },
+        enabled=True,
+        version=1,
+    )
+
+
+def test_donchian_cash_sizing_long_buys_fixed_dollar_amount() -> None:
+    """Cash mode on a LONG breakout: floor(target_cash / entry) whole shares,
+    protective stop preserved below entry."""
+    strategy = DonchianATRStrategy()
+    proposal = strategy.evaluate(symbol="AAPL", bars=_ramp_history(), config=_cash_config("1000"))
+    assert proposal is not None
+    assert proposal.side == "buy"
+    entry = proposal.entry_price_indicative
+    expected = (Decimal("1000") / entry).to_integral_value(rounding=ROUND_DOWN)
+    assert proposal.quantity == expected
+    assert proposal.quantity == proposal.quantity.to_integral_value()
+    assert proposal.stop_price < entry  # long protective stop below entry
+    assert proposal.reasoning["sizing_mode"] == "cash"
+    assert proposal.reasoning["target_cash"] == "1000"
+
+
+def test_donchian_cash_sizing_short_buys_fixed_dollar_amount() -> None:
+    """Cash mode on the SHORT path (donchian is the only live + bidirectional
+    strategy): floor(target_cash / entry) shares, side=='sell', protective stop
+    ABOVE entry and a positive target below entry."""
+    strategy = DonchianATRStrategy()
+    proposal = strategy.evaluate(symbol="AAPL", bars=_drop_history(), config=_cash_config("1000"))
+    assert proposal is not None
+    assert proposal.side == "sell"
+    entry = proposal.entry_price_indicative
+    expected = (Decimal("1000") / entry).to_integral_value(rounding=ROUND_DOWN)
+    assert proposal.quantity == expected
+    assert proposal.quantity == proposal.quantity.to_integral_value()
+    assert proposal.stop_price > entry  # short protective stop above entry
+    assert proposal.target_price is not None
+    assert Decimal("0") < proposal.target_price < entry
+    assert proposal.reasoning["sizing_mode"] == "cash"
+
+
+def test_donchian_skips_when_cash_budget_below_one_share() -> None:
+    """A cash budget that can't afford one whole share floors to 0 and trips the
+    same ``<= 0`` skip guard the risk path uses → no proposal."""
+    strategy = DonchianATRStrategy()
+    proposal = strategy.evaluate(symbol="AAPL", bars=_ramp_history(), config=_cash_config("1"))
+    assert proposal is None

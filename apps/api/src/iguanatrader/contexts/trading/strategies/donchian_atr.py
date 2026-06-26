@@ -26,7 +26,7 @@ Default params (overridable via :class:`StrategyConfigSnapshot.params`):
 
 from __future__ import annotations
 
-from decimal import ROUND_DOWN, Decimal
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -37,6 +37,10 @@ from iguanatrader.contexts.trading.ports import (
 )
 from iguanatrader.contexts.trading.strategies._indicators import _compute_atr
 from iguanatrader.contexts.trading.strategies.base import Strategy
+from iguanatrader.contexts.trading.strategies.sizing import (
+    SIZING_MODE_RISK,
+    calculate_quantity,
+)
 from iguanatrader.shared.time import now as utc_now
 
 DEFAULT_LOOKBACK: int = 20
@@ -75,6 +79,8 @@ class DonchianATRStrategy(Strategy):
         target_mult = _to_decimal(params.get("target_mult"), default=DEFAULT_TARGET_MULT)
         risk_pct = _to_decimal(params.get("risk_pct"), default=DEFAULT_RISK_PCT)
         equity = _to_decimal(params.get("equity"), default=DEFAULT_EQUITY)
+        sizing_mode = str(params.get("sizing_mode", SIZING_MODE_RISK))
+        target_cash = _to_decimal(params.get("target_cash"), default=Decimal("0"))
 
         bars = history.bars
         if len(bars) < lookback + atr_period:
@@ -120,15 +126,18 @@ class DonchianATRStrategy(Strategy):
         risk_per_share = abs(entry - stop)
         if risk_per_share <= Decimal("0") or target <= Decimal("0"):
             return None
-        risk_dollars = risk_pct * equity
-        # Whole-share sizing: IBKR rejects bracket/STP orders with fractional
-        # quantities (and the paper account isn't fractional-enabled), so floor
-        # to an integer share count. Flooring is the risk-conservative direction
-        # (actual risk <= risk_dollars). When 1% of equity can't afford even a
-        # single share at this stop distance the signal is skipped by the <=0
-        # guard below rather than forced up to 1 share (which would breach the
-        # risk_pct envelope).
-        quantity = (risk_dollars / risk_per_share).to_integral_value(rounding=ROUND_DOWN)
+        # Whole-share sizing via the shared helper (risk or cash mode). IBKR
+        # rejects fractional bracket/STP quantities, so the helper floors DOWN to
+        # an integer; sub-1-share budgets are skipped by the <=0 guard below
+        # rather than forced up to 1 share (which would breach the risk envelope).
+        quantity = calculate_quantity(
+            sizing_mode=sizing_mode,
+            entry=entry,
+            stop=stop,
+            risk_pct=risk_pct,
+            equity=equity,
+            target_cash=target_cash,
+        )
         if quantity <= Decimal("0"):
             return None
 
@@ -155,6 +164,8 @@ class DonchianATRStrategy(Strategy):
                 "target_mult": str(target_mult),
                 "risk_pct": str(risk_pct),
                 "equity": str(equity),
+                "sizing_mode": sizing_mode,
+                "target_cash": str(target_cash),
                 "entry": str(entry),
                 "stop": str(stop),
                 "target": str(target),

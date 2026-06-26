@@ -10,7 +10,7 @@ bar used by the strategy is therefore ``bars[-2]`` of the test input.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from uuid import uuid4
 
 from iguanatrader.contexts.trading.ports import (
@@ -221,7 +221,7 @@ def test_bollinger_stop_below_entry() -> None:
 
 
 def test_bollinger_position_size_respects_risk_pct() -> None:
-    """quantity ≈ (risk_pct * equity) / (entry - stop), quantised to 4 dp."""
+    """quantity == floor((risk_pct * equity) / (entry - stop)) — whole shares."""
     strategy = BollingerBreakoutStrategy()
     history = _bars_from_closes(_breakout_closes())
     proposal = strategy.evaluate(symbol="AAPL", bars=history, config=_config())
@@ -229,11 +229,54 @@ def test_bollinger_position_size_respects_risk_pct() -> None:
     entry = proposal.entry_price_indicative
     stop = proposal.stop_price
     risk_per_share = entry - stop
-    expected = (DEFAULT_RISK_PCT * DEFAULT_EQUITY / risk_per_share).quantize(Decimal("0.0001"))
+    expected = (DEFAULT_RISK_PCT * DEFAULT_EQUITY / risk_per_share).to_integral_value(
+        rounding=ROUND_DOWN
+    )
     assert proposal.quantity == expected
     # Sanity: stop = entry - atr_mult * atr.
     atr = Decimal(proposal.reasoning["atr"])
     assert stop == entry - DEFAULT_ATR_MULT * atr
+
+
+def test_bollinger_quantity_is_whole_shares() -> None:
+    """Sizing floors to an integer share count (IBKR rejects fractional bracket
+    quantities) — the v1.5 fractional ``.quantize(0.0001)`` bug is fixed."""
+    strategy = BollingerBreakoutStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL", bars=_bars_from_closes(_breakout_closes()), config=_config()
+    )
+    assert proposal is not None
+    assert proposal.quantity >= Decimal("1")
+    assert proposal.quantity == proposal.quantity.to_integral_value()
+
+
+def test_bollinger_skips_when_risk_budget_below_one_share() -> None:
+    """``risk_pct * equity`` that can't afford one whole share floors to 0 and
+    trips the ``<= 0`` guard → no proposal (matches donchian behaviour)."""
+    strategy = BollingerBreakoutStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL",
+        bars=_bars_from_closes(_breakout_closes()),
+        config=_config(equity="1"),
+    )
+    assert proposal is None
+
+
+def test_bollinger_cash_sizing_buys_fixed_dollar_amount() -> None:
+    """``sizing_mode='cash'`` sizes ``floor(target_cash / entry)`` whole shares."""
+    strategy = BollingerBreakoutStrategy()
+    proposal = strategy.evaluate(
+        symbol="AAPL",
+        bars=_bars_from_closes(_breakout_closes()),
+        config=_config(sizing_mode="cash", target_cash="1000"),
+    )
+    assert proposal is not None
+    entry = proposal.entry_price_indicative
+    expected = (Decimal("1000") / entry).to_integral_value(rounding=ROUND_DOWN)
+    assert proposal.quantity == expected
+    assert proposal.quantity == proposal.quantity.to_integral_value()
+    assert proposal.reasoning["sizing_mode"] == "cash"
+    assert proposal.reasoning["target_cash"] == "1000"
 
 
 def test_bollinger_no_signal_when_history_too_short() -> None:

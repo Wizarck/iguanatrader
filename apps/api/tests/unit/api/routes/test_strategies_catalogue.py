@@ -44,6 +44,14 @@ def test_every_strategy_includes_risk_pct() -> None:
         assert "risk_pct" in names, f"{d.kind!r} missing risk_pct"
 
 
+def test_every_strategy_includes_sizing_params() -> None:
+    """WS-A added the risk/cash sizing controls; every strategy MUST expose both
+    `sizing_mode` and `target_cash` so the form offers cash sizing consistently."""
+    for d in _build_catalogue():
+        names = {p.name for p in d.params}
+        assert {"sizing_mode", "target_cash"} <= names, f"{d.kind!r} missing sizing params"
+
+
 def test_atr_strategies_include_atr_block() -> None:
     """Every strategy that uses an ATR stop must carry both
     `atr_period` and `atr_mult` so the form's grouped renderer can

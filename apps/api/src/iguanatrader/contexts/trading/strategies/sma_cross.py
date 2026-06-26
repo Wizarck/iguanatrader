@@ -20,6 +20,10 @@ from iguanatrader.contexts.trading.ports import (
     StrategyConfigSnapshot,
 )
 from iguanatrader.contexts.trading.strategies.base import Strategy
+from iguanatrader.contexts.trading.strategies.sizing import (
+    SIZING_MODE_RISK,
+    calculate_quantity,
+)
 from iguanatrader.shared.time import now as utc_now
 
 DEFAULT_FAST: int = 50
@@ -54,6 +58,8 @@ class SMACrossStrategy(Strategy):
         vol_window = int(params.get("vol_window", DEFAULT_VOL_WINDOW))
         risk_pct = _to_decimal(params.get("risk_pct"), default=DEFAULT_RISK_PCT)
         equity = _to_decimal(params.get("equity"), default=DEFAULT_EQUITY)
+        sizing_mode = str(params.get("sizing_mode", SIZING_MODE_RISK))
+        target_cash = _to_decimal(params.get("target_cash"), default=Decimal("0"))
 
         bars = history.bars
         if len(bars) < slow + 1:
@@ -93,7 +99,14 @@ class SMACrossStrategy(Strategy):
         risk_per_share = entry - stop
         if risk_per_share <= Decimal("0"):
             return None
-        quantity = ((risk_pct * equity) / risk_per_share).quantize(Decimal("0.0001"))
+        quantity = calculate_quantity(
+            sizing_mode=sizing_mode,
+            entry=entry,
+            stop=stop,
+            risk_pct=risk_pct,
+            equity=equity,
+            target_cash=target_cash,
+        )
         if quantity <= Decimal("0"):
             return None
 
@@ -114,6 +127,8 @@ class SMACrossStrategy(Strategy):
                 "sma_fast_now": str(sma_fast_now),
                 "sma_slow_now": str(sma_slow_now),
                 "vol": str(vol),
+                "sizing_mode": sizing_mode,
+                "target_cash": str(target_cash),
                 "entry": str(entry),
                 "stop": str(stop),
                 "computed_at": utc_now().isoformat(),

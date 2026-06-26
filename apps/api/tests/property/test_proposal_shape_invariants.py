@@ -124,6 +124,14 @@ def test_proposal_shape_invariants_hold_for_every_strategy(
         "0"
     ), f"{strategy_kind}: proposal.quantity={proposal.quantity} is not > 0"
 
+    # Invariant 1b - WHOLE shares. Every strategy sizes through the shared
+    # helper (WS-A), which floors to an integer; IBKR rejects fractional
+    # bracket/STP quantities, so a fractional size here is a real bug.
+    assert proposal.quantity == proposal.quantity.to_integral_value(), (
+        f"{strategy_kind}: proposal.quantity={proposal.quantity} is not a whole "
+        f"number of shares"
+    )
+
     # Invariant 2 - side is one of the canonical literals.
     assert (
         proposal.side in _ALLOWED_SIDES
