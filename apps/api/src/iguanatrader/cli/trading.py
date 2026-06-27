@@ -485,6 +485,17 @@ async def _run_daemon(
                 f"got {dedup_window_raw!r}"
             ) from exc
 
+        # WS-4: optional ephemeral live-gateway coordinator. Returns None unless
+        # IGUANATRADER_EPHEMERAL_GATEWAY_ENABLED + the eligia-core sidecar webhook
+        # creds are set, so paper + unconfigured daemons are unchanged.
+        from iguanatrader.contexts.trading.brokers.ephemeral_gateway import (
+            build_ephemeral_gateway_coordinator_from_env,
+        )
+
+        live_gateway = build_ephemeral_gateway_coordinator_from_env()
+        if live_gateway is not None:
+            log.info("trading.daemon.ephemeral_live_gateway.enabled")
+
         trading_service = TradingService(
             bus=bus,
             broker=broker,
@@ -492,6 +503,7 @@ async def _run_daemon(
             order_timeout_secs=order_timeout_secs,
             kill_switch_reader=_kill_switch_reader,
             propose_dedup_window_secs=propose_dedup_window_secs,
+            live_gateway=live_gateway,
         )
         trading_service.register_subscriptions()
 
