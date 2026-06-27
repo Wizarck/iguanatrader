@@ -54,6 +54,7 @@ from iguanatrader.contexts.trading.ports import (
     FillEvent,
     NewOrder,
     Position,
+    WorkingOrder,
     derive_client_order_id,
 )
 from iguanatrader.shared.backoff import backoff_seconds
@@ -77,6 +78,14 @@ MAX_RECONNECT_ATTEMPTS: int = 5
 #: Reconciliation window cap — IBKR's reqExecutions does not surface
 #: history beyond ~7 days reliably.
 RECONCILIATION_WINDOW_DAYS: int = 7
+
+#: IBKR order statuses that are NOT live/working — :meth:`list_working_orders`
+#: drops these so the position-review read model only sees orders actually
+#: resting at the broker. Everything else ("PreSubmitted", "Submitted",
+#: "PendingSubmit", "ApiPending", "PendingCancel", …) is treated as working.
+_TERMINAL_ORDER_STATUSES: frozenset[str] = frozenset(
+    {"Filled", "Cancelled", "ApiCancelled", "Inactive"}
+)
 
 #: Auth-failure marker — :meth:`_connect_client` raises
 #: :class:`BrokerAuthError` when the TWS handshake fails on credentials.
@@ -489,6 +498,39 @@ class IBKRAdapter(HeartbeatMixin):
             snapshot_kind="event",
             captured_at=utc_now(),
         )
+
+    async def list_working_orders(self) -> list[WorkingOrder]:
+        """Return every order currently resting/working at the broker.
+
+        Slice ``position-review-broker-visibility``: read-only translation
+        of the IBKR open-order book into domain :class:`WorkingOrder`s,
+        surfacing the stop trigger (``auxPrice``) as
+        :attr:`WorkingOrder.stop_price` so the position-review read model
+        can see the protective stop level that ``limit_price`` (``lmtPrice``)
+        does not carry for a plain stop. Filled / cancelled rows the broker
+        may still echo are dropped — only live working states are returned.
+        """
+        if self._client is None:
+            raise IntegrationError(detail="IBKRAdapter.list_working_orders: client not connected")
+        raw = await self._client.req_all_open_orders()
+        out: list[WorkingOrder] = []
+        for o in raw:
+            if o.status in _TERMINAL_ORDER_STATUSES:
+                continue
+            out.append(
+                WorkingOrder(
+                    tenant_id=self._tenant_id_or_zero(),
+                    symbol=o.symbol,
+                    action=o.action,
+                    quantity=o.total_quantity,
+                    order_type=o.order_type,
+                    limit_price=o.limit_price,
+                    stop_price=o.aux_price,
+                    order_ref=o.order_ref,
+                    status=o.status,
+                )
+            )
+        return out
 
     # ------------------------------------------------------------------
     # BrokerPort: reconcile_fills (post-disconnect catch-up)

@@ -41,6 +41,7 @@ from iguanatrader.contexts.trading.ports import (
     EquitySnapshotValue,
     NewOrder,
     Position,
+    WorkingOrder,
 )
 from iguanatrader.contexts.trading.service import TradingService
 from iguanatrader.persistence import Tenant
@@ -72,6 +73,9 @@ class _HangingBroker(BrokerPort):
         raise NotImplementedError
 
     async def list_positions(self) -> list[Position]:  # pragma: no cover
+        return []
+
+    async def list_working_orders(self) -> list[WorkingOrder]:  # pragma: no cover
         return []
 
     async def get_account_equity(self) -> EquitySnapshotValue:

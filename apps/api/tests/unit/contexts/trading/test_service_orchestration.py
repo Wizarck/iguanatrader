@@ -29,6 +29,7 @@ from iguanatrader.contexts.trading.ports import (
     Position,
     Proposal,
     StrategyConfigSnapshot,
+    WorkingOrder,
 )
 from iguanatrader.contexts.trading.service import (
     KillSwitchActiveError,
@@ -81,6 +82,9 @@ class _FakeBroker:
         raise NotImplementedError
 
     async def list_positions(self) -> list[Position]:
+        return []
+
+    async def list_working_orders(self) -> list[WorkingOrder]:
         return []
 
     async def get_account_equity(self) -> EquitySnapshotValue:
