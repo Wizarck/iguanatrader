@@ -29,6 +29,17 @@ describe('formatMoney', () => {
   it('returns "—" for an unparseable value', () => {
     expect(formatMoney('not-a-number', 'USD')).toBe('—');
   });
+
+  it('aliases IBKR\'s "BASE" sentinel to USD instead of crashing', () => {
+    // Regression: equity_snapshots.currency === "BASE" (IBKR consolidated
+    // base-currency row) 500'd the whole /portfolio page via a RangeError.
+    expect(formatMoney('1234.5', 'BASE')).toBe('$1,234.50');
+  });
+
+  it('falls back to a plain number for a malformed currency code (no throw)', () => {
+    // Not a 3-letter code → Intl.NumberFormat throws RangeError → fallback.
+    expect(formatMoney('1234.5', 'US')).toBe('1,234.50');
+  });
 });
 
 describe('formatPercent', () => {
