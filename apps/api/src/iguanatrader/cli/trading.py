@@ -14,8 +14,11 @@ Heavy imports kept lazy per gotcha #29 (``--help`` performance).
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 import os
 import signal
+import time
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import typer
@@ -339,6 +342,12 @@ async def _run_daemon(
             # Windows asyncio loop doesn't support add_signal_handler — fall
             # back to signal.signal which works on the main thread.
             signal.signal(sig, _request_shutdown)
+
+    # Liveness heartbeat for the container healthcheck — started before the
+    # scheduler-only branch so BOTH daemon flavours stamp it. Stops when
+    # shutdown_event is set (no explicit cancel needed).
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(mode, shutdown_event))
+    log.info("trading.daemon.heartbeat_started", path=_heartbeat_path(mode))
 
     # Slice ``trading-daemon-scheduler-only-mode``: when the daemon
     # runs on infrastructure that does NOT have an IB Gateway / TWS
@@ -1045,6 +1054,7 @@ async def _run_daemon(
                 log.warning("trading.daemon.telegram_poller.shutdown_failed", error=str(exc))
         if telegram_poller_task is not None:
             telegram_poller_task.cancel()
+        heartbeat_task.cancel()
         try:
             await scheduler.shutdown()
         except Exception as exc:
@@ -1068,6 +1078,38 @@ async def _run_daemon(
 
     await engine.dispose()
     log.info("trading.daemon.shutdown.complete")
+
+
+def _heartbeat_path(mode: str) -> str:
+    """Where the daemon stamps its liveness for the container healthcheck."""
+    return os.environ.get("IGUANATRADER_DAEMON_HEARTBEAT_PATH") or f"/data/daemon_heartbeat_{mode}"
+
+
+async def _heartbeat_loop(
+    mode: str, shutdown_event: asyncio.Event, *, interval: float = 15.0
+) -> None:
+    """Stamp a fresh epoch into the heartbeat file every ``interval`` seconds.
+
+    The container healthcheck reads this file's age instead of curling a port
+    the daemon does NOT serve (the shared image's Dockerfile HEALTHCHECK is for
+    the API container — on a daemon it always failed → permanent false
+    "unhealthy"). Because this loop runs on the daemon's own event loop, a real
+    hang (the recurring "daemon wedged after the nightly IB restart") stops the
+    stamps → the file goes stale → the healthcheck fails → ``restart:
+    unless-stopped`` recovers it automatically. A flapping IBKR connection does
+    NOT stop the stamps, so transient broker errors no longer read as a daemon
+    outage.
+    """
+    path = _heartbeat_path(mode)
+    while not shutdown_event.is_set():
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(str(int(time.time())))
+        except OSError as exc:  # never let a disk hiccup kill the daemon
+            logging.getLogger(__name__).warning("trading.daemon.heartbeat_write_failed: %s", exc)
+        # Sleep up to ``interval``, but wake immediately on shutdown.
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
 
 
 async def _run_scheduler_only_daemon(
