@@ -158,12 +158,16 @@ class ApprovalRequestRow:
 
     id: UUID
     tenant_id: UUID
-    proposal_id: UUID
+    proposal_id: UUID | None
     delivered_to_channels: list[str]
     timeout_seconds: int
     expires_at: datetime
     created_at: datetime
     delivery_failures: list[dict[str, Any]] | None = None
+    # WS-5 PR-B: 'entry' (open a position) or 'exit' (close trade_id). The
+    # granted bridge is fail-closed on action_type.
+    action_type: str = "entry"
+    trade_id: UUID | None = None
 
 
 @dataclass

@@ -195,7 +195,8 @@ class PendingApprovalItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: UUID
-    proposal_id: UUID
+    # NULL for exit-approval rows (WS-5 PR-B), which carry ``trade_id``.
+    proposal_id: UUID | None = None
     symbol: str | None
     side: str | None
     quantity: str | None
@@ -455,7 +456,12 @@ async def list_pending_approvals(
 
     items: list[PendingApprovalItem] = []
     for r in rows:
-        proposal = await db.get(TradeProposal, r.proposal_id)
+        # Exit-approval rows (WS-5 PR-B) have no proposal to enrich from.
+        proposal = (
+            await db.get(TradeProposal, r.proposal_id)
+            if getattr(r, "proposal_id", None) is not None
+            else None
+        )
         items.append(
             PendingApprovalItem(
                 request_id=r.id,

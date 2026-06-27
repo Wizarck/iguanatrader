@@ -117,6 +117,8 @@ async def test_inbound_handler_creates_request_row_with_env_defaults(
         proposal_id=proposal_id,
         delivered_to_channels=["telegram"],
         timeout_seconds=600,
+        action_type="entry",
+        trade_id=None,
     )
 
 
@@ -139,6 +141,8 @@ async def test_inbound_handler_uses_default_channels_when_env_unset(
         proposal_id=proposal_id,
         delivered_to_channels=["telegram", "dashboard"],
         timeout_seconds=300,
+        action_type="entry",
+        trade_id=None,
     )
 
 

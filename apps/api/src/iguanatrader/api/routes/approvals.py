@@ -69,6 +69,8 @@ async def list_pending(
             expires_at=r.expires_at,
             created_at=r.created_at,
             delivery_failures=r.delivery_failures,
+            action_type=getattr(r, "action_type", "entry"),
+            trade_id=getattr(r, "trade_id", None),
         )
         for r in rows
     ]

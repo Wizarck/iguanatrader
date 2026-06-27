@@ -86,15 +86,21 @@ class ApprovalRepository(BaseRepository):
     async def create_request(
         self,
         *,
-        proposal_id: UUID,
+        proposal_id: UUID | None = None,
         delivered_to_channels: list[str],
         timeout_seconds: int,
+        action_type: str = "entry",
+        trade_id: UUID | None = None,
     ) -> ApprovalRequestRow:
         """INSERT a new :class:`ApprovalRequest` row.
 
         The slice-3 tenant listener stamps ``tenant_id`` from
         ``tenant_id_var`` automatically; callers MUST run inside a
         ``with_tenant_context(...)`` (or equivalent request scope).
+
+        WS-5 PR-B: ``action_type='exit'`` rows carry ``trade_id`` (the open
+        trade to close) and leave ``proposal_id`` NULL; entry rows are the
+        existing path (``proposal_id`` set, ``trade_id`` NULL).
         """
         tenant_id = tenant_id_var.get()
         if tenant_id is None:
@@ -115,6 +121,8 @@ class ApprovalRepository(BaseRepository):
             timeout_seconds=timeout_seconds,
             expires_at=expires_at,
             created_at=created_at,
+            action_type=action_type,
+            trade_id=trade_id,
         )
         self.session.add(instance)
         await self.session.flush()
@@ -126,6 +134,8 @@ class ApprovalRepository(BaseRepository):
             timeout_seconds=timeout_seconds,
             expires_at=expires_at,
             created_at=created_at,
+            action_type=action_type,
+            trade_id=trade_id,
         )
 
     async def get_request(self, request_id: UUID) -> ApprovalRequestRow | None:
@@ -333,6 +343,8 @@ class ApprovalRepository(BaseRepository):
             expires_at=instance.expires_at,
             created_at=instance.created_at,
             delivery_failures=instance.delivery_failures,
+            action_type=instance.action_type,
+            trade_id=instance.trade_id,
         )
 
     @staticmethod

@@ -77,6 +77,11 @@ class TelegramChannel(ChannelPort):
             f"Aprobar propuesta {request.proposal_id}? "
             f"/approve {request.id}  ·  expira {request.expires_at.isoformat()}"
         )
+        # Exit-approval rows (WS-5 PR-B) carry no proposal_id; deliver the terse
+        # body (with the /approve link) — the rich exit card is rendered by the
+        # dispatcher fan-out path.
+        if request.proposal_id is None:
+            return terse
         try:
             from iguanatrader.contexts.approval.channels.proposal_card import (
                 render_proposal_card,

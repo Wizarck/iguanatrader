@@ -25,12 +25,16 @@ class ApprovalRequest(BaseModel):
 
     id: UUID
     tenant_id: UUID
-    proposal_id: UUID
+    # NULL for exit-approval rows (WS-5 PR-B) — those carry ``trade_id``.
+    proposal_id: UUID | None = None
     delivered_to_channels: list[str]
     timeout_seconds: int = Field(gt=0)
     expires_at: datetime
     created_at: datetime
     delivery_failures: list[dict[str, Any]] | None = None
+    # WS-5 PR-B: 'entry' (open a position) or 'exit' (close ``trade_id``).
+    action_type: str = "entry"
+    trade_id: UUID | None = None
 
 
 class ApprovalDecision(BaseModel):
