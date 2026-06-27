@@ -43,6 +43,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Default research methodology for the daemon's per-symbol brief refresh.
+#: Matches the REST route default (``_DEFAULT_METHODOLOGY`` in
+#: ``api/routes/research.py``); the brief feeds the LLM decision gate, not a
+#: per-strategy choice, so a single house methodology is correct here.
+_DEFAULT_BRIEF_METHODOLOGY = "three_pillar"
+
 
 RoutineName = Literal["premarket", "midday", "postmarket", "weekly_review"]
 
@@ -268,6 +274,7 @@ class OrchestrationService:
         equity_snapshot_sweep_service: Any | None = None,
         stop_hit_sweep_service: Any | None = None,
         approval_service: Any | None = None,
+        brief_refresh_service: Any | None = None,
         daemon_mode: str | None = None,
         daemon_tenant_id: Any | None = None,
         trading_mode_repo: Any | None = None,
@@ -660,6 +667,47 @@ class OrchestrationService:
                 cron_kwargs={"minute": "*"},
             )
             scheduler.add_job(approval_timeout_spec)
+
+        # Slice ``brief-refresh-daemon-cron``: refresh a research brief per
+        # watchlist symbol once a day pre-market (07:00 UTC, before the 08:00
+        # propose tick), so the LLM decision gate reads the latest fundamental
+        # context for that stock. BriefService was previously reachable only
+        # from the REST API; the daemon never refreshed briefs. A newly-added
+        # symbol is picked up on the next daily tick. Per-symbol fail-soft so
+        # one bad symbol never aborts the batch; each tick on its own
+        # committed per-tick session via sweep_unit_of_work.
+        if brief_refresh_service is not None:
+            brief_svc: Any = brief_refresh_service
+
+            async def _refresh_research_briefs() -> None:
+                refreshed = 0
+                for symbol in watchlist_symbols:
+                    try:
+                        await brief_svc.refresh(
+                            symbol=symbol, methodology=_DEFAULT_BRIEF_METHODOLOGY
+                        )
+                        refreshed += 1
+                    except Exception as exc:
+                        logger.warning(
+                            "orchestration.brief_refresh.symbol_failed",
+                            extra={
+                                "symbol": symbol,
+                                "error": str(exc),
+                                "type": type(exc).__name__,
+                            },
+                        )
+                        continue
+                logger.info(
+                    "orchestration.brief_refresh.complete",
+                    extra={"refreshed": refreshed, "symbols": len(watchlist_symbols)},
+                )
+
+            brief_spec = JobSpec(
+                name="research_briefs_refresh",
+                fn=_wrap_in_uow(_refresh_research_briefs, sweep_unit_of_work),
+                cron_kwargs={"hour": "7", "minute": "0", "day_of_week": "mon-fri"},
+            )
+            scheduler.add_job(brief_spec)
 
         # Slice ``dual-daemon-mode-toggle-and-reconcile``: 9th job writes
         # a heartbeat row every 10 seconds so ``GET /api/v1/status`` can
