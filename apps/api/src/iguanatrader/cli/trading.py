@@ -498,6 +498,22 @@ async def _run_daemon(
         )
         approval_service.register_subscriptions(bus)
 
+        # Slice ``brief-refresh-daemon-cron``: optional per-symbol research
+        # brief refresh that feeds the LLM decision gate the latest
+        # fundamental context. OFF by default
+        # (IGUANATRADER_BRIEF_REFRESH_ENABLED) — enabling it spends an OpenBB
+        # fetch + one LLM synthesis per watchlist symbol once a day pre-market.
+        # Passing ``bus`` makes each synthesis publish ResearchBriefSynthesized
+        # so the subscribed HindsightRetainHandler retains the fresh thesis.
+        brief_refresh_service: Any | None = None
+        if _env_truthy("IGUANATRADER_BRIEF_REFRESH_ENABLED"):
+            from iguanatrader.contexts.research.factory import build_brief_service
+            from iguanatrader.contexts.research.repository import ResearchRepository
+
+            brief_refresh_service = build_brief_service(
+                ResearchRepository(), hindsight=hindsight, bus=bus
+            )
+
         # Slice ``mcp-hitl-approvals`` §6 — push execution + close-out
         # updates to the operator's authorised senders (OrderFilled +
         # TradeClosed). Best-effort; only wired when Hermes is configured
@@ -676,6 +692,7 @@ async def _run_daemon(
             stop_hit_sweep_service=stop_hit_sweep_service,
             trailing_stop_sweep_service=trailing_stop_sweep_service,
             approval_service=approval_service,
+            brief_refresh_service=brief_refresh_service,
             daemon_mode=mode,
             daemon_tenant_id=tenant_id,
             trading_mode_repo=trading_mode_repo,

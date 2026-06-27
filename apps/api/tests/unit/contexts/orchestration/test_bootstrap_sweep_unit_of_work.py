@@ -69,6 +69,22 @@ class _RecordingApproval:
         return []
 
 
+class _RecordingBrief:
+    """Fake brief-refresh service: records each ``refresh(symbol=, methodology=)``
+    call so the test can assert the cron iterates the full watchlist with the
+    house methodology. ``raise_for`` lets a test prove per-symbol fail-soft (one
+    bad symbol never aborts the batch)."""
+
+    def __init__(self, raise_for: set[str] | None = None) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self._raise_for = raise_for or set()
+
+    async def refresh(self, *, symbol: str, methodology: str) -> None:
+        self.calls.append((symbol, methodology))
+        if symbol in self._raise_for:
+            raise RuntimeError(f"boom:{symbol}")
+
+
 def _make_sweeps() -> (
     tuple[_RecordingSweep, _RecordingSweep, _RecordingSweep, _RecordingModeRepo, _RecordingApproval]
 ):
@@ -107,16 +123,19 @@ async def _bootstrap(
     mode_repo: Any,
     approval: Any,
     sweep_uow: Any,
+    brief: Any = None,
+    watchlist: list[str] | None = None,
 ) -> None:
     svc = OrchestrationService(repository=object())  # type: ignore[arg-type]
     await svc.bootstrap_routines(
         scheduler=scheduler,
         trading_service=object(),
-        watchlist_symbols=["AAPL"],
+        watchlist_symbols=watchlist if watchlist is not None else ["AAPL"],
         trailing_stop_sweep_service=trailing,
         stop_hit_sweep_service=stop_hit,
         equity_snapshot_sweep_service=equity,
         approval_service=approval,
+        brief_refresh_service=brief,
         # daemon_* params: required to wire the heartbeat job. No lifecycle
         # service → the poll branch is skipped.
         daemon_mode="paper",
@@ -160,6 +179,72 @@ async def test_each_sweep_tick_runs_through_unit_of_work() -> None:
     assert equity.swept == 1
     assert approval.swept == 1
     assert mode_repo.heartbeats == 1
+
+
+@pytest.mark.asyncio
+async def test_brief_refresh_cron_registered_and_iterates_watchlist() -> None:
+    """``brief-refresh-daemon-cron``: when a ``brief_refresh_service`` is wired,
+    bootstrap registers a ``research_briefs_refresh`` job whose tick runs through
+    the per-tick ``sweep_unit_of_work`` and refreshes EVERY watchlist symbol with
+    the house methodology — one bad symbol never aborts the batch (fail-soft)."""
+    scheduler = _FakeScheduler()
+    trailing, stop_hit, equity, mode_repo, approval = _make_sweeps()
+    brief = _RecordingBrief(raise_for={"MSFT"})
+    calls: list[str] = []
+
+    async def uow(inner: Any) -> None:
+        calls.append("uow")
+        await inner()
+
+    await _bootstrap(
+        scheduler,
+        trailing=trailing,
+        stop_hit=stop_hit,
+        equity=equity,
+        mode_repo=mode_repo,
+        approval=approval,
+        sweep_uow=uow,
+        brief=brief,
+        watchlist=["AAPL", "MSFT", "GOOGL"],
+    )
+
+    brief_jobs = [j for j in scheduler.jobs if j.name == "research_briefs_refresh"]
+    assert len(brief_jobs) == 1
+    job = brief_jobs[0]
+    # Daily pre-market (07:00 UTC), weekdays only — before the 08:00 propose tick.
+    assert job.cron_kwargs == {"hour": "7", "minute": "0", "day_of_week": "mon-fri"}
+
+    await job.fn()
+
+    # Ran through the per-tick unit-of-work wrapper exactly once.
+    assert calls == ["uow"]
+    # Every symbol attempted with the house methodology, even past the raiser.
+    assert brief.calls == [
+        ("AAPL", "three_pillar"),
+        ("MSFT", "three_pillar"),
+        ("GOOGL", "three_pillar"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_brief_refresh_cron_absent_when_service_not_wired() -> None:
+    """No ``brief_refresh_service`` → no ``research_briefs_refresh`` job (the cron
+    is opt-in via ``IGUANATRADER_BRIEF_REFRESH_ENABLED`` at the CLI boundary)."""
+    scheduler = _FakeScheduler()
+    trailing, stop_hit, equity, mode_repo, approval = _make_sweeps()
+
+    await _bootstrap(
+        scheduler,
+        trailing=trailing,
+        stop_hit=stop_hit,
+        equity=equity,
+        mode_repo=mode_repo,
+        approval=approval,
+        sweep_uow=None,
+        brief=None,
+    )
+
+    assert not [j for j in scheduler.jobs if j.name == "research_briefs_refresh"]
 
 
 @pytest.mark.asyncio
