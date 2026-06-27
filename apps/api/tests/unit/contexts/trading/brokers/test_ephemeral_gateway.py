@@ -94,6 +94,79 @@ async def test_not_ready_does_not_cache() -> None:
 
 
 # ----------------------------------------------------------------------
+# on_ready broker-connect hook (ephemeral connect-on-demand)
+# ----------------------------------------------------------------------
+
+
+class _OnReady:
+    """Records calls; returns a scripted bool or raises a scripted exception."""
+
+    def __init__(self, *, returns: bool = True, raises: Exception | None = None) -> None:
+        self.calls = 0
+        self._returns = returns
+        self._raises = raises
+
+    async def __call__(self) -> bool:
+        self.calls += 1
+        if self._raises is not None:
+            raise self._raises
+        return self._returns
+
+
+@pytest.mark.asyncio
+async def test_on_ready_true_keeps_ready() -> None:
+    hook = _OnReady(returns=True)
+    coord = EphemeralGatewayCoordinator(_StubClient([LeaseResult(ready=True)]), on_ready=hook)
+    assert await coord.ensure_up(reason="order:1") is True
+    assert hook.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_on_ready_false_fails_closed_and_drops_window() -> None:
+    # The lease is READY, but the broker could not connect → fail CLOSED.
+    client = _StubClient([LeaseResult(ready=True), LeaseResult(ready=True)])
+    hook = _OnReady(returns=False)
+    coord = EphemeralGatewayCoordinator(client, on_ready=hook)
+    assert await coord.ensure_up(reason="order:1") is False
+    # The cached window was dropped → the next order re-leases (not a cache hit).
+    assert await coord.ensure_up(reason="order:2") is False
+    assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_on_ready_raises_fails_closed() -> None:
+    hook = _OnReady(raises=RuntimeError("socket refused"))
+    coord = EphemeralGatewayCoordinator(_StubClient([LeaseResult(ready=True)]), on_ready=hook)
+    assert await coord.ensure_up(reason="order:1") is False
+    assert hook.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_on_ready_invoked_on_cached_window() -> None:
+    # Within one lease window the broker connection is STILL re-confirmed per
+    # order (a socket can drop mid-window) even though no new webhook is sent.
+    clock = _Clock(datetime(2026, 6, 27, 12, 0, tzinfo=UTC))
+    client = _StubClient([LeaseResult(ready=True)])
+    hook = _OnReady(returns=True)
+    coord = EphemeralGatewayCoordinator(client, ttl_seconds=300, clock=clock, on_ready=hook)
+
+    assert await coord.ensure_up(reason="order:1") is True
+    clock.advance(120)  # still inside the window
+    assert await coord.ensure_up(reason="order:2") is True
+    assert len(client.calls) == 1  # ONE lease (batch reuse)
+    assert hook.calls == 2  # but the broker was confirmed for BOTH orders
+
+
+@pytest.mark.asyncio
+async def test_attach_on_ready_wires_hook_after_construction() -> None:
+    hook = _OnReady(returns=False)
+    coord = EphemeralGatewayCoordinator(_StubClient([LeaseResult(ready=True)]))
+    coord.attach_on_ready(hook)
+    assert await coord.ensure_up(reason="order:1") is False
+    assert hook.calls == 1
+
+
+# ----------------------------------------------------------------------
 # HMAC client
 # ----------------------------------------------------------------------
 

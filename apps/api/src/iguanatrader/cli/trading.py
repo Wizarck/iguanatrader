@@ -392,13 +392,38 @@ async def _run_daemon(
         await _record_daemon_session_start(audit_repo=gate_audit, mode=mode)
         await gate_session.commit()
 
+    # WS-4 / WS-F: in EPHEMERAL live mode the IBKR gateway is DOWN between
+    # approved order batches (a live gateway logs the owner out of the mobile
+    # app), so the daemon must NOT open a persistent connection at startup — the
+    # gateway coordinator connects on demand per lease (``ensure_connected``
+    # wired as ``on_ready`` below). Proposing reads the DB market-data cache, so
+    # it runs without the gateway; only order placement (and the broker-touching
+    # crons, which fail-soft per tick) need it. Detect it early so the startup
+    # connect + reconcile are skipped. OFF by default → paper + non-ephemeral
+    # live are byte-identical.
+    ephemeral_live = mode == "live" and _env_truthy("IGUANATRADER_EPHEMERAL_GATEWAY_ENABLED")
+    if ephemeral_live and not _native_bracket_enabled():
+        raise RuntimeError(
+            "Ephemeral live mode requires IGUANATRADER_NATIVE_BRACKET=on: the "
+            "protective stop MUST rest server-side at IBKR as a native bracket "
+            "leg, because the ephemeral gateway is down between leases and a "
+            "daemon-side stop_hit sweep cannot reach a down gateway to close a "
+            "position. Refusing to start a live daemon that could leave a "
+            "position unprotected during a gateway-down window."
+        )
+
     broker = await _build_broker(ib_client=ib_client, mode=mode, tenant_id=tenant_id)
     # Open the IBKR connection before any broker call. Without this the
     # adapter's ``_client`` stays None and the first broker use in
     # ``startup_reconcile`` → ``reconcile_fills`` raises
     # IntegrationError("client not connected"), crash-looping the daemon
-    # (the full-mode path was never exercised end-to-end before).
-    await broker.connect()
+    # (the full-mode path was never exercised end-to-end before). SKIPPED for
+    # ephemeral live (the gateway is intentionally down at boot; the coordinator
+    # connects on demand per lease).
+    if ephemeral_live:
+        log.info("trading.daemon.ephemeral_live.startup_connect_skipped")
+    else:
+        await broker.connect()
 
     async with sessionmaker() as session:
         tenant_id_var.set(tenant_id)
@@ -502,8 +527,36 @@ async def _run_daemon(
         )
 
         live_gateway = build_ephemeral_gateway_coordinator_from_env()
+        if ephemeral_live and live_gateway is None:
+            raise RuntimeError(
+                "IGUANATRADER_EPHEMERAL_GATEWAY_ENABLED is set for a live daemon "
+                "but the gateway coordinator could not be built (missing "
+                "ELIGIA_GATEWAY_WEBHOOK_URL / ELIGIA_GATEWAY_HMAC_SECRET). "
+                "Refusing to start: the startup broker connect was skipped, so "
+                "without the coordinator no live order could ever lease the "
+                "gateway up. Fix the config or unset the flag."
+            )
         if live_gateway is not None:
             log.info("trading.daemon.ephemeral_live_gateway.enabled")
+            if ephemeral_live:
+                # Wire the broker connect-on-demand hook: after a lease is
+                # confirmed ready the coordinator calls this to (re)connect +
+                # verify the broker against the freshly-leased gateway before the
+                # order, failing CLOSED (no order) if it cannot.
+                async def _on_gateway_ready() -> bool:
+                    try:
+                        await broker.ensure_connected()
+                        return True
+                    except Exception as exc:
+                        log.warning(
+                            "trading.daemon.ephemeral_live.connect_failed",
+                            error=str(exc),
+                            error_type=type(exc).__name__,
+                        )
+                        return False
+
+                live_gateway.attach_on_ready(_on_gateway_ready)
+                log.info("trading.daemon.ephemeral_live.on_ready_attached")
 
         trading_service = TradingService(
             bus=bus,
@@ -520,8 +573,16 @@ async def _run_daemon(
         # the daemon missed while it was down BEFORE accepting new
         # propose / approve traffic. Idempotent at broker_fill_id; a
         # slightly-too-old since boundary is preferable to losing a
-        # fill in a crash window.
-        await trading_service.startup_reconcile()
+        # fill in a crash window. SKIPPED for ephemeral live: reconcile_fills
+        # needs a live connection but the gateway is down at boot. (Reconciling
+        # fills a broker-side bracket leg may have produced while the gateway was
+        # down is a documented follow-up; the protective legs are GTC OCO AT
+        # IBKR, so the money stays protected — only the daemon's fill view lags
+        # until the next lease reconnect.)
+        if ephemeral_live:
+            log.info("trading.daemon.ephemeral_live.startup_reconcile_skipped")
+        else:
+            await trading_service.startup_reconcile()
 
         # Slice K1-followup-bus-subscriptions §3.1 — RiskService bridge
         # subscribes to ProposalCreated + emits ProposalRiskEvaluated.
@@ -996,7 +1057,12 @@ async def _run_daemon(
                 error=str(exc),
             )
             boot_enabled = False
-        if boot_enabled:
+        if ephemeral_live:
+            # Boot reconcile needs a live connection too; the ephemeral gateway
+            # is down at boot. The first lease's ``ensure_connected`` re-opens
+            # the socket on demand instead.
+            log.info("trading.daemon.boot_reconcile.skipped_ephemeral", mode=mode)
+        elif boot_enabled:
             try:
                 await lifecycle_service.reconcile_with_ibkr()
             except Exception as exc:

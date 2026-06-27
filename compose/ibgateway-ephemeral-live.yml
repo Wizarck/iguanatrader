@@ -1,0 +1,60 @@
+# iguanatrader — EPHEMERAL live-gateway overlay (WS-4 / WS-F).
+#
+# Layers on top of compose/ibgateway.yml for the EPHEMERAL live model. A live
+# IBKR gateway logs the owner out of the IBKR mobile app, so it is NOT held up
+# continuously. Instead the eligia-core AIOps lease sidecar (#221, ADR-030) does
+# `docker start` of THIS exact container per approved-order lease and
+# `docker stop`s it on the lease TTL. The iguanatrader daemon never holds a
+# persistent live connection — its gateway coordinator connects on demand per
+# lease (the adapter's `ensure_connected` wired as the coordinator `on_ready`).
+#
+# Two consequences vs the always-on live overlay (compose/ibgateway.yml):
+#
+#   1. trading_daemon_live must START with the gateway DOWN — so its depends_on
+#      DROPS the `ib-gateway-live: service_healthy` gate. (api + openbb_sidecar
+#      gates are retained.) Without this the live daemon would block at boot
+#      waiting for a gateway that is intentionally stopped.
+#
+#   2. ib-gateway-live must NOT auto-start / auto-restart with the stack — the
+#      sidecar owns its lifecycle. `restart: "no"` + the `ephemeral-live`
+#      profile keep a plain `up` from starting it. Bring it into existence once
+#      with `docker compose ... create ib-gateway-live`, after which the
+#      sidecar's `docker start` / `docker stop` (by the
+#      `com.docker.compose.service=ib-gateway-live` label) drive it.
+#
+# Usage (VPS live stack) — add this file LAST in the -f chain:
+#   docker compose -f compose/mvp.yml -f compose/postgres.yml \
+#     -f compose/ibgateway.yml -f compose/ibgateway-ephemeral-live.yml up -d
+#   docker compose -f compose/mvp.yml -f compose/postgres.yml \
+#     -f compose/ibgateway.yml -f compose/ibgateway-ephemeral-live.yml \
+#     create ib-gateway-live          # container exists, stays stopped
+# then install the eligia-core lease sidecar per
+#   eligia-core: decisions/ADR-030 + runbooks/runbook-ibkr-gateway-lease-sidecar.md
+#
+# Daemon-side env required for ephemeral live (the daemon refuses to boot
+# otherwise — see cli/trading.py):
+#   IGUANATRADER_EPHEMERAL_GATEWAY_ENABLED=on
+#   IGUANATRADER_NATIVE_BRACKET=on        # protective stop MUST rest at IBKR
+#   ELIGIA_GATEWAY_WEBHOOK_URL=...         # the sidecar lease endpoint
+#   ELIGIA_GATEWAY_HMAC_SECRET=...         # shared with the sidecar
+#
+# NOTE: Compose overlay merge semantics for `depends_on` vary across Compose
+# versions; VERIFY against the VPS's `docker compose version` during the staged
+# rollout (`docker compose ... config` should show trading_daemon_live WITHOUT
+# the ib-gateway-live dependency).
+
+services:
+  ib-gateway-live:
+    # The lease sidecar owns start/stop — do NOT auto-restart with the stack.
+    restart: "no"
+    # Exclude from a plain `up`; created once, then driven by the sidecar.
+    profiles: ["ephemeral-live"]
+
+  trading_daemon_live:
+    # REDEFINED (not merged): drop the ib-gateway-live health gate so the live
+    # daemon boots with the gateway DOWN and connects on demand per lease.
+    depends_on:
+      api:
+        condition: service_started
+      openbb_sidecar:
+        condition: service_started

@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
@@ -40,6 +41,13 @@ from iguanatrader.shared.channel_dispatch.sign import hmac_sha256_hex
 from iguanatrader.shared.time import now as utc_now
 
 logger = logging.getLogger(__name__)
+
+#: A broker-connect hook the coordinator invokes after a lease is confirmed
+#: ready, to (re)establish + verify the live broker connection on demand right
+#: before the order (the ephemeral adapter holds no persistent connection).
+#: Returns True only when the broker is connected; the coordinator FAILS CLOSED
+#: (``ensure_up`` → False, no order) on a False return OR any raised exception.
+OnReadyHook = Callable[[], Awaitable[bool]]
 
 #: Default lease TTL — matches the sidecar's hard teardown cap (5 minutes).
 DEFAULT_LEASE_TTL_SECONDS = 300
@@ -130,23 +138,35 @@ class EphemeralGatewayCoordinator:
         *,
         ttl_seconds: int = DEFAULT_LEASE_TTL_SECONDS,
         clock: Any = utc_now,
+        on_ready: OnReadyHook | None = None,
     ) -> None:
         self._client = client
         self._ttl = ttl_seconds
         self._clock = clock
         self._ready_until: datetime | None = None
+        # Optional broker-connect hook (the ephemeral adapter's
+        # ``ensure_connected``). The daemon attaches it after construction via
+        # :meth:`attach_on_ready` because the coordinator is built from env
+        # while the broker is built separately. ``None`` → the gateway lease is
+        # the only readiness gate (back-compat: paper/tests/unwired).
+        self._on_ready = on_ready
+
+    def attach_on_ready(self, on_ready: OnReadyHook) -> None:
+        """Wire the broker-connect hook after construction (daemon wiring)."""
+        self._on_ready = on_ready
 
     async def ensure_up(self, *, reason: str) -> bool:
         now = self._clock()
         if self._ready_until is not None and now < self._ready_until:
-            # Still inside a confirmed lease window — reuse it (batch path).
-            return True
+            # Still inside a confirmed lease window — reuse it (batch path), but
+            # still confirm the broker connection is live before the order.
+            return await self._invoke_on_ready(reason)
         result = await self._client.request_lease(reason=reason, ttl_seconds=self._ttl)
         if result.ready:
             margin = min(_LEASE_REFRESH_MARGIN_SECONDS, self._ttl // 2)
             self._ready_until = now + timedelta(seconds=self._ttl - margin)
             logger.info("trading.ephemeral_gateway.leased", extra={"reason": reason})
-            return True
+            return await self._invoke_on_ready(reason)
         # Fail-closed: drop the cached window so the next order re-attempts.
         self._ready_until = None
         logger.warning(
@@ -154,6 +174,31 @@ class EphemeralGatewayCoordinator:
             extra={"reason": reason, "detail": result.detail},
         )
         return False
+
+    async def _invoke_on_ready(self, reason: str) -> bool:
+        """Run the broker-connect hook, FAILING CLOSED on False / any error.
+
+        The gateway being leased-up is necessary but not sufficient: the broker
+        must also be connected to it. On a False return or any exception the
+        cached lease window is dropped so the next order re-leases (which may
+        re-up a torn-down gateway) and retries the connection.
+        """
+        if self._on_ready is None:
+            return True
+        try:
+            ready = await self._on_ready()
+        except Exception as exc:
+            self._ready_until = None
+            logger.warning(
+                "trading.ephemeral_gateway.on_ready_failed",
+                extra={"reason": reason, "error": str(exc), "type": type(exc).__name__},
+            )
+            return False
+        if not ready:
+            self._ready_until = None
+            logger.warning("trading.ephemeral_gateway.on_ready_not_ready", extra={"reason": reason})
+            return False
+        return True
 
 
 def build_ephemeral_gateway_coordinator_from_env() -> EphemeralGatewayCoordinator | None:
@@ -186,5 +231,6 @@ __all__ = [
     "EphemeralGatewayCoordinator",
     "EphemeralGatewayPort",
     "LeaseResult",
+    "OnReadyHook",
     "build_ephemeral_gateway_coordinator_from_env",
 ]

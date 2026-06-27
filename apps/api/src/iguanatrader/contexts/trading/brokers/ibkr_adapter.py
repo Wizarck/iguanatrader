@@ -59,7 +59,7 @@ from iguanatrader.contexts.trading.ports import (
 )
 from iguanatrader.shared.backoff import backoff_seconds
 from iguanatrader.shared.errors import IntegrationError
-from iguanatrader.shared.heartbeat import HeartbeatMixin
+from iguanatrader.shared.heartbeat import ConnectionState, HeartbeatMixin
 from iguanatrader.shared.time import now as utc_now
 
 if TYPE_CHECKING:
@@ -171,6 +171,81 @@ class IBKRAdapter(HeartbeatMixin):
             with contextlib.suppress(Exception):
                 self._client.disconnect()  # Best-effort; connection going away.
         await self.mark_disconnected()
+
+    # ------------------------------------------------------------------
+    # Ephemeral live-gateway connect-on-demand (WS-4 / WS-F)
+    # ------------------------------------------------------------------
+
+    async def ensure_connected(self) -> None:
+        """(Re)establish + VERIFY a connection on demand — the ephemeral path.
+
+        The ephemeral live model keeps the IBKR gateway DOWN between approved
+        order batches (a live gateway logs the owner out of the mobile app), so
+        the daemon must NOT hold a persistent connection or run the background
+        heartbeat/reconnect loop: an intentional gateway-down period would
+        otherwise walk :meth:`_resilient_reconnect_loop` to exhaustion and trip
+        the kill-switch. Instead the gateway coordinator calls this right after a
+        lease is confirmed ready, to connect at the only moment it matters —
+        immediately before a real-money order.
+
+        Idempotent within a live window: if already CONNECTED, one heartbeat
+        ping confirms the socket is still alive and the call returns without
+        reconnecting. A stale/half-open socket (ping fails) or a connection torn
+        down with the gateway between leases is cleaned up and reconnected
+        against the freshly-leased gateway. The new connection is verified with a
+        heartbeat BEFORE it is trusted; any failure tears the connection back
+        down and RAISES so the caller fails CLOSED (no live order is placed).
+
+        Unlike :meth:`connect`, this starts NO persistent heartbeat task — the
+        ephemeral path verifies liveness on demand here, never in the background,
+        so a deliberately-down gateway can never escalate to the kill-switch.
+        """
+        if self._shutting_down:
+            raise IntegrationError(detail="IBKRAdapter.ensure_connected: adapter is shutting down")
+        if self._state is ConnectionState.CONNECTED and self._client is not None:
+            try:
+                await self._send_heartbeat()
+                return
+            except Exception:
+                # Stale / half-open socket (gateway recycled under us) — fall
+                # through to a clean reconnect against the fresh lease.
+                logger.info("ibkr.adapter.ensure_connected.stale_socket_reconnecting")
+        await self._teardown_connection()
+        await self._connect_client()
+        try:
+            await self._send_heartbeat()  # verify BEFORE trusting it with money
+        except Exception:
+            await self._teardown_connection()
+            raise
+        self.mark_connected()
+        await self._emit_event(
+            "broker.connection.established",
+            {"mode": self._brokerage.mode, "host": self._brokerage.host, "ephemeral": True},
+        )
+
+    async def _teardown_connection(self) -> None:
+        """Drop the current connection WITHOUT shutting the adapter down.
+
+        Used by the ephemeral :meth:`ensure_connected` path to recycle a stale or
+        torn-down connection between leases. Cancels any heartbeat/reconnect
+        tasks (defensive — the ephemeral path starts none), best-effort
+        disconnects the client, and resets to DISCONNECTED. Unlike
+        :meth:`disconnect` it does NOT set ``_shutting_down`` (so the next lease
+        can reconnect) and does NOT fire :meth:`_on_disconnect` — the gateway
+        going down between leases is INTENTIONAL, not a connection loss to alert
+        on or to seed reconciliation from.
+        """
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+        if self._reconnect_task is not None:
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
+        if self._client is not None:
+            with contextlib.suppress(Exception):
+                self._client.disconnect()
+            self._client = None
+        self._state = ConnectionState.DISCONNECTED
 
     async def _connect_client(self) -> None:
         """Construct + connect a fresh :class:`IBClient`.
