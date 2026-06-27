@@ -75,6 +75,7 @@ class PositionReview:
     """Reconciliation of one open position: intended vs broker-resting."""
 
     trade_id: UUID
+    tenant_id: UUID
     symbol: str
     side: str  # "long" / "short".
     quantity: Decimal  # DB trade size.
@@ -220,6 +221,7 @@ def reconcile_positions(
         reviews.append(
             PositionReview(
                 trade_id=trade.trade_id,
+                tenant_id=trade.tenant_id,
                 symbol=trade.symbol,
                 side=side,
                 quantity=trade.quantity,

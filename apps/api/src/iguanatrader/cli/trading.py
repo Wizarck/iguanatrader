@@ -607,6 +607,94 @@ async def _run_daemon(
                 ResearchRepository(), hindsight=hindsight, bus=bus
             )
 
+        # Slice ``urgent-exit-review-sweep`` (WS-5 PR-C): the cron that reviews
+        # open positions + their REAL IBKR stop/target orders every 15 min and
+        # asks Opus whether any warrants an URGENT sell → Telegram approve/deny
+        # (HITL, never an auto-close). OFF by default
+        # (IGUANATRADER_URGENT_EXIT_ENABLED). Per the owner's model directive the
+        # risk-evaluation OPINION runs on Opus (the ExitAdvisor default); Sonnet
+        # stays reserved for the brief SYNTHESIS the advisor reads. Cost-bounded:
+        # the LLM is only called for a position at a loss or with a broker
+        # divergence, and a still-open exit card is never re-raised.
+        urgent_exit_review_service: Any | None = None
+        if _env_truthy("IGUANATRADER_URGENT_EXIT_ENABLED"):
+            from iguanatrader.contexts.research.factory import build_llm_client
+            from iguanatrader.contexts.research.proposal_advisor.exit_advisor import (
+                ExitAdvisor,
+            )
+            from iguanatrader.contexts.risk.position_review import PositionReviewService
+            from iguanatrader.contexts.risk.trailing_stop_repository import (
+                TrailingStopAuditRepository as _UrgentTrailingRepo,
+            )
+            from iguanatrader.contexts.risk.urgent_exit_sweep import (
+                UrgentExitReviewSweepService,
+            )
+
+            # Position review resolves the per-tick sweep session (#29); the
+            # trailing repo resolves the same session so the EFFECTIVE stop is
+            # the latest trailing-tightened level (matches the stop-hit sweep).
+            urgent_position_review = PositionReviewService(
+                broker=broker,
+                trailing_audit_repo=_UrgentTrailingRepo(),
+            )
+
+            # Optional latest-brief thesis lookup (only when the brief cron is
+            # also wired); the advisor degrades to position+divergence without it.
+            urgent_brief_lookup: Any | None = None
+            if brief_refresh_service is not None:
+                _brief_svc: Any = brief_refresh_service
+
+                async def _urgent_brief_lookup(symbol: str) -> str | None:
+                    brief = await _brief_svc.get_brief(symbol)
+                    return brief.thesis_text if brief is not None else None
+
+                urgent_brief_lookup = _urgent_brief_lookup
+
+            # Gated Hindsight recall (FR81): mirrors BriefService — returns []
+            # unless the tenant's ``hindsight_recall_enabled`` flag is set, and
+            # degrades to [] on any recall failure.
+            _urgent_hindsight: Any = hindsight
+
+            async def _urgent_hindsight_lookup(symbol: str) -> list[str]:
+                from iguanatrader.contexts.research.hindsight import (
+                    HindsightTimeout,
+                    HindsightUnavailable,
+                )
+                from iguanatrader.persistence import Tenant
+                from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+                tid = tenant_id_var.get()
+                sess = session_var.get()
+                if tid is None or sess is None:
+                    return []
+                try:
+                    tenant = await sess.get(Tenant, tid)
+                except Exception:
+                    return []
+                flags = getattr(tenant, "feature_flags", {}) if tenant is not None else {}
+                if not bool((flags or {}).get("hindsight_recall_enabled", False)):
+                    return []
+                bank = f"iguanatrader-research-{tid}"
+                query = f"{symbol} exit risk drawdown stop lessons"
+                try:
+                    chunks = await _urgent_hindsight.recall(
+                        bank=bank, query=query, limit=10, timeout_ms=2000
+                    )
+                    return [str(c) for c in chunks]
+                except (HindsightUnavailable, HindsightTimeout):
+                    return []
+                except Exception:
+                    return []
+
+            urgent_exit_review_service = UrgentExitReviewSweepService(
+                position_review=urgent_position_review,
+                exit_advisor=ExitAdvisor(build_llm_client()),
+                bus=bus,
+                pending_exit_checker=approval_repository.has_pending_exit_for_trade,
+                brief_lookup=urgent_brief_lookup,
+                hindsight_lookup=_urgent_hindsight_lookup,
+            )
+
         # Slice ``mcp-hitl-approvals`` §6 — push execution + close-out
         # updates to the operator's authorised senders (OrderFilled +
         # TradeClosed). Best-effort; only wired when Hermes is configured
@@ -786,6 +874,7 @@ async def _run_daemon(
             trailing_stop_sweep_service=trailing_stop_sweep_service,
             approval_service=approval_service,
             brief_refresh_service=brief_refresh_service,
+            urgent_exit_review_service=urgent_exit_review_service,
             daemon_mode=mode,
             daemon_tenant_id=tenant_id,
             trading_mode_repo=trading_mode_repo,

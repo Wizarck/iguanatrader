@@ -124,6 +124,7 @@ async def _bootstrap(
     approval: Any,
     sweep_uow: Any,
     brief: Any = None,
+    urgent_exit: Any = None,
     watchlist: list[str] | None = None,
 ) -> None:
     svc = OrchestrationService(repository=object())  # type: ignore[arg-type]
@@ -136,6 +137,7 @@ async def _bootstrap(
         equity_snapshot_sweep_service=equity,
         approval_service=approval,
         brief_refresh_service=brief,
+        urgent_exit_review_service=urgent_exit,
         # daemon_* params: required to wire the heartbeat job. No lifecycle
         # service → the poll branch is skipped.
         daemon_mode="paper",
@@ -224,6 +226,70 @@ async def test_brief_refresh_cron_registered_and_iterates_watchlist() -> None:
         ("MSFT", "three_pillar"),
         ("GOOGL", "three_pillar"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_urgent_exit_cron_registered_and_runs_through_uow() -> None:
+    """``urgent-exit-review-sweep`` (WS-5 PR-C): when wired, bootstrap registers a
+    ``urgent_exit_review_sweep`` job at the 15-min market-hours cadence whose tick
+    runs through the per-tick ``sweep_unit_of_work``."""
+    scheduler = _FakeScheduler()
+    trailing, stop_hit, equity, mode_repo, approval = _make_sweeps()
+    urgent = _RecordingSweep(
+        positions_reviewed=0,
+        candidates_assessed=0,
+        urgent_exits_raised=0,
+        skipped_pending=0,
+        skipped_no_signal=0,
+        skipped_errors=0,
+        duration_ms=0,
+    )
+    calls: list[str] = []
+
+    async def uow(inner: Any) -> None:
+        calls.append("uow")
+        await inner()
+
+    await _bootstrap(
+        scheduler,
+        trailing=trailing,
+        stop_hit=stop_hit,
+        equity=equity,
+        mode_repo=mode_repo,
+        approval=approval,
+        sweep_uow=uow,
+        urgent_exit=urgent,
+    )
+
+    urgent_jobs = [j for j in scheduler.jobs if j.name == "urgent_exit_review_sweep"]
+    assert len(urgent_jobs) == 1
+    job = urgent_jobs[0]
+    assert job.cron_kwargs == {"hour": "9-16", "minute": "*/15", "day_of_week": "mon-fri"}
+
+    await job.fn()
+    assert calls == ["uow"]
+    assert urgent.swept == 1
+
+
+@pytest.mark.asyncio
+async def test_urgent_exit_cron_absent_when_service_not_wired() -> None:
+    """No ``urgent_exit_review_service`` → no ``urgent_exit_review_sweep`` job (it
+    is opt-in via ``IGUANATRADER_URGENT_EXIT_ENABLED`` at the CLI boundary)."""
+    scheduler = _FakeScheduler()
+    trailing, stop_hit, equity, mode_repo, approval = _make_sweeps()
+
+    await _bootstrap(
+        scheduler,
+        trailing=trailing,
+        stop_hit=stop_hit,
+        equity=equity,
+        mode_repo=mode_repo,
+        approval=approval,
+        sweep_uow=None,
+        urgent_exit=None,
+    )
+
+    assert not [j for j in scheduler.jobs if j.name == "urgent_exit_review_sweep"]
 
 
 @pytest.mark.asyncio

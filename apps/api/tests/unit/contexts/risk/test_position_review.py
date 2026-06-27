@@ -258,5 +258,8 @@ async def test_service_review_wires_db_and_broker() -> None:
     assert result.broker_working_orders_read == 1
     assert len(result.reviews) == 1
     assert result.reviews[0].trade_id == trade_id
+    # tenant is threaded onto the review so the urgent-exit sweep (PR-C) can
+    # stamp ExitApprovalRequested without relying on the contextvar.
+    assert result.reviews[0].tenant_id == _TENANT
     assert "target_missing_at_broker" in result.reviews[0].divergences
     assert result.divergences_detected == 1

@@ -275,6 +275,7 @@ class OrchestrationService:
         stop_hit_sweep_service: Any | None = None,
         approval_service: Any | None = None,
         brief_refresh_service: Any | None = None,
+        urgent_exit_review_service: Any | None = None,
         daemon_mode: str | None = None,
         daemon_tenant_id: Any | None = None,
         trading_mode_repo: Any | None = None,
@@ -709,6 +710,49 @@ class OrchestrationService:
             )
             scheduler.add_job(brief_spec)
 
+        # Slice ``urgent-exit-review-sweep`` (WS-5 PR-C): every 15 min during US
+        # market hours, review open positions + their REAL IBKR stop/target
+        # orders and ask Opus whether any warrants an URGENT sell — if so, raise
+        # an ExitApprovalRequested → Telegram approve/deny (HITL, never an
+        # auto-close). Cost-bounded: the LLM is only called for a position at a
+        # loss or with a broker divergence, and a still-open exit card is not
+        # re-raised. OFF by default (IGUANATRADER_URGENT_EXIT_ENABLED at the CLI
+        # boundary); skipped when the service is not wired (test setups).
+        if urgent_exit_review_service is not None:
+            urgent_exit_svc: Any = urgent_exit_review_service
+
+            async def _sweep_urgent_exits() -> None:
+                try:
+                    result = await urgent_exit_svc.sweep()
+                    logger.info(
+                        "orchestration.urgent_exit_sweep.complete",
+                        extra={
+                            "positions_reviewed": result.positions_reviewed,
+                            "candidates_assessed": result.candidates_assessed,
+                            "urgent_exits_raised": result.urgent_exits_raised,
+                            "skipped_pending": result.skipped_pending,
+                            "skipped_no_signal": result.skipped_no_signal,
+                            "skipped_errors": result.skipped_errors,
+                            "duration_ms": result.duration_ms,
+                        },
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "orchestration.urgent_exit_sweep.failed",
+                        extra={"error": str(exc), "type": type(exc).__name__},
+                    )
+
+            urgent_exit_spec = JobSpec(
+                name="urgent_exit_review_sweep",
+                fn=_wrap_in_uow(_sweep_urgent_exits, sweep_unit_of_work),
+                cron_kwargs={
+                    "hour": "9-16",
+                    "minute": "*/15",
+                    "day_of_week": "mon-fri",
+                },
+            )
+            scheduler.add_job(urgent_exit_spec)
+
         # Slice ``dual-daemon-mode-toggle-and-reconcile``: 9th job writes
         # a heartbeat row every 10 seconds so ``GET /api/v1/status`` can
         # render ``ib_connected`` + ``last_heartbeat_at`` for the chip.
@@ -792,6 +836,7 @@ class OrchestrationService:
                 "trailing_stops_sweep_wired": trailing_stop_sweep_service is not None,
                 "equity_snapshot_sweep_wired": equity_snapshot_sweep_service is not None,
                 "stop_hit_sweep_wired": stop_hit_sweep_service is not None,
+                "urgent_exit_review_wired": urgent_exit_review_service is not None,
                 "daemon_heartbeat_wired": daemon_heartbeat_wired,
             },
         )

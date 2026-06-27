@@ -270,8 +270,14 @@ class ExitApprovalRequested(Event):
     later tick if the urgent condition persists). NEVER auto-closes — this
     event only raises an approval.
 
-    ``idempotency_key`` = ``trade_id`` so a re-raise for the same position
-    while a card is still pending is de-duped at the bus.
+    Dedup is PENDING-AWARE at the source: the urgent-exit sweep calls
+    ``ApprovalRepository.has_pending_exit_for_trade(trade_id)`` and only raises
+    when no card is currently open for that trade — so a card still pending is
+    not duplicated, yet a re-raise flows the moment the previous card expires.
+    The approval subscription is deliberately NON-idempotent (the bus dedup
+    cache would otherwise suppress that legitimate re-raise for the whole
+    process life). ``idempotency_key`` = ``trade_id`` is retained as documentary
+    metadata + a guard for any future idempotent consumer.
     """
 
     event_name: ClassVar[str] = "trading.exit_approval.requested"
