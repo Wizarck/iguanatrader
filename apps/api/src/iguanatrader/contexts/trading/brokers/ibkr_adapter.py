@@ -627,6 +627,7 @@ class IBKRAdapter(HeartbeatMixin):
             exchange=params.exchange,
             currency=params.currency,
             sec_type="STK",
+            con_id=params.con_id,
         )
 
     def _build_ib_order(self, order: NewOrder, *, ib_order_type: str | None = None) -> IBOrder:

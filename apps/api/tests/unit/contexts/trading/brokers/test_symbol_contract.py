@@ -84,3 +84,66 @@ def test_adapter_build_contract_honours_override(monkeypatch: pytest.MonkeyPatch
 
     ucits = adapter._build_contract("VUSA")
     assert (ucits.exchange, ucits.currency) == ("SMART", "GBP")
+
+
+# --- con_id (authoritative key; removes the currency-guess) -------------------
+
+
+def test_con_id_parsed_from_override() -> None:
+    overrides = parse_overrides('{"VUSA": {"exchange": "LSEETF", "con_id": 107968728}}')
+    p = resolve_contract_params("VUSA", overrides=overrides)
+    assert p == ContractParams(exchange="LSEETF", currency="USD", con_id=107968728)
+
+
+def test_con_id_accepts_numeric_string() -> None:
+    overrides = parse_overrides('{"CRUD": {"exchange": "LSE", "con_id": "41015921"}}')
+    assert resolve_contract_params("CRUD", overrides=overrides).con_id == 41015921
+
+
+def test_con_id_invalid_degrades_to_none_without_dropping_entry() -> None:
+    overrides = parse_overrides('{"VUSA": {"exchange": "LSEETF", "con_id": "nope"}}')
+    p = resolve_contract_params("VUSA", overrides=overrides)
+    assert p.con_id is None  # bad con_id ignored...
+    assert p.exchange == "LSEETF"  # ...but the rest of the entry survives
+
+
+def test_no_con_id_defaults_to_none() -> None:
+    overrides = parse_overrides('{"VUSA": {"currency": "GBP"}}')
+    assert resolve_contract_params("VUSA", overrides=overrides).con_id is None
+
+
+def test_adapter_build_contract_threads_con_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The order path carries the conId into the domain Contract."""
+    from iguanatrader.contexts.trading.brokers.ibkr_adapter import IBKRAdapter
+    from iguanatrader.contexts.trading.brokers.ibkr_brokerage_model import IBKRBrokerageModel
+
+    from tests._fakes.ib_async_fake import FakeIBClient
+
+    monkeypatch.setenv(
+        "IGUANATRADER_SYMBOL_CONTRACT_OVERRIDES",
+        '{"VUSA": {"exchange": "LSEETF", "con_id": 107968728}}',
+    )
+    adapter = IBKRAdapter(
+        brokerage=IBKRBrokerageModel.for_paper(), client_factory=lambda: FakeIBClient()
+    )
+    c = adapter._build_contract("VUSA")
+    assert (c.exchange, c.con_id) == ("LSEETF", 107968728)
+    assert adapter._build_contract("AMD").con_id is None  # US watchlist unchanged
+
+
+def test_translator_qualifies_stk_by_con_id() -> None:
+    """When con_id is set, _to_contract qualifies by conId and leaves currency
+    empty so a share-class guess can't contradict it."""
+    pytest.importorskip("ib_async")
+    from iguanatrader.contexts.trading.brokers.client_protocol import Contract
+    from iguanatrader.contexts.trading.brokers.ib_async_client import _to_contract
+
+    ib_c = _to_contract(Contract(symbol="VUSA", exchange="LSEETF", con_id=107968728))
+    assert ib_c.conId == 107968728
+    assert ib_c.currency == ""  # not forced — conId drives qualification
+    assert ib_c.exchange == "LSEETF"
+
+    # No con_id → legacy symbol+currency contract.
+    legacy = _to_contract(Contract(symbol="AMD", exchange="SMART", currency="USD"))
+    assert legacy.conId == 0  # ib_async default
+    assert legacy.currency == "USD"
