@@ -23,6 +23,7 @@ _SWEEP_NAMES = {
     "trailing_stops_sweep",
     "stop_hit_sweep",
     "equity_snapshot_sweep",
+    "approval_timeout_sweep",
     "daemon_heartbeat",
 }
 
@@ -57,7 +58,20 @@ class _RecordingModeRepo:
         self.heartbeats += 1
 
 
-def _make_sweeps() -> tuple[_RecordingSweep, _RecordingSweep, _RecordingSweep, _RecordingModeRepo]:
+class _RecordingApproval:
+    """Fake approval service: records ``sweep_expired_requests`` + returns []."""
+
+    def __init__(self) -> None:
+        self.swept = 0
+
+    async def sweep_expired_requests(self) -> list[Any]:
+        self.swept += 1
+        return []
+
+
+def _make_sweeps() -> (
+    tuple[_RecordingSweep, _RecordingSweep, _RecordingSweep, _RecordingModeRepo, _RecordingApproval]
+):
     trailing = _RecordingSweep(
         trades_evaluated=0,
         trades_trailed=0,
@@ -80,7 +94,8 @@ def _make_sweeps() -> tuple[_RecordingSweep, _RecordingSweep, _RecordingSweep, _
         duration_ms=0,
     )
     mode_repo = _RecordingModeRepo()
-    return trailing, stop_hit, equity, mode_repo
+    approval = _RecordingApproval()
+    return trailing, stop_hit, equity, mode_repo, approval
 
 
 async def _bootstrap(
@@ -90,6 +105,7 @@ async def _bootstrap(
     stop_hit: Any,
     equity: Any,
     mode_repo: Any,
+    approval: Any,
     sweep_uow: Any,
 ) -> None:
     svc = OrchestrationService(repository=object())  # type: ignore[arg-type]
@@ -100,6 +116,7 @@ async def _bootstrap(
         trailing_stop_sweep_service=trailing,
         stop_hit_sweep_service=stop_hit,
         equity_snapshot_sweep_service=equity,
+        approval_service=approval,
         # daemon_* params: required to wire the heartbeat job. No lifecycle
         # service → the poll branch is skipped.
         daemon_mode="paper",
@@ -113,7 +130,7 @@ async def _bootstrap(
 @pytest.mark.asyncio
 async def test_each_sweep_tick_runs_through_unit_of_work() -> None:
     scheduler = _FakeScheduler()
-    trailing, stop_hit, equity, mode_repo = _make_sweeps()
+    trailing, stop_hit, equity, mode_repo, approval = _make_sweeps()
     calls: list[str] = []
 
     async def uow(inner: Any) -> None:
@@ -126,6 +143,7 @@ async def test_each_sweep_tick_runs_through_unit_of_work() -> None:
         stop_hit=stop_hit,
         equity=equity,
         mode_repo=mode_repo,
+        approval=approval,
         sweep_uow=uow,
     )
 
@@ -140,13 +158,14 @@ async def test_each_sweep_tick_runs_through_unit_of_work() -> None:
     assert trailing.swept == 1
     assert stop_hit.swept == 1
     assert equity.swept == 1
+    assert approval.swept == 1
     assert mode_repo.heartbeats == 1
 
 
 @pytest.mark.asyncio
 async def test_sweeps_run_directly_without_wrapper() -> None:
     scheduler = _FakeScheduler()
-    trailing, stop_hit, equity, mode_repo = _make_sweeps()
+    trailing, stop_hit, equity, mode_repo, approval = _make_sweeps()
 
     await _bootstrap(
         scheduler,
@@ -154,6 +173,7 @@ async def test_sweeps_run_directly_without_wrapper() -> None:
         stop_hit=stop_hit,
         equity=equity,
         mode_repo=mode_repo,
+        approval=approval,
         sweep_uow=None,
     )
 
@@ -167,4 +187,5 @@ async def test_sweeps_run_directly_without_wrapper() -> None:
     assert trailing.swept == 1
     assert stop_hit.swept == 1
     assert equity.swept == 1
+    assert approval.swept == 1
     assert mode_repo.heartbeats == 1
