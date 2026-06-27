@@ -267,6 +267,7 @@ class OrchestrationService:
         trailing_stop_sweep_service: Any | None = None,
         equity_snapshot_sweep_service: Any | None = None,
         stop_hit_sweep_service: Any | None = None,
+        approval_service: Any | None = None,
         daemon_mode: str | None = None,
         daemon_tenant_id: Any | None = None,
         trading_mode_repo: Any | None = None,
@@ -624,6 +625,41 @@ class OrchestrationService:
                 },
             )
             scheduler.add_job(equity_spec)
+
+        # Slice ``approval-timeout-sweep-wiring``: the cron that actually
+        # ENFORCES the approval timeout. Without it, ``sweep_expired_requests``
+        # only ever ran via the manual ``iguanatrader approval sweep-expired``
+        # CLI, so timed-out approval requests never emitted
+        # ``ApprovalProposalTimedOut`` → never bridged to
+        # ``ProposalRejected(reason="approval_timeout")`` → proposals stayed
+        # ``pending_approval`` forever (173 stuck rows observed on prod, 0
+        # ``expired``). Runs every minute, all hours/days, so a card the
+        # operator never answered expires even after-hours / weekends — and
+        # the propose-dedup guard can re-propose that config once its stale
+        # pending clears. Tenant-scoped to the daemon's tenant via the
+        # per-tick session bound in ``sweep_unit_of_work``.
+        if approval_service is not None:
+            approval_svc: Any = approval_service
+
+            async def _sweep_approval_timeouts() -> None:
+                try:
+                    decisions = await approval_svc.sweep_expired_requests()
+                    logger.info(
+                        "orchestration.approval_timeout_sweep.complete",
+                        extra={"timed_out": len(decisions)},
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "orchestration.approval_timeout_sweep.failed",
+                        extra={"error": str(exc), "type": type(exc).__name__},
+                    )
+
+            approval_timeout_spec = JobSpec(
+                name="approval_timeout_sweep",
+                fn=_wrap_in_uow(_sweep_approval_timeouts, sweep_unit_of_work),
+                cron_kwargs={"minute": "*"},
+            )
+            scheduler.add_job(approval_timeout_spec)
 
         # Slice ``dual-daemon-mode-toggle-and-reconcile``: 9th job writes
         # a heartbeat row every 10 seconds so ``GET /api/v1/status`` can

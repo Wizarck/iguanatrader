@@ -675,6 +675,7 @@ async def _run_daemon(
             equity_snapshot_sweep_service=equity_snapshot_sweep_service,
             stop_hit_sweep_service=stop_hit_sweep_service,
             trailing_stop_sweep_service=trailing_stop_sweep_service,
+            approval_service=approval_service,
             daemon_mode=mode,
             daemon_tenant_id=tenant_id,
             trading_mode_repo=trading_mode_repo,
