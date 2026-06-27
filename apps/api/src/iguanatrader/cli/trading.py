@@ -695,6 +695,79 @@ async def _run_daemon(
                 hindsight_lookup=_urgent_hindsight_lookup,
             )
 
+        # Slice ``entry-veto-gate`` (WS-2): the Opus HARD pre-filter on propose.
+        # When enabled, every fresh proposal (post-dedup) is shown to the entry
+        # advisor BEFORE the owner; a high-conviction veto drops it so no
+        # Telegram card is raised. Same model directive as WS-5 (risk judgement
+        # on Opus, brief synthesis on Sonnet) + same brief/Hindsight context.
+        # OFF by default (IGUANATRADER_ENTRY_VETO_ENABLED); attached to the
+        # TradingService after construction (the gate's lookups need the brief
+        # + Hindsight built above). The gate fails OPEN, so a hiccup never
+        # blocks trading.
+        if _env_truthy("IGUANATRADER_ENTRY_VETO_ENABLED"):
+            from iguanatrader.contexts.research.factory import (
+                build_brief_service as _build_brief_service_entry,
+            )
+            from iguanatrader.contexts.research.factory import (
+                build_llm_client as _build_llm_client_entry,
+            )
+            from iguanatrader.contexts.research.proposal_advisor.entry_advisor import (
+                EntryAdvisor,
+            )
+            from iguanatrader.contexts.research.proposal_advisor.entry_gate import (
+                EntryVetoGate,
+            )
+            from iguanatrader.contexts.research.repository import (
+                ResearchRepository as _ResearchRepoEntry,
+            )
+
+            _entry_brief_svc: Any = _build_brief_service_entry(_ResearchRepoEntry())
+
+            async def _entry_brief_lookup(symbol: str) -> str | None:
+                brief = await _entry_brief_svc.get_brief(symbol)
+                return brief.thesis_text if brief is not None else None
+
+            _entry_hindsight: Any = hindsight
+
+            async def _entry_hindsight_lookup(symbol: str) -> list[str]:
+                from iguanatrader.contexts.research.hindsight import (
+                    HindsightTimeout,
+                    HindsightUnavailable,
+                )
+                from iguanatrader.persistence import Tenant
+                from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+                tid = tenant_id_var.get()
+                sess = session_var.get()
+                if tid is None or sess is None:
+                    return []
+                try:
+                    tenant = await sess.get(Tenant, tid)
+                except Exception:
+                    return []
+                flags = getattr(tenant, "feature_flags", {}) if tenant is not None else {}
+                if not bool((flags or {}).get("hindsight_recall_enabled", False)):
+                    return []
+                bank = f"iguanatrader-research-{tid}"
+                query = f"{symbol} entry thesis risk lessons setup"
+                try:
+                    chunks = await _entry_hindsight.recall(
+                        bank=bank, query=query, limit=10, timeout_ms=2000
+                    )
+                    return [str(c) for c in chunks]
+                except (HindsightUnavailable, HindsightTimeout):
+                    return []
+                except Exception:
+                    return []
+
+            entry_gate = EntryVetoGate(
+                EntryAdvisor(_build_llm_client_entry()),
+                brief_lookup=_entry_brief_lookup,
+                hindsight_lookup=_entry_hindsight_lookup,
+            )
+            trading_service.attach_entry_gate(entry_gate)
+            log.info("trading.daemon.entry_veto_gate.attached")
+
         # Slice ``mcp-hitl-approvals`` §6 — push execution + close-out
         # updates to the operator's authorised senders (OrderFilled +
         # TradeClosed). Best-effort; only wired when Hermes is configured
