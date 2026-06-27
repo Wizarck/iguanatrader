@@ -35,6 +35,7 @@ from iguanatrader.contexts.trading.ports import (
     FillEvent,
     NewOrder,
     Position,
+    WorkingOrder,
 )
 from iguanatrader.contexts.trading.repository import (
     EquitySnapshotRepository,
@@ -80,6 +81,9 @@ class _FakeBroker(BrokerPort):
         raise NotImplementedError
 
     async def list_positions(self) -> list[Position]:  # pragma: no cover
+        return []
+
+    async def list_working_orders(self) -> list[WorkingOrder]:  # pragma: no cover
         return []
 
     async def get_account_equity(self) -> EquitySnapshotValue:

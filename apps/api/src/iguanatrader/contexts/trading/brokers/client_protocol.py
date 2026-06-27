@@ -143,6 +143,12 @@ class OpenOrder:
     order_type: str
     limit_price: Decimal | None
     status: str  # "Submitted" / "Filled" / "PendingCancel" / etc.
+    # IBKR ``auxPrice`` — the TRIGGER price of a stop order (``STP`` /
+    # ``STP LMT``). ``limit_price`` (``lmtPrice``) is empty for a plain stop,
+    # so without this the resting protective stop level is invisible to the
+    # position-review read model. Trailing default keeps every existing
+    # construction (tests + fakes) valid. ``None`` for non-stop order types.
+    aux_price: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

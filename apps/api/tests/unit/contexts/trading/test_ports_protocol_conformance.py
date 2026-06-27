@@ -25,6 +25,7 @@ from iguanatrader.contexts.trading.ports import (
     Proposal,
     StrategyConfigSnapshot,
     StrategyPort,
+    WorkingOrder,
 )
 
 
@@ -78,6 +79,9 @@ class _StubBroker:
             snapshot_kind="event",
             captured_at=datetime.now(),
         )
+
+    async def list_working_orders(self) -> list[WorkingOrder]:
+        return []
 
 
 class _BrokenBroker:

@@ -334,6 +334,10 @@ def _from_open_order(t: Any) -> OpenOrder:
         order_type=order.orderType,
         limit_price=Decimal(str(order.lmtPrice)) if order.lmtPrice else None,
         status=getattr(status, "status", "Submitted") if status else "Submitted",
+        # Stop trigger (auxPrice) — present on STP / STP LMT orders; 0 / unset
+        # for non-stop types. Surfaced so position-review can see the resting
+        # protective stop level (lmtPrice is empty for a plain stop).
+        aux_price=(Decimal(str(order.auxPrice)) if getattr(order, "auxPrice", None) else None),
     )
 
 

@@ -25,6 +25,7 @@ from iguanatrader.cli._tenant import db_url, resolve_tenant_id
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from iguanatrader.contexts.risk.position_review import PositionReviewResult
     from iguanatrader.contexts.trading.brokers.ib_async_client import IbAsyncIBClient
     from iguanatrader.contexts.trading.brokers.ibkr_adapter import IBKRAdapter
     from iguanatrader.contexts.trading.ports import StrategyPort
@@ -195,6 +196,98 @@ def run(
             i_understand_the_risks=i_understand_the_risks,
         )
     )
+
+
+@app.command("positions-review")
+def positions_review(
+    mode: str = typer.Option(
+        "paper", "--mode", help=f"Broker mode to connect for the read: {', '.join(_VALID_MODES)}."
+    ),
+    tenant: str | None = typer.Option(
+        None, "--tenant", help="Tenant slug; defaults to the first tenant if single-tenant."
+    ),
+) -> None:
+    """Show open positions + the protective stop / take-profit orders ACTUALLY
+    resting at the broker, with any divergence from the DB-intended levels.
+
+    Read-only: connects to the broker, reads positions + the working-order
+    book, reconciles them against each open trade's intended stop/target, and
+    prints the result. Never places, cancels, or closes anything.
+    """
+    if mode not in _VALID_MODES:
+        typer.echo(f"Invalid mode {mode!r}; expected one of {_VALID_MODES}")
+        raise typer.Exit(code=2)
+    asyncio.run(_run_positions_review(mode=mode, tenant=tenant))
+
+
+async def _run_positions_review(*, mode: str, tenant: str | None) -> None:
+    from iguanatrader.contexts.risk.position_review import PositionReviewService
+    from iguanatrader.contexts.risk.trailing_stop_repository import (
+        TrailingStopAuditRepository,
+    )
+    from iguanatrader.contexts.trading.brokers.ib_async_client import (
+        build_ib_async_client_from_env,
+    )
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+
+    tenant_id = await resolve_tenant_id(tenant)
+    ib_client = build_ib_async_client_from_env()
+    broker = await _build_broker(ib_client=ib_client, mode=mode, tenant_id=tenant_id)
+    await broker.connect()
+    try:
+        engine = engine_factory(db_url())
+        sessionmaker = session_factory(engine)
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+            service = PositionReviewService(
+                broker=broker,
+                session=session,
+                trailing_audit_repo=TrailingStopAuditRepository(),
+            )
+            result = await service.review()
+        _print_position_review(result)
+    finally:
+        await broker.disconnect()
+
+
+def _fmt(value: object | None) -> str:
+    return "—" if value is None else str(value)
+
+
+def _print_position_review(result: PositionReviewResult) -> None:
+    typer.echo(
+        f"Open positions: {len(result.reviews)} | broker positions: "
+        f"{result.broker_positions_read} | working orders: "
+        f"{result.broker_working_orders_read} | divergences: "
+        f"{result.divergences_detected}"
+    )
+    if not result.reviews:
+        typer.echo("  (no open positions)")
+        return
+    for r in result.reviews:
+        typer.echo("")
+        typer.echo(
+            f"  {r.symbol}  {r.side.upper()}  qty={r.quantity}"
+            f"  broker_qty={_fmt(r.broker_quantity)}"
+            f"  avg={_fmt(r.average_price)}  uPnL={_fmt(r.unrealized_pnl)}"
+        )
+        rest_stop = (
+            f"{r.resting_stop.order_type}@{_fmt(r.resting_stop.level)} ({r.resting_stop.status})"
+            if r.resting_stop is not None
+            else "NONE"
+        )
+        rest_tgt = (
+            f"{r.resting_target.order_type}@{_fmt(r.resting_target.level)}"
+            f" ({r.resting_target.status})"
+            if r.resting_target is not None
+            else "NONE"
+        )
+        typer.echo(f"    stop:   intended={r.intended_stop}  resting={rest_stop}")
+        typer.echo(f"    target: intended={_fmt(r.intended_target)}  resting={rest_tgt}")
+        if r.divergences:
+            typer.echo(f"    ⚠ divergences: {', '.join(r.divergences)}")
 
 
 async def _run_daemon(

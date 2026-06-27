@@ -111,6 +111,33 @@ class Position:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkingOrder:
+    """A broker-side order currently resting/working at the broker.
+
+    Slice ``position-review-broker-visibility``: the position-review read
+    model needs to see what protective orders are ACTUALLY live at IBKR —
+    the resting stop-loss (``STP`` / ``STP LMT``) and take-profit (``LMT``)
+    legs attached to an open position — to reconcile them against the
+    DB-intended stop/target. Distinct from the broker-client
+    :class:`~iguanatrader.contexts.trading.brokers.client_protocol.OpenOrder`
+    value (which carries IBKR-session metadata); the adapter translates one
+    into the other, mapping the IBKR ``auxPrice`` of a stop order into
+    :attr:`stop_price` so the trigger level is visible (``OpenOrder`` only
+    exposes ``limit_price``, which is empty for a plain stop).
+    """
+
+    tenant_id: UUID
+    symbol: str
+    action: str  # IBKR convention: "BUY" / "SELL".
+    quantity: Decimal
+    order_type: str  # "STP" / "LMT" / "STP LMT" / "MKT" / ...
+    limit_price: Decimal | None
+    stop_price: Decimal | None  # IBKR auxPrice — the stop trigger level.
+    order_ref: str | None
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
 class EquitySnapshotValue:
     """Plain-data equity snapshot returned by
     :meth:`BrokerPort.get_account_equity`.
@@ -268,6 +295,19 @@ class BrokerPort(Port, Protocol):
         """Return a fresh equity snapshot for the active account."""
         ...
 
+    async def list_working_orders(self) -> Sequence[WorkingOrder]:
+        """Return every order currently resting/working at the broker.
+
+        Slice ``position-review-broker-visibility``. The position-review
+        read model uses this to see the protective stop / take-profit legs
+        ACTUALLY live at IBKR for each open position, and reconcile them
+        against the DB-intended levels. Read-only; never mutates broker
+        state. Adapters translate their native open-order shape into
+        :class:`WorkingOrder`, surfacing the IBKR ``auxPrice`` as
+        :attr:`WorkingOrder.stop_price`.
+        """
+        ...
+
 
 @runtime_checkable
 class StrategyPort(Port, Protocol):
@@ -392,5 +432,6 @@ __all__ = [
     "Proposal",
     "StrategyConfigSnapshot",
     "StrategyPort",
+    "WorkingOrder",
     "derive_client_order_id",
 ]
