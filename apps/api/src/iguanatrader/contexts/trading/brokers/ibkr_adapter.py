@@ -615,7 +615,19 @@ class IBKRAdapter(HeartbeatMixin):
     # ------------------------------------------------------------------
 
     def _build_contract(self, symbol: str) -> Contract:
-        return Contract(symbol=symbol, exchange="SMART", currency="USD", sec_type="STK")
+        # WS-3: resolve exchange/currency per symbol (UCITS symbols trade in
+        # GBP/EUR). Defaults to SMART/USD so the US watchlist is unchanged.
+        from iguanatrader.contexts.trading.brokers.symbol_contract import (
+            resolve_contract_params,
+        )
+
+        params = resolve_contract_params(symbol)
+        return Contract(
+            symbol=symbol,
+            exchange=params.exchange,
+            currency=params.currency,
+            sec_type="STK",
+        )
 
     def _build_ib_order(self, order: NewOrder, *, ib_order_type: str | None = None) -> IBOrder:
         # ``ib_order_type`` is the already-translated IBKR code from

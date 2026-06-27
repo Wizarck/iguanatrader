@@ -528,15 +528,21 @@ class IbAsyncIBClient:
         """Fetch historical bars for ``symbol`` (slice T4-followup-market-data §2.4).
 
         Wraps ``ib_async.IB.reqHistoricalDataAsync`` after qualifying
-        the symbol as a US-equity Stock contract on SMART/USD.
-        ``duration_str`` is IBKR's duration spec (e.g. ``"200 D"``,
-        ``"30 D"``, ``"1 Y"``); ``bar_size`` is e.g. ``"1 day"``,
-        ``"1 hour"``, ``"1 min"``. The ingestor is the only caller.
+        the symbol as a Stock contract. Exchange/currency resolve per symbol
+        (WS-3: UCITS symbols trade in GBP/EUR), defaulting to SMART/USD so the
+        US watchlist is unchanged. ``duration_str`` is IBKR's duration spec
+        (e.g. ``"200 D"``, ``"30 D"``, ``"1 Y"``); ``bar_size`` is e.g.
+        ``"1 day"``, ``"1 hour"``, ``"1 min"``. The ingestor is the only caller.
         """
         from ib_async import Stock
 
+        from iguanatrader.contexts.trading.brokers.symbol_contract import (
+            resolve_contract_params,
+        )
+
         ib = self._ensure()
-        contract = Stock(symbol, "SMART", "USD")
+        params = resolve_contract_params(symbol)
+        contract = Stock(symbol, params.exchange, params.currency)
         await ib.qualifyContractsAsync(contract)
         bars = await ib.reqHistoricalDataAsync(
             contract,
