@@ -181,6 +181,15 @@ class EntryGateLike(Protocol):
     ) -> _EntryGateDecisionLike: ...
 
 
+class LiveGatewayLike(Protocol):
+    """Structural shape of the WS-4 ephemeral live-gateway coordinator
+    (concrete: ``EphemeralGatewayCoordinator``). Injected so the execute path
+    can lease-up the on-demand live gateway before a LIVE order and fail closed
+    if it is not ready — without ``trading.service`` depending on the adapter."""
+
+    async def ensure_up(self, *, reason: str) -> bool: ...
+
+
 class TradingService:
     """Orchestrate the propose→fills sequence via :class:`MessageBus`.
 
@@ -212,10 +221,18 @@ class TradingService:
         kill_switch_reader: KillSwitchReader | None = None,
         propose_dedup_window_secs: int = 1800,
         entry_gate: EntryGateLike | None = None,
+        live_gateway: LiveGatewayLike | None = None,
     ) -> None:
         self._bus = bus
         self._broker = broker
         self._strategy_resolver = strategy_resolver
+        # Slice WS-4 (ephemeral live gateway): optional coordinator that leases
+        # the on-demand live IBKR gateway up before a LIVE order. When wired,
+        # ``execute_on_approval_handler`` calls ``ensure_up`` for live-mode
+        # proposals and FAILS CLOSED (OrderRejected, no order) if the gateway is
+        # not ready. ``None`` (default / paper / tests) leaves the path
+        # unchanged. Paper orders never consult it.
+        self._live_gateway = live_gateway
         # Slice ``entry-veto-gate`` (WS-2): optional Opus-backed HARD pre-filter.
         # When wired, ``propose`` calls it after the dedup guards and BEFORE
         # persisting the proposal; a ``blocked`` decision drops the entry so no
@@ -641,6 +658,30 @@ class TradingService:
                 requested_quantity=str(proposal_row.quantity),
                 submitted_quantity=str(whole_quantity),
             )
+
+        # WS-4 ephemeral live gateway: for a LIVE order, lease the on-demand
+        # gateway up FIRST and fail closed if it is not ready — a real-money
+        # order must never be sent at a gateway we cannot confirm is up. Runs
+        # before any Trade/Order is created (nothing to orphan on the not-ready
+        # path). Paper orders + the unwired case skip this entirely.
+        if proposal_row.mode == "live" and self._live_gateway is not None:
+            gateway_ready = await self._live_gateway.ensure_up(
+                reason=f"order:{event.proposal_id}"
+            )
+            if not gateway_ready:
+                await self._bus.publish(
+                    OrderRejected(
+                        tenant_id=event.tenant_id,
+                        proposal_id=event.proposal_id,
+                        reason="gateway_unavailable",
+                    )
+                )
+                log.warning(
+                    "trading.execute.live_gateway_unavailable",
+                    proposal_id=str(event.proposal_id),
+                    tenant_id=str(event.tenant_id),
+                )
+                return
 
         await proposal_repo.set_state(
             proposal_id=event.proposal_id,
