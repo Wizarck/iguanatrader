@@ -391,6 +391,18 @@ def seed_watchlist(
             "Configs not in the new grid stay disabled."
         ),
     ),
+    refresh_briefs: bool = typer.Option(
+        False,
+        "--refresh-briefs/--no-refresh-briefs",
+        help=(
+            "WS-1b: after seeding, synthesise a fresh research brief for each "
+            "seeded symbol immediately (the on-add-stock trigger) instead of "
+            "waiting for the next daily 07:00 brief cron — so the LLM entry/exit "
+            "gates read current fundamentals from the first tick. Spends one "
+            "OpenBB fetch + one LLM synthesis per symbol; best-effort per symbol. "
+            "Off by default."
+        ),
+    ),
     apply: bool = typer.Option(
         False,
         "--apply",
@@ -454,8 +466,40 @@ def seed_watchlist(
             kinds=kinds,
             wipe=wipe,
             apply=apply,
+            refresh_briefs=refresh_briefs,
         )
     )
+
+
+#: House research methodology for the on-add-stock brief refresh — matches the
+#: daemon's daily brief cron (``OrchestrationService._DEFAULT_BRIEF_METHODOLOGY``)
+#: + the REST route default, so a CLI-triggered brief is identical to a cron one.
+_SEED_BRIEF_METHODOLOGY = "three_pillar"
+
+
+async def _refresh_briefs_for_symbols(
+    brief_service: object,
+    *,
+    symbols: list[str],
+    methodology: str = _SEED_BRIEF_METHODOLOGY,
+) -> int:
+    """Synthesise a fresh brief per seeded symbol (WS-1b on-add-stock trigger).
+
+    Best-effort + per-symbol fail-soft (mirrors the daemon brief cron): one bad
+    symbol never aborts the batch. Returns the count refreshed. Must run inside
+    a ``with_tenant_context`` + ``with_session_context`` scope so the brief
+    service's repository resolves its session + tenant.
+    """
+    refreshed = 0
+    for symbol in symbols:
+        try:
+            await brief_service.refresh(symbol=symbol, methodology=methodology)  # type: ignore[attr-defined]
+            refreshed += 1
+            typer.echo(f"  brief refreshed: {symbol}")
+        except Exception as exc:  # fail-soft per symbol
+            typer.echo(f"  brief refresh FAILED for {symbol}: {type(exc).__name__}: {exc}")
+            continue
+    return refreshed
 
 
 async def _seed_watchlist_async(
@@ -465,6 +509,7 @@ async def _seed_watchlist_async(
     kinds: list[str],
     wipe: bool,
     apply: bool,
+    refresh_briefs: bool = False,
 ) -> None:
     """Async body of the ``seed-watchlist`` command.
 
@@ -530,6 +575,26 @@ async def _seed_watchlist_async(
             for kind, sym in grid:
                 await repo.upsert(symbol=sym, strategy_kind=kind, params={}, enabled=True)
             await session.commit()
+
+        # WS-1b on-add-stock trigger: now that the configs are committed +
+        # enabled, synthesise a fresh brief per seeded symbol so the LLM
+        # entry/exit gates have current fundamentals immediately instead of
+        # waiting for the next daily 07:00 brief cron. Best-effort, in its own
+        # committed session scope; a brief failure never undoes the seed above.
+        if refresh_briefs:
+            from iguanatrader.contexts.research.factory import build_brief_service
+            from iguanatrader.contexts.research.repository import ResearchRepository
+
+            typer.echo(f"\nRefreshing briefs for {len(symbols)} seeded symbol(s)...")
+            async with (
+                with_tenant_context(tenant_id),
+                sessionmaker() as brief_session,
+                with_session_context(brief_session),
+            ):
+                brief_service = build_brief_service(ResearchRepository())
+                refreshed = await _refresh_briefs_for_symbols(brief_service, symbols=symbols)
+                await brief_session.commit()
+            typer.echo(f"Briefs refreshed: {refreshed}/{len(symbols)}.")
     finally:
         await engine.dispose()
 
