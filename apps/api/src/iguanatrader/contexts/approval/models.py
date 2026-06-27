@@ -71,13 +71,31 @@ class ApprovalRequest(Base):
         ForeignKey("tenants.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    #: FK to T1's ``trade_proposals(id)``. Declared by textual reference
-    #: only — T1 ships the actual table in its own migration. Until T1
-    #: lands, this column may be populated with synthetic UUIDs in tests.
-    proposal_id: Mapped[UUID] = mapped_column(
+    #: FK to T1's ``trade_proposals(id)``. NULL for ``action_type='exit'``
+    #: rows (an exit-approval acts on a ``trade_id``, not a proposal); the FK
+    #: still constrains non-null values for the entry flow (migration 0039).
+    proposal_id: Mapped[UUID | None] = mapped_column(
         Uuid,
         ForeignKey("trade_proposals.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    #: WS-5 PR-B discriminator: ``'entry'`` (open a position — the existing
+    #: granted-bridge → ``ProposalApproved`` path) or ``'exit'`` (close an open
+    #: trade — granted-bridge → ``CloseTradeRequested``). The granted bridge is
+    #: FAIL-CLOSED on this: only ``'entry'`` fires a buy, only ``'exit'`` fires
+    #: a close, anything else does neither. Server default backfills legacy
+    #: rows to ``'entry'``.
+    action_type: Mapped[str] = mapped_column(
+        Text,
         nullable=False,
+        server_default="entry",
+    )
+    #: The open trade an exit-approval acts on; NULL for entry rows.
+    #: App-enforced (no DB FK) so 0039 stays a fast ADD COLUMN on the live
+    #: daemon — the urgent-exit advisor validates the trade before raising.
+    trade_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        nullable=True,
     )
     #: JSON list of channel kinds — values from
     #: ``{"telegram", "whatsapp", "dashboard"}``. Stored as JSON for

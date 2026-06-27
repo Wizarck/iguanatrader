@@ -81,4 +81,41 @@ def render_proposal_card(
     return "\n".join(lines)
 
 
-__all__ = ["render_proposal_card"]
+def render_exit_card(
+    *,
+    request_id: UUID,
+    trade_id: UUID,
+    symbol: str,
+    side: str,
+    quantity: Decimal,
+    expires_at: datetime,
+    rationale: str | None = None,
+    confidence: Decimal | None = None,
+    unrealized_pnl: Decimal | None = None,
+) -> str:
+    """Render the WS-5 urgent-exit approval card (Spanish, side-aware).
+
+    ``side`` is the OPEN position's side (``"buy"`` = long, ``"sell"`` =
+    short); approving CLOSES it (a long closes by selling, a short by
+    recompra). Kept pure so unit tests assert the wording without I/O.
+    """
+    is_long = side == "buy"
+    accion = "VENDER" if is_long else "RECOMPRAR"
+    head = f"🚨 {accion} URGENTE {symbol} (CERRAR {'LARGO' if is_long else 'CORTO'})"
+    lines = [
+        head,
+        f"Cantidad: {quantity}",
+    ]
+    if unrealized_pnl is not None:
+        lines.append(f"P&L no realizado: {unrealized_pnl}")
+    if confidence is not None:
+        lines.append(f"Confianza del análisis: {confidence}")
+    if rationale:
+        lines.append(f"Motivo: {rationale}")
+    lines.append("")
+    lines.append(f"Aprobar cierre: /approve {request_id}   ·   Mantener: /reject {request_id}")
+    lines.append(f"Posición: {trade_id}  ·  expira: {expires_at.isoformat()}")
+    return "\n".join(lines)
+
+
+__all__ = ["render_exit_card", "render_proposal_card"]

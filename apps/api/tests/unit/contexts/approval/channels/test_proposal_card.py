@@ -6,9 +6,48 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from iguanatrader.contexts.approval.channels.proposal_card import render_proposal_card
+from iguanatrader.contexts.approval.channels.proposal_card import (
+    render_exit_card,
+    render_proposal_card,
+)
 
 _EXPIRES = datetime(2026, 6, 23, 20, 30, tzinfo=UTC)
+
+
+def test_exit_card_long_says_vender_urgente_with_close_path() -> None:
+    request_id = uuid4()
+    trade_id = uuid4()
+    card = render_exit_card(
+        request_id=request_id,
+        trade_id=trade_id,
+        symbol="AMD",
+        side="buy",  # long position → close by selling
+        quantity=Decimal("12"),
+        expires_at=_EXPIRES,
+        rationale="thesis-break: missing stop at broker + adverse move",
+        confidence=Decimal("0.82"),
+        unrealized_pnl=Decimal("-340.00"),
+    )
+    assert "VENDER URGENTE AMD" in card
+    assert "CERRAR LARGO" in card
+    assert "thesis-break" in card
+    assert "-340.00" in card
+    assert f"/approve {request_id}" in card
+    assert f"/reject {request_id}" in card
+    assert str(trade_id) in card
+
+
+def test_exit_card_short_says_recomprar() -> None:
+    card = render_exit_card(
+        request_id=uuid4(),
+        trade_id=uuid4(),
+        symbol="USO",
+        side="sell",  # short position → close by buying back
+        quantity=Decimal("30"),
+        expires_at=_EXPIRES,
+    )
+    assert "RECOMPRAR URGENTE USO" in card
+    assert "CERRAR CORTO" in card
 
 
 def test_long_card_states_buy_and_sell_levels() -> None:

@@ -56,6 +56,12 @@ class ApprovalProposalApproved(Event):
     decided_by_user_id: UUID | None = None
     decided_via_channel: str | None = None
     tenant_id: UUID | None = None
+    # WS-5 PR-B: discriminator carried from the request row so the outbound
+    # bridge is action-aware. 'entry' → trading.ProposalApproved (open);
+    # 'exit' → CloseTradeRequested(trade_id) (close). Fail-closed: anything
+    # else fires neither.
+    action_type: str = "entry"
+    trade_id: UUID | None = None
 
 
 @dataclass
@@ -68,6 +74,8 @@ class ApprovalProposalRejected(Event):
     reason: str | None = None
     decided_via_channel: str | None = None
     tenant_id: UUID | None = None
+    action_type: str = "entry"
+    trade_id: UUID | None = None
 
 
 @dataclass
@@ -78,6 +86,8 @@ class ApprovalProposalTimedOut(Event):
     request_id: UUID | None = None
     expired_at: datetime | None = None
     tenant_id: UUID | None = None
+    action_type: str = "entry"
+    trade_id: UUID | None = None
 
 
 __all__ = [

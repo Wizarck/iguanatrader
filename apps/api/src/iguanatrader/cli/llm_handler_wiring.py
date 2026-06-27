@@ -236,6 +236,10 @@ def build_explainer_narrative_provider(
     """
 
     async def _provider(request: ApprovalRequestRow) -> str:
+        # Exit-approval rows (WS-5 PR-B) have no proposal to explain; skip the
+        # narrative (empty string → A1 falls back to the legacy template).
+        if request.proposal_id is None:
+            return ""
         try:
             prop = await proposal_repo.get_by_id(request.proposal_id)
         except Exception as exc:

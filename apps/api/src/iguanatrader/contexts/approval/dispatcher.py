@@ -114,22 +114,69 @@ class LogOnlyChannelDispatcher:
 def build_outbound_message_from_request(
     request: ApprovalRequestRow,
     proposal: Any | None = None,
+    exit_subject: Any | None = None,
 ) -> OutboundMessage:
     """Render an :class:`ApprovalRequestRow` into a generic
     :class:`OutboundMessage`.
 
-    When ``proposal`` is supplied the body is the clear side-aware card
-    (:func:`render_proposal_card`): ``🟢 COMPRAR (LARGO)`` / ``🔴 VENDER EN
-    CORTO`` with entry, take-profit target and protective stop, so the
-    operator decides straight from the Telegram/WhatsApp message — they
-    never need the dashboard. A render error degrades to the sparse
-    proposal-id body (delivery is never blocked). Without a proposal the
-    sparse body is used (the proposal id always appears for correlation).
+    Entry rows (``action_type='entry'``): when ``proposal`` is supplied the
+    body is the clear side-aware card (:func:`render_proposal_card`).
+
+    Exit rows (``action_type='exit'``, WS-5 PR-B): when ``exit_subject`` (the
+    open Trade) is supplied the body is the urgent-exit card
+    (:func:`render_exit_card`) — ``🚨 VENDER URGENTE … (CERRAR LARGO)``.
+
+    A render error degrades to a sparse correlation body (delivery is never
+    blocked). The ``approve``/``reject`` buttons carry the request id, so the
+    decision path is identical for entry and exit.
     """
     expires = request.expires_at.isoformat()
+    if getattr(request, "action_type", "entry") == "exit":
+        sparse = f"Aprobar cierre de la posición {request.trade_id}? expires_at={expires}"
+        body = sparse
+        if exit_subject is not None:
+            try:
+                from iguanatrader.contexts.approval.channels.proposal_card import (
+                    render_exit_card,
+                )
+
+                body = render_exit_card(
+                    request_id=request.id,
+                    trade_id=request.trade_id,  # type: ignore[arg-type]
+                    symbol=exit_subject.symbol,
+                    side=exit_subject.side,
+                    quantity=exit_subject.quantity,
+                    expires_at=request.expires_at,
+                    rationale=getattr(exit_subject, "rationale", None),
+                    confidence=getattr(exit_subject, "confidence", None),
+                    unrealized_pnl=getattr(exit_subject, "unrealized_pnl", None),
+                )
+            except Exception as exc:  # never block fan-out on a render error
+                log.warning(
+                    "approval.channel.exit_card_render_failed",
+                    request_id=str(request.id),
+                    trade_id=str(request.trade_id),
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+                body = sparse
+        return OutboundMessage(
+            body=body,
+            correlation_id=str(request.id),
+            metadata={
+                "trade_id": str(request.trade_id),
+                "tenant_id": str(request.tenant_id),
+                "action_type": "exit",
+            },
+            actions=(
+                ("✅ Cerrar", f"approve:{request.id}"),
+                ("❌ Mantener", f"reject:{request.id}"),
+            ),
+        )
+
     sparse = f"Approve trade proposal {request.proposal_id}? expires_at={expires}"
     body = sparse
-    if proposal is not None:
+    if proposal is not None and request.proposal_id is not None:
         try:
             from iguanatrader.contexts.approval.channels.proposal_card import (
                 render_proposal_card,
@@ -199,6 +246,28 @@ async def _load_proposal_for_notification(proposal_id: Any) -> Any | None:
         return None
 
 
+async def _load_trade_for_notification(trade_id: Any) -> Any | None:
+    """Best-effort load of the :class:`Trade` for an exit-approval card
+    (WS-5 PR-B). Degrades to ``None`` (sparse body) on any failure."""
+    if trade_id is None:
+        return None
+    try:
+        from iguanatrader.contexts.trading.models import Trade
+        from iguanatrader.shared.contextvars import session_var
+
+        session = session_var.get()
+        if session is None:
+            return None
+        return await session.get(Trade, trade_id)
+    except Exception as exc:  # pragma: no cover - defensive degrade-to-sparse
+        log.warning(
+            "approval.channel.trade_load_failed",
+            trade_id=str(trade_id),
+            error=str(exc),
+        )
+        return None
+
+
 async def resolve_recipients_from_request(
     request: ApprovalRequestRow,
     repository: ApprovalRepository,
@@ -255,8 +324,12 @@ class _MessageDispatcherChannelAdapter:
         request: ApprovalRequestRow,
         channels: list[str],
     ) -> None:
-        proposal = await _load_proposal_for_notification(request.proposal_id)
-        message = build_outbound_message_from_request(request, proposal)
+        if getattr(request, "action_type", "entry") == "exit":
+            trade = await _load_trade_for_notification(request.trade_id)
+            message = build_outbound_message_from_request(request, exit_subject=trade)
+        else:
+            proposal = await _load_proposal_for_notification(request.proposal_id)
+            message = build_outbound_message_from_request(request, proposal)
         try:
             recipients = await resolve_recipients_from_request(request, self._repository)
         except Exception as exc:

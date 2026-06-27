@@ -258,6 +258,40 @@ class CloseTradeRequested(Event):
 
 
 @dataclass(kw_only=True)
+class ExitApprovalRequested(Event):
+    """Emitted by the WS-5 urgent-exit advisor to ask the operator, via the
+    HITL approval machinery, to CLOSE an open position now.
+
+    Subscriber: P1 ``ApprovalService._exit_approval_requested_handler`` →
+    creates an ``action_type='exit'`` approval request + fans it out to
+    Telegram. On a granted decision the action-aware bridge publishes
+    :class:`CloseTradeRequested` (reason ``'manual'`` — a human-approved
+    close); on reject/timeout nothing is closed (the advisor re-raises on a
+    later tick if the urgent condition persists). NEVER auto-closes — this
+    event only raises an approval.
+
+    ``idempotency_key`` = ``trade_id`` so a re-raise for the same position
+    while a card is still pending is de-duped at the bus.
+    """
+
+    event_name: ClassVar[str] = "trading.exit_approval.requested"
+
+    tenant_id: UUID
+    trade_id: UUID
+    symbol: str
+    side: str
+    quantity: Decimal
+    reason: str = "urgent"
+    llm_rationale: str | None = None
+    confidence: Decimal | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.idempotency_key is None:
+            self.idempotency_key = str(self.trade_id)
+
+
+@dataclass(kw_only=True)
 class DaemonDrainRequested(Event):
     """Emitted by ``POST /api/v1/daemons/{mode}/toggle`` on a true→false toggle.
 
@@ -355,6 +389,7 @@ __all__ = [
     "DaemonDrainRequested",
     "DaemonReconcileRequested",
     "EquityUpdated",
+    "ExitApprovalRequested",
     "OrderFilled",
     "OrderPlaced",
     "OrderRejected",
