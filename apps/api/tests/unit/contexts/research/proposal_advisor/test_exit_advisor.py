@@ -14,6 +14,7 @@ from iguanatrader.contexts.research.proposal_advisor.exit_advisor import (
     DEFAULT_EXIT_MODEL,
     ExitAdvisor,
     ExitAdvisorParseError,
+    ExitAdvisorVerdict,
 )
 from iguanatrader.contexts.research.synthesis.llm_client import LLMCompletion
 
@@ -46,7 +47,7 @@ class _StubLLM:
         )
 
 
-async def _assess(advisor: ExitAdvisor, **overrides: object) -> object:
+async def _assess(advisor: ExitAdvisor, **overrides: object) -> ExitAdvisorVerdict:
     kwargs: dict[str, object] = {
         "trade_id": "t-1",
         "symbol": "AMD",
