@@ -193,6 +193,18 @@ services:
     depends_on:
       - api
       - openbb_sidecar
+    # Override the image's curl :8000 probe — a daemon serves no HTTP, so that
+    # probe always failed (permanent false "unhealthy"). The daemon stamps
+    # /data/daemon_heartbeat_paper every ~15s on its own event loop; a wedged
+    # daemon stops stamping → stale → restart:unless-stopped recovers it.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test $(( $(date +%s) - $(cat /data/daemon_heartbeat_paper 2>/dev/null || echo 0) )) -lt 90
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
 
   trading_daemon_live:
     image: iguanatrader/api:mvp
@@ -239,6 +251,15 @@ services:
     depends_on:
       - api
       - openbb_sidecar
+    # See the paper daemon note — heartbeat freshness, not curl :8000.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test $(( $(date +%s) - $(cat /data/daemon_heartbeat_live 2>/dev/null || echo 0) )) -lt 90
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
 
   web:
     image: iguanatrader/web:mvp
