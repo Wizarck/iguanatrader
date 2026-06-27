@@ -82,6 +82,11 @@ services:
       - TRADING_MODE=live
       - EXISTING_SESSION_DETECTED_ACTION=${EXISTING_SESSION_DETECTED_ACTION:-primary}
       - READ_ONLY_API=${READ_ONLY_API_LIVE:-no}
+      # IBC auto-dismisses the live-account precautionary warning dialog. A
+      # headless gateway (no VNC operator to click it — and in the ephemeral
+      # model the sidecar starts it unattended per lease) otherwise hangs at
+      # login behind that modal. Live-only; the paper gateway has no such dialog.
+      - BYPASS_WARNING=${BYPASS_WARNING:-yes}
       - VNC_SERVER_PASSWORD=${VNC_SERVER_PASSWORD_LIVE:-${VNC_SERVER_PASSWORD:-}}
       - TZ=${TZ:-UTC}
       - TWO_FA_TIMEOUT_ACTION=${TWO_FA_TIMEOUT_ACTION:-restart}

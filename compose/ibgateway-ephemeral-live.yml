@@ -38,10 +38,15 @@
 #   ELIGIA_GATEWAY_WEBHOOK_URL=...         # the sidecar lease endpoint
 #   ELIGIA_GATEWAY_HMAC_SECRET=...         # shared with the sidecar
 #
-# NOTE: Compose overlay merge semantics for `depends_on` vary across Compose
-# versions; VERIFY against the VPS's `docker compose version` during the staged
-# rollout (`docker compose ... config` should show trading_daemon_live WITHOUT
-# the ib-gateway-live dependency).
+# NOTE: Compose MERGES `depends_on` maps by key across `-f` overlays — a plain
+# restatement here would NOT remove the ib-gateway-live gate added by
+# compose/ibgateway.yml; the gateway dependency would survive the merge and the
+# live daemon would block at boot waiting for an intentionally-stopped gateway
+# (verified on Compose v2.39). The `!override` YAML tag (Compose v2.24+) forces a
+# REPLACE instead of a merge — that is what actually drops the gate. Verify with:
+#   docker compose -f compose/mvp.yml -f compose/postgres.yml \
+#     -f compose/ibgateway.yml -f compose/ibgateway-ephemeral-live.yml config
+# → trading_daemon_live.depends_on must list ONLY api + openbb_sidecar.
 
 services:
   ib-gateway-live:
@@ -51,9 +56,10 @@ services:
     profiles: ["ephemeral-live"]
 
   trading_daemon_live:
-    # REDEFINED (not merged): drop the ib-gateway-live health gate so the live
-    # daemon boots with the gateway DOWN and connects on demand per lease.
-    depends_on:
+    # `!override` REPLACES the merged depends_on (not merge) → drops the
+    # ib-gateway-live health gate so the live daemon boots with the gateway DOWN
+    # and connects on demand per lease. Without the tag the gate survives.
+    depends_on: !override
       api:
         condition: service_started
       openbb_sidecar:
