@@ -34,6 +34,7 @@ from iguanatrader.contexts.trading.ports import (
     EquitySnapshotValue,
     NewOrder,
     Position,
+    WorkingOrder,
 )
 from iguanatrader.contexts.trading.repository import EquitySnapshotRepository
 from iguanatrader.persistence import Tenant
@@ -92,6 +93,9 @@ class _TenantAwareFakeBroker(BrokerPort):
         raise NotImplementedError
 
     async def list_positions(self) -> list[Position]:  # pragma: no cover
+        return []
+
+    async def list_working_orders(self) -> list[WorkingOrder]:  # pragma: no cover
         return []
 
     async def reconcile_fills(self, since: datetime) -> Any:  # pragma: no cover

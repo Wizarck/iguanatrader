@@ -46,6 +46,7 @@ from iguanatrader.contexts.trading.ports import (
     FillEvent,
     NewOrder,
     Position,
+    WorkingOrder,
 )
 from iguanatrader.contexts.trading.repository import (
     EquitySnapshotRepository,
@@ -236,6 +237,9 @@ class _FakeBroker:
 
     async def list_positions(self) -> list[Position]:
         return list(self._positions)
+
+    async def list_working_orders(self) -> list[WorkingOrder]:
+        return []
 
     async def get_account_equity(self) -> EquitySnapshotValue:
         return EquitySnapshotValue(
