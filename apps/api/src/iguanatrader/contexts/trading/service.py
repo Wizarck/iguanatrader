@@ -31,7 +31,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 import structlog
@@ -151,6 +151,36 @@ StrategyResolver = Callable[[UUID], Awaitable[StrategyPort]]
 KillSwitchReader = Callable[[UUID], Awaitable[bool]]
 
 
+class _EntryGateDecisionLike(Protocol):
+    """Read-only shape of the WS-2 entry-gate decision ``propose`` consumes."""
+
+    @property
+    def blocked(self) -> bool: ...
+
+    @property
+    def rationale(self) -> str: ...
+
+
+class EntryGateLike(Protocol):
+    """Structural shape of the WS-2 entry veto gate (concrete: research
+    ``EntryVetoGate`` on Opus). Injected so ``trading`` does not import
+    ``research``; ``propose`` calls it as a HARD pre-filter — a ``blocked``
+    decision drops the proposal BEFORE any approval card is raised."""
+
+    async def evaluate(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+        entry_price: Decimal | None,
+        stop_price: Decimal | None,
+        target_price: Decimal | None,
+        confidence_score: Decimal | None,
+        reasoning: dict[str, Any],
+    ) -> _EntryGateDecisionLike: ...
+
+
 class TradingService:
     """Orchestrate the propose→fills sequence via :class:`MessageBus`.
 
@@ -181,10 +211,18 @@ class TradingService:
         order_timeout_secs: float = 30.0,
         kill_switch_reader: KillSwitchReader | None = None,
         propose_dedup_window_secs: int = 1800,
+        entry_gate: EntryGateLike | None = None,
     ) -> None:
         self._bus = bus
         self._broker = broker
         self._strategy_resolver = strategy_resolver
+        # Slice ``entry-veto-gate`` (WS-2): optional Opus-backed HARD pre-filter.
+        # When wired, ``propose`` calls it after the dedup guards and BEFORE
+        # persisting the proposal; a ``blocked`` decision drops the entry so no
+        # approval card is ever raised. ``None`` (default / tests) preserves the
+        # exact pre-slice propose behaviour. The gate itself fails OPEN on any
+        # error, so a gate hiccup never blocks trading.
+        self._entry_gate = entry_gate
         # Slice #5: authoritative kill-switch re-check at the execute /
         # close broker-submission boundary. The in-memory
         # ``_kill_switch_active`` flag below is NOT load-bearing in
@@ -223,6 +261,16 @@ class TradingService:
         # window. The open-position guard is unconditional (no window).
         self._propose_dedup_window_secs = propose_dedup_window_secs
         self._kill_switch_active: bool = False
+
+    def attach_entry_gate(self, gate: EntryGateLike | None) -> None:
+        """Wire the WS-2 entry veto gate AFTER construction.
+
+        The daemon builds the gate's brief/Hindsight lookups only after the
+        ``TradingService`` is constructed (ordering), so the gate is attached
+        here rather than passed to ``__init__``. Must be called before the
+        scheduler starts firing propose ticks. ``None`` clears it.
+        """
+        self._entry_gate = gate
 
     # ------------------------------------------------------------------
     # Subscription wiring
@@ -326,6 +374,34 @@ class TradingService:
                 strategy_config_id=str(strategy_config_id),
             )
             return None
+
+        # WS-2 entry veto gate (hard pre-filter): when wired, ask the Opus
+        # advisor whether to BLOCK this entry before the owner ever sees it.
+        # Runs AFTER the cheap dedup guards (so a deduped re-signal never spends
+        # an LLM call) and BEFORE persisting — a blocked entry leaves no
+        # proposal row and raises no approval card. The gate fails OPEN
+        # internally, so a gate error proceeds to the normal HITL flow rather
+        # than silently suppressing the trade.
+        if self._entry_gate is not None:
+            decision = await self._entry_gate.evaluate(
+                symbol=proposal.symbol,
+                side=proposal.side,
+                quantity=proposal.quantity,
+                entry_price=proposal.entry_price_indicative,
+                stop_price=proposal.stop_price,
+                target_price=proposal.target_price,
+                confidence_score=proposal.confidence_score,
+                reasoning=proposal.reasoning,
+            )
+            if decision.blocked:
+                log.info(
+                    "trading.propose.entry_vetoed",
+                    symbol=proposal.symbol,
+                    side=proposal.side,
+                    strategy_config_id=str(strategy_config_id),
+                    rationale=decision.rationale,
+                )
+                return None
 
         # Persist the trade_proposals row. Column types match the ORM
         # model exactly; the slice-3 tenant listener stamps tenant_id +
