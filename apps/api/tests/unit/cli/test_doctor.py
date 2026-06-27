@@ -26,8 +26,10 @@ from iguanatrader.cli.doctor import (
     check_watchlist_config_consistency,
     worst_status,
 )
+from iguanatrader.cli.trading import app
 from iguanatrader.contexts.trading.brokers.symbol_contract import ContractParams
 from iguanatrader.shared.time import now as utc_now
+from typer.testing import CliRunner
 
 
 @dataclass
@@ -273,10 +275,6 @@ def test_worst_status_orders_fail_over_warn_over_ok() -> None:
 
 
 def test_doctor_command_is_registered_and_help_works() -> None:
-    from typer.testing import CliRunner
-
-    from iguanatrader.cli.trading import app
-
     result = CliRunner().invoke(app, ["doctor", "--help"])
     assert result.exit_code == 0
     assert "--connect" in result.output
