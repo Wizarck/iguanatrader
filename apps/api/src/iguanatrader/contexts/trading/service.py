@@ -665,9 +665,7 @@ class TradingService:
         # before any Trade/Order is created (nothing to orphan on the not-ready
         # path). Paper orders + the unwired case skip this entirely.
         if proposal_row.mode == "live" and self._live_gateway is not None:
-            gateway_ready = await self._live_gateway.ensure_up(
-                reason=f"order:{event.proposal_id}"
-            )
+            gateway_ready = await self._live_gateway.ensure_up(reason=f"order:{event.proposal_id}")
             if not gateway_ready:
                 await self._bus.publish(
                     OrderRejected(
