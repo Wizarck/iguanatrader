@@ -252,6 +252,11 @@ async def test_propose_emits_proposal_created_with_correct_payload(
         def add(self, item: Any) -> None:
             self.added.append(item)
 
+        async def scalar(self, *_args: Any, **_kwargs: Any) -> int:
+            # propose() runs two dedup COUNT queries first; report
+            # "nothing in flight" so the orchestration path still runs.
+            return 0
+
     fake = _FakeSession()
     from iguanatrader.shared.contextvars import session_var
 

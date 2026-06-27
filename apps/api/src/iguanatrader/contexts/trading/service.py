@@ -180,6 +180,7 @@ class TradingService:
         execution_algo: str = "market",
         order_timeout_secs: float = 30.0,
         kill_switch_reader: KillSwitchReader | None = None,
+        propose_dedup_window_secs: int = 1800,
     ) -> None:
         self._bus = bus
         self._broker = broker
@@ -212,6 +213,15 @@ class TradingService:
         # ``IGUANATRADER_ORDER_TIMEOUT_SECS`` when the upstream gateway
         # is known to be slower.
         self._order_timeout_secs = order_timeout_secs
+        # Slice ``propose-dedup``: a persistent strategy signal must not
+        # re-emit a fresh proposal (+ approval card) on every propose tick
+        # while an entry for the same config/symbol is still in flight.
+        # This window bounds "in flight" for the pending-proposal guard;
+        # it should track the approval timeout
+        # (``IGUANATRADER_DEFAULT_APPROVAL_TIMEOUT_SECONDS``) so a config
+        # re-proposes only after its prior card has had its full decision
+        # window. The open-position guard is unconditional (no window).
+        self._propose_dedup_window_secs = propose_dedup_window_secs
         self._kill_switch_active: bool = False
 
     # ------------------------------------------------------------------
@@ -285,6 +295,35 @@ class TradingService:
                 symbol=symbol,
                 strategy_kind=strategy.name(),
                 strategy_version=strategy.version(),
+            )
+            return None
+
+        # Flood guard (slice ``propose-dedup``): a persistent signal must
+        # not re-emit a fresh proposal + approval card on every tick while
+        # an entry for this config/symbol is already in flight — either a
+        # live position the broker holds, or a still-actionable pending
+        # proposal inside the approval window. Skipping the publish below
+        # is what gates the downstream advisor LLM call + Telegram card.
+        # Observed flood without it: TXN buy x50, MSFT sell x45. Runs after
+        # the (cheap, pure) evaluate so the no-signal path stays
+        # session-free.
+        if await TradeRepository().has_open_position(symbol=symbol):
+            log.info(
+                "trading.propose.dedup_skip",
+                reason="open_position",
+                symbol=symbol,
+                strategy_config_id=str(strategy_config_id),
+            )
+            return None
+        if await TradeProposalRepository().has_recent_pending(
+            strategy_config_id=strategy_config_id,
+            within_seconds=self._propose_dedup_window_secs,
+        ):
+            log.info(
+                "trading.propose.dedup_skip",
+                reason="pending_proposal",
+                symbol=symbol,
+                strategy_config_id=str(strategy_config_id),
             )
             return None
 

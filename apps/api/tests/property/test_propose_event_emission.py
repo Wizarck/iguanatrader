@@ -60,6 +60,11 @@ class _FakeSession:
     def add(self, _instance: object) -> None:
         return None
 
+    async def scalar(self, *_args: object, **_kwargs: object) -> int:
+        # propose() runs two dedup COUNT queries before persisting; this
+        # fake reports "nothing in flight" so the emission path still runs.
+        return 0
+
 
 class _FakeBroker:
     async def place_order(self, order: NewOrder) -> BrokerOrderId:
