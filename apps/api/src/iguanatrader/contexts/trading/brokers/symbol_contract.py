@@ -12,16 +12,22 @@ Resolution is an OPT-IN override map, so the existing US watchlist is
 byte-identical (a symbol with no override → ``SMART`` / ``USD``):
 
     IGUANATRADER_SYMBOL_CONTRACT_OVERRIDES = {
-        "VUSA": {"currency": "GBP"},
-        "IGLN": {"currency": "USD"},
-        "VWRL": {"currency": "GBP", "exchange": "SMART"}
+        "VUSA": {"exchange": "LSEETF", "con_id": 107968728},
+        "CRUD": {"exchange": "LSE",    "con_id": 41015921},
+        "VWRL": {"currency": "GBP",    "exchange": "SMART"}
     }
 
 Per entry, ``exchange`` + ``currency`` are both optional (a missing field falls
-back to the ``SMART`` / ``USD`` default for that field). A malformed env value
-logs + degrades to "no overrides" — a bad env var must never crash the daemon
-on the order / market-data path. The actual UCITS values are operator-supplied
-and validated against IBKR paper before the live cutover (see the WS-3 runbook).
+back to the ``SMART`` / ``USD`` default for that field). The optional ``con_id``
+is the IBKR conId — the *authoritative* contract key. When present, the contract
+is qualified by conId alone, so the trading **currency** need not be known: the
+conId encodes it. This matters because LSE UCITS lines share a symbol across
+GBP/USD/EUR share classes, so a symbol+currency guess can pick the wrong
+instrument (verified 2026-06-27: e.g. ``VUSA`` is ``USDD`` and ``CRUD`` lists on
+``LSE``, not ``LSEETF``). The conIds are read off IBKR ``reqContractDetails`` and
+recorded in the WS-3 runbook. A malformed env value logs + degrades to "no
+overrides" — a bad env var must never crash the daemon on the order /
+market-data path.
 """
 
 from __future__ import annotations
@@ -43,10 +49,16 @@ OVERRIDES_ENV_VAR = "IGUANATRADER_SYMBOL_CONTRACT_OVERRIDES"
 
 @dataclass(frozen=True, slots=True)
 class ContractParams:
-    """Resolved IBKR routing for one symbol."""
+    """Resolved IBKR routing for one symbol.
+
+    ``con_id`` (when set) is the authoritative IBKR contract key; the builders
+    qualify by it and ignore ``currency``, so an unverifiable trading currency
+    never has to be guessed.
+    """
 
     exchange: str
     currency: str
+    con_id: int | None = None
 
 
 def parse_overrides(raw: str | None) -> dict[str, ContractParams]:
@@ -75,7 +87,17 @@ def parse_overrides(raw: str | None) -> dict[str, ContractParams]:
             continue
         exchange = str(spec.get("exchange") or DEFAULT_EXCHANGE)
         currency = str(spec.get("currency") or DEFAULT_CURRENCY)
-        out[str(sym).upper()] = ContractParams(exchange=exchange, currency=currency)
+        con_id: int | None = None
+        con_id_raw = spec.get("con_id")
+        if con_id_raw is not None:
+            try:
+                con_id = int(con_id_raw)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "trading.symbol_contract.bad_con_id",
+                    extra={"sym": sym, "got": repr(con_id_raw)},
+                )
+        out[str(sym).upper()] = ContractParams(exchange=exchange, currency=currency, con_id=con_id)
     return out
 
 

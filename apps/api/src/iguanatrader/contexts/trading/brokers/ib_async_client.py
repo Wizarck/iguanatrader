@@ -86,6 +86,10 @@ def _to_contract(c: Contract) -> Any:
     if sec_type == "STK":
         from ib_async import Stock
 
+        if c.con_id:
+            # Authoritative key: qualify by conId; leave currency empty so a
+            # share-class guess can't contradict it (UCITS lines, WS-3).
+            return Stock(c.symbol, c.exchange, conId=c.con_id)
         return Stock(c.symbol, c.exchange, c.currency)
 
     if sec_type == "FUT":
@@ -542,7 +546,12 @@ class IbAsyncIBClient:
 
         ib = self._ensure()
         params = resolve_contract_params(symbol)
-        contract = Stock(symbol, params.exchange, params.currency)
+        if params.con_id:
+            # conId is authoritative (WS-3) — leave currency empty so it can't
+            # contradict the resolved share class.
+            contract = Stock(symbol, params.exchange, conId=params.con_id)
+        else:
+            contract = Stock(symbol, params.exchange, params.currency)
         await ib.qualifyContractsAsync(contract)
         bars = await ib.reqHistoricalDataAsync(
             contract,

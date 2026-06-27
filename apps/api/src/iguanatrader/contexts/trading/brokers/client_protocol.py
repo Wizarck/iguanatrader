@@ -64,6 +64,9 @@ class Contract:
     right: str | None = None  # "C" or "P" (OPT only)
     multiplier: str | None = None  # FUT / OPT contract multiplier (e.g. "100")
     trading_class: str | None = None  # Optional disambiguator for FUT/OPT
+    con_id: int | None = None  # IBKR conId — authoritative key; when set, the
+    # translator qualifies by conId alone (currency/exchange become advisory),
+    # which disambiguates UCITS share classes the symbol+currency tuple cannot.
 
 
 @dataclass(frozen=True, slots=True)
