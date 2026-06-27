@@ -355,12 +355,25 @@ class ApprovalService:
             self._approval_requested_handler,
             idempotent=True,
         )
-        # WS-5 PR-B: the urgent-exit advisor raises ExitApprovalRequested → the
-        # same fan-out machinery, tagged action_type='exit'.
+        # WS-5 PR-B/PR-C: the urgent-exit advisor raises ExitApprovalRequested →
+        # the same fan-out machinery, tagged action_type='exit'.
+        #
+        # NOT idempotent (unlike the entry path above): the bus dedup cache is a
+        # bounded deque keyed on ``trade_id`` that persists for the whole daemon
+        # process. In a single-user system the handful of distinct trade_ids
+        # never rolls past the window, so an ``idempotent=True`` subscription
+        # would suppress a LEGITIMATE re-raise after a card EXPIRED unanswered —
+        # the operator would never be re-alerted to an urgent exit for the rest
+        # of the process's life. Dedup is instead PENDING-AWARE at the source:
+        # the sweep calls ``ApprovalRepository.has_pending_exit_for_trade`` and
+        # only raises when no card is currently open, so a re-raise flows the
+        # moment the previous card expires (the documented re-raise-next-tick
+        # behaviour). The sweep is the sole publisher and visits each trade once
+        # per tick, so there is no within-tick duplicate to guard against here.
         target_bus.subscribe(
             ExitApprovalRequested,
             self._exit_approval_requested_handler,
-            idempotent=True,
+            idempotent=False,
         )
         target_bus.subscribe(
             ApprovalProposalApproved,

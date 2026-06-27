@@ -286,6 +286,34 @@ class ApprovalRepository(BaseRepository):
         instances = result.scalars().all()
         return [self._to_request_row(i) for i in instances]
 
+    async def has_pending_exit_for_trade(self, trade_id: UUID) -> bool:
+        """Return True iff an undecided, unexpired ``action_type='exit'``
+        approval request already exists for ``trade_id`` (WS-5 PR-C dedup).
+
+        The urgent-exit sweep calls this before raising a fresh
+        :class:`ExitApprovalRequested` so a still-open card is not duplicated
+        every 15-minute tick. It is PENDING-AWARE (filters on ``expires_at`` +
+        absent decision) rather than relying on the bus idempotency cache,
+        which would suppress a legitimate re-raise after a card EXPIRED for the
+        whole daemon-process lifetime. Tenant scoping is automatic via the
+        slice-3 ``tenant_listener`` reading ``tenant_id_var``.
+        """
+        now_dt = utc_now()
+        stmt = (
+            select(ApprovalRequest.id)
+            .outerjoin(
+                ApprovalDecision,
+                ApprovalDecision.request_id == ApprovalRequest.id,
+            )
+            .where(ApprovalRequest.trade_id == trade_id)
+            .where(ApprovalRequest.action_type == "exit")
+            .where(ApprovalDecision.id.is_(None))
+            .where(ApprovalRequest.expires_at > now_dt)
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.first() is not None
+
     async def list_enabled_senders(
         self,
         *,
