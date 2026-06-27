@@ -375,12 +375,30 @@ async def _run_daemon(
             # not the long-lived daemon session (#29).
             return await RiskRepository().load_kill_switch_state(check_tenant_id)
 
+        # Slice ``propose-dedup``: the pending-proposal flood guard re-emits
+        # a proposal only after its prior approval card has had its full
+        # decision window, so default the dedup window to the approval
+        # timeout. Operator overrides via
+        # ``IGUANATRADER_PROPOSE_DEDUP_WINDOW_SECONDS``.
+        dedup_window_raw = os.environ.get(
+            "IGUANATRADER_PROPOSE_DEDUP_WINDOW_SECONDS",
+            os.environ.get("IGUANATRADER_DEFAULT_APPROVAL_TIMEOUT_SECONDS", "1800"),
+        )
+        try:
+            propose_dedup_window_secs = max(1, int(dedup_window_raw))
+        except ValueError as exc:
+            raise RuntimeError(
+                "IGUANATRADER_PROPOSE_DEDUP_WINDOW_SECONDS must be an int, "
+                f"got {dedup_window_raw!r}"
+            ) from exc
+
         trading_service = TradingService(
             bus=bus,
             broker=broker,
             strategy_resolver=_make_strategy_resolver(session_factory=sessionmaker),
             order_timeout_secs=order_timeout_secs,
             kill_switch_reader=_kill_switch_reader,
+            propose_dedup_window_secs=propose_dedup_window_secs,
         )
         trading_service.register_subscriptions()
 

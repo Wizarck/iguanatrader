@@ -238,6 +238,31 @@ class TradeProposalRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def has_recent_pending(self, *, strategy_config_id: UUID, within_seconds: int) -> bool:
+        """Return True iff a still-actionable proposal exists for this config.
+
+        The flood guard for :meth:`TradingService.propose`: a persistent
+        signal would otherwise re-INSERT a fresh proposal (+ a new approval
+        card) on every propose tick while the prior one still awaits a
+        decision. "Actionable" = ``state='pending_approval'`` AND created
+        within ``within_seconds`` (the approval window). The time bound
+        makes the guard robust to a proposal whose ``pending_approval``
+        state was never advanced to ``expired`` (a stale row older than the
+        window stops blocking). Tenant filter automatic via the slice-3
+        ``tenant_listener``.
+        """
+        cutoff = utc_now() - timedelta(seconds=within_seconds)
+        stmt = (
+            select(func.count())
+            .select_from(TradeProposal)
+            .where(
+                TradeProposal.strategy_config_id == strategy_config_id,
+                TradeProposal.state == "pending_approval",
+                TradeProposal.created_at >= cutoff,
+            )
+        )
+        return bool(await self.session.scalar(stmt))
+
     async def set_state(
         self,
         *,
@@ -338,6 +363,25 @@ class TradeRepository(BaseRepository):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def has_open_position(self, *, symbol: str) -> bool:
+        """Return True iff a live position exists for ``symbol``.
+
+        Part of the propose flood guard: do not emit a fresh entry
+        proposal for a symbol the broker still holds (``state IN
+        ('open', 'closing')``). The observed flood re-proposed the very
+        symbols already held (MSFT/INTC/TXN/TSM). Tenant filter automatic
+        via the slice-3 ``tenant_listener``.
+        """
+        stmt = (
+            select(func.count())
+            .select_from(Trade)
+            .where(
+                Trade.symbol == symbol,
+                Trade.state.in_(("open", "closing")),
+            )
+        )
+        return bool(await self.session.scalar(stmt))
 
     async def update_state(
         self,
