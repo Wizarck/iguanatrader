@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 
 import pytest
 from iguanatrader.cli.trading import _heartbeat_loop, _heartbeat_path
@@ -29,7 +30,7 @@ def test_heartbeat_path_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 async def test_heartbeat_writes_fresh_epoch_and_stops_on_event(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hb = tmp_path / "hb_paper"
     monkeypatch.setenv("IGUANATRADER_DAEMON_HEARTBEAT_PATH", str(hb))
