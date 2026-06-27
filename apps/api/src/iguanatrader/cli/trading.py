@@ -223,6 +223,153 @@ def positions_review(
     asyncio.run(_run_positions_review(mode=mode, tenant=tenant))
 
 
+@app.command("doctor")
+def doctor(
+    mode: str = typer.Option(
+        "paper", "--mode", help=f"Readiness target mode: {', '.join(_VALID_MODES)}."
+    ),
+    tenant: str | None = typer.Option(
+        None, "--tenant", help="Tenant slug; defaults to the first tenant if single-tenant."
+    ),
+    connect: bool = typer.Option(
+        False,
+        "--connect",
+        help="Also connect the broker + read account equity (needs a reachable gateway).",
+    ),
+) -> None:
+    """Read-only LIVE-readiness / config doctor (prevention gate B).
+
+    Runs a pass of read-only checks against the REAL database (and, with
+    ``--connect``, the broker) — env / config drift, watchlist↔strategy_configs
+    consistency, per-symbol contract routing (the CRUD-on-LSE / currency-guess
+    class), paper history before live, kill-switch state, pending-approval
+    backlog, and ephemeral-live boot guards. Exits non-zero if any check FAILs,
+    so it doubles as a pre-deploy / pre-cutover / pre-live-enable gate. Never
+    places, cancels, or mutates anything.
+    """
+    if mode not in _VALID_MODES:
+        typer.echo(f"Invalid mode {mode!r}; expected one of {_VALID_MODES}")
+        raise typer.Exit(code=2)
+    raise SystemExit(asyncio.run(_run_doctor(mode=mode, tenant=tenant, connect=connect)))
+
+
+async def _run_doctor(*, mode: str, tenant: str | None, connect: bool) -> int:
+    """Run the doctor checks; return the process exit code (0 OK, 1 on any FAIL)."""
+    from iguanatrader.cli.doctor import (
+        CheckResult,
+        CheckStatus,
+        check_contract_routing,
+        check_env_presence,
+        check_ephemeral_live_consistency,
+        check_kill_switch,
+        check_paper_history,
+        check_pending_backlog,
+        check_watchlist_config_consistency,
+        worst_status,
+    )
+    from iguanatrader.contexts.approval.repository import ApprovalRepository
+    from iguanatrader.contexts.observability.repository import AuditLogRepository
+    from iguanatrader.contexts.risk.repository import RiskRepository
+    from iguanatrader.contexts.trading.repository import StrategyConfigRepository
+    from iguanatrader.persistence import engine_factory, session_factory
+    from iguanatrader.shared.contextvars import session_var, tenant_id_var
+    from iguanatrader.shared.time import now as utc_now
+
+    tenant_id = await resolve_tenant_id(tenant)
+    watchlist = _parse_watchlist(os.environ.get("IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS"))
+    env = dict(os.environ)
+
+    results: list[CheckResult] = [
+        check_env_presence(mode=mode, env=env),
+        check_ephemeral_live_consistency(mode=mode, env=env),
+    ]
+
+    engine = engine_factory(db_url())
+    sessionmaker = session_factory(engine)
+    try:
+        async with sessionmaker() as session:
+            tenant_id_var.set(tenant_id)
+            session_var.set(session)
+            configs = await StrategyConfigRepository().list_for_tenant()
+            config_symbols = sorted({c.symbol.upper() for c in configs})
+            # Union of watchlist + configured symbols so a symbol configured but
+            # absent from the watchlist (and vice versa) still gets its routing
+            # checked.
+            routing_symbols = sorted(set(watchlist) | set(config_symbols))
+            results.extend(
+                [
+                    check_watchlist_config_consistency(watchlist=watchlist, configs=configs),
+                    check_contract_routing(symbols=routing_symbols),
+                    await check_paper_history(mode=mode, audit_repo=AuditLogRepository()),
+                    await check_kill_switch(tenant_id=tenant_id, risk_repo=RiskRepository()),
+                    await check_pending_backlog(approval_repo=ApprovalRepository(), now=utc_now()),
+                ]
+            )
+    finally:
+        await engine.dispose()
+
+    if connect:
+        results.append(await _doctor_broker_check(mode=mode, tenant_id=tenant_id))
+
+    _print_doctor_report(results, mode=mode, tenant_id=tenant_id)
+    return 1 if worst_status(results) is CheckStatus.FAIL else 0
+
+
+async def _doctor_broker_check(*, mode: str, tenant_id: UUID) -> Any:
+    """Connect the broker + read account equity (best-effort; FAIL if unreachable)."""
+    from iguanatrader.cli.doctor import CheckResult, CheckStatus
+    from iguanatrader.contexts.trading.brokers.ib_async_client import (
+        build_ib_async_client_from_env,
+    )
+
+    broker = None
+    try:
+        ib_client = build_ib_async_client_from_env()
+        broker = await _build_broker(ib_client=ib_client, mode=mode, tenant_id=tenant_id)
+        await broker.connect()
+        equity = await broker.get_account_equity()
+        return CheckResult(
+            name="broker",
+            status=CheckStatus.OK,
+            detail=(
+                f"connected ({mode}); NetLiquidation={equity.account_equity} "
+                f"{equity.currency} cash={equity.cash_balance}"
+            ),
+        )
+    except Exception as exc:
+        return CheckResult(
+            name="broker",
+            status=CheckStatus.FAIL,
+            detail=f"could not connect / read account ({type(exc).__name__}: {exc})",
+        )
+    finally:
+        if broker is not None:
+            with contextlib.suppress(Exception):
+                await broker.disconnect()
+
+
+_DOCTOR_GLYPH = {"ok": "✅", "warn": "⚠️ ", "fail": "❌", "skip": "·"}
+
+
+def _print_doctor_report(results: list[Any], *, mode: str, tenant_id: UUID) -> None:
+    from iguanatrader.cli.doctor import CheckStatus, worst_status
+
+    typer.echo(f"iguanatrader doctor — mode={mode} tenant={tenant_id}")
+    typer.echo("")
+    for r in results:
+        typer.echo(f"  {_DOCTOR_GLYPH.get(r.status.value, '?')} {r.name}: {r.detail}")
+        for item in r.items:
+            typer.echo(f"        - {item}")
+    typer.echo("")
+    worst = worst_status(results)
+    fails = sum(1 for r in results if r.status is CheckStatus.FAIL)
+    warns = sum(1 for r in results if r.status is CheckStatus.WARN)
+    verdict = (
+        "FAIL" if worst is CheckStatus.FAIL else ("WARN" if worst is CheckStatus.WARN else "OK")
+    )
+    typer.echo(f"verdict: {verdict}  ({fails} fail, {warns} warn, {len(results)} checks)")
+
+
 async def _run_positions_review(*, mode: str, tenant: str | None) -> None:
     from iguanatrader.contexts.risk.position_review import PositionReviewService
     from iguanatrader.contexts.risk.trailing_stop_repository import (
