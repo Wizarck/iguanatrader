@@ -1112,17 +1112,17 @@ async def _run_daemon(
             )
 
         # Slice ``dual-daemon-mode-toggle-and-reconcile``: per-daemon
-        # lifecycle coordinator. Subscribes to DaemonDrainRequested +
-        # DaemonReconcileRequested events filtered to this daemon's
-        # mode. The repo + service are scoped to the session bound to
-        # session_var above; the daemon-side bus delivery picks up the
-        # contextvar so drain UPDATEs land on the correct session.
+        # lifecycle coordinator. Drain + reconcile are driven by the
+        # cross-process poll (``poll_for_state_changes`` from the
+        # heartbeat cron below) reading ``tenant_trading_modes`` — the
+        # in-process bus cannot cross the API↔daemon container boundary.
+        # The repo + service are scoped to the session bound to
+        # session_var above so the drain UPDATEs land on the right session.
         trading_mode_repo = TradingModeRepository()
         equity_repo = EquitySnapshotRepository()
         lifecycle_service = DaemonLifecycleService(
             mode=mode,
             tenant_id=tenant_id,
-            bus=bus,
             trading_service=trading_service,
             trading_mode_repo=trading_mode_repo,
             broker=broker,
@@ -1134,7 +1134,6 @@ async def _run_daemon(
             # LLM-handler wiring above; we reuse it here.
             trade_repo=TradeRepository(),
         )
-        lifecycle_service.register_subscriptions()
 
         orchestration_repo = OrchestrationRepository()
         orchestration_service = OrchestrationService(repository=orchestration_repo)

@@ -66,7 +66,6 @@ from iguanatrader.persistence import (
 )
 from iguanatrader.persistence.base import Base
 from iguanatrader.shared.contextvars import session_var, with_tenant_context
-from iguanatrader.shared.messagebus import MessageBus
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 # ---------------------------------------------------------------------------
@@ -292,7 +291,6 @@ async def test_drain_rejects_pending_proposals(
         service = DaemonLifecycleService(
             mode="paper",
             tenant_id=tid,
-            bus=MessageBus(),
             trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
             broker=cast("BrokerPort", _FakeBroker(tenant_id=tid, positions=[])),
@@ -355,7 +353,6 @@ async def test_reconcile_positions_in_sync_is_noop(
         service = DaemonLifecycleService(
             mode="paper",
             tenant_id=tid,
-            bus=MessageBus(),
             trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
             broker=cast("BrokerPort", broker),
@@ -410,7 +407,6 @@ async def test_reconcile_stamps_broker_marks_on_held_position(
         service = DaemonLifecycleService(
             mode="paper",
             tenant_id=tid,
-            bus=MessageBus(),
             trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
             broker=cast("BrokerPort", broker),
@@ -456,7 +452,6 @@ async def test_reconcile_closes_orphan_local_trade(
         service = DaemonLifecycleService(
             mode="paper",
             tenant_id=tid,
-            bus=MessageBus(),
             trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
             broker=cast("BrokerPort", broker),
@@ -502,7 +497,6 @@ async def test_reconcile_with_ibkr_commits_orphan_close_durably(
         service = DaemonLifecycleService(
             mode="paper",
             tenant_id=tid,
-            bus=MessageBus(),
             trading_service=cast("TradingService", _FakeTradingService()),
             trading_mode_repo=TradingModeRepository(),
             broker=cast("BrokerPort", broker),
