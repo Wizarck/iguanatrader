@@ -75,6 +75,17 @@ const SAMPLE_POSITION: PositionOut = {
   entry_price_indicative: '179.90',
   stop_price: '172.00',
   target_price: '198.00',
+  // Position recommendation scorecard fields (often null in practice).
+  confidence_score: '0.62',
+  reasoning: { trigger: 'donchian_breakout', atr: '3.21' },
+  horizon_days: 20,
+  horizon_label: 'short',
+  held_market_days: 8,
+  r_multiple: '0.41',
+  rail_progress: '0.33',
+  reward_risk: '2.1',
+  verdict: 'too_early',
+  verdict_reason: 'Too few sessions held to judge the thesis yet.',
 };
 
 const SAMPLE_POSITIONS: PositionListOut = {

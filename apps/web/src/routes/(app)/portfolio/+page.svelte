@@ -11,14 +11,11 @@
 
 <script lang="ts">
   import Badge from '$lib/components/Badge.svelte';
-  import DataTable, {
-    type DataTableColumn
-  } from '$lib/components/DataTable.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import EquitySparkline from '$lib/components/EquitySparkline.svelte';
   import PortfolioSummary from '$lib/components/PortfolioSummary.svelte';
-  import { formatMoney, resolveCurrencyCode } from '$lib/portfolio/format';
-  import type { PositionOut } from '$lib/portfolio/types';
+  import PositionsTable from '$lib/components/PositionsTable.svelte';
+  import { resolveCurrencyCode } from '$lib/portfolio/format';
 
   import type { PageData } from './$types';
 
@@ -60,45 +57,6 @@
       data.equity_series.length === 0
   );
 </script>
-
-{#snippet sideCell(row: PositionOut)}
-  <Badge
-    label={row.side}
-    variant={row.side === 'buy' ? 'success' : 'destructive'}
-  />
-{/snippet}
-
-{#snippet strategyCell(row: PositionOut)}
-  {row.strategy_kind ?? '—'}
-{/snippet}
-
-{#snippet plannedEntryCell(row: PositionOut)}
-  {formatMoney(row.entry_price_indicative, currency)}
-{/snippet}
-
-{#snippet avgEntryCell(row: PositionOut)}
-  {#if row.avg_entry_price === null}
-    <Badge label="Awaiting fill" variant="mute" />
-  {:else}
-    {formatMoney(row.avg_entry_price, currency)}
-  {/if}
-{/snippet}
-
-{#snippet stopCell(row: PositionOut)}
-  {formatMoney(row.stop_price, currency)}
-{/snippet}
-
-{#snippet targetCell(row: PositionOut)}
-  {formatMoney(row.target_price, currency)}
-{/snippet}
-
-{#snippet lastPriceCell(row: PositionOut)}
-  {formatMoney(row.last_price, currency)}
-{/snippet}
-
-{#snippet unrealizedCell(row: PositionOut)}
-  {formatMoney(row.unrealized_pnl, currency)}
-{/snippet}
 
 <svelte:head>
   <title>Portfolio · iguanatrader</title>
@@ -145,31 +103,7 @@
     {#if data.positions.length === 0}
       <p class="muted" data-testid="positions-empty">No open positions.</p>
     {:else}
-      <DataTable
-        rows={data.positions}
-        columns={[
-          { key: 'symbol', header: 'Symbol' },
-          { key: 'side', header: 'Side', cell: sideCell },
-          { key: 'strategy_kind', header: 'Strategy', cell: strategyCell },
-          { key: 'quantity', header: 'Qty' },
-          {
-            key: 'entry_price_indicative',
-            header: 'Planned entry',
-            cell: plannedEntryCell
-          },
-          { key: 'avg_entry_price', header: 'Avg fill', cell: avgEntryCell },
-          { key: 'stop_price', header: 'Stop', cell: stopCell },
-          { key: 'target_price', header: 'Target', cell: targetCell },
-          { key: 'last_price', header: 'Last', cell: lastPriceCell },
-          {
-            key: 'unrealized_pnl',
-            header: 'Unrealized P&L',
-            cell: unrealizedCell
-          },
-          { key: 'opened_at', header: 'Opened' }
-        ] satisfies DataTableColumn<PositionOut>[]}
-        rowKey={(p) => p.trade_id}
-      />
+      <PositionsTable positions={data.positions} {currency} />
       {#if marksSyncedAt}
         <p class="sync-note" data-testid="marks-sync-note">
           Avg fill and unrealized P&L reconciled with IBKR · last sync

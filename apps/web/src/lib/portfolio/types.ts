@@ -60,6 +60,27 @@ export type PositionOut = {
   entry_price_indicative: string | null;
   stop_price: string | null;
   target_price: string | null;
+  // --- Position recommendation scorecard (Decimal-as-string / int / nullable) ---
+  // LLM conviction 0–1 (often null). NOT a win-probability.
+  confidence_score: string | null;
+  // Strategy's structured "why it fired".
+  reasoning: Record<string, unknown> | null;
+  // Expected holding period in market days.
+  horizon_days: number | null;
+  // "short" | "long".
+  horizon_label: string | null;
+  // Trading sessions held since open.
+  held_market_days: number | null;
+  // P&L in units of initial risk.
+  r_multiple: string | null;
+  // 0.0 at stop, 1.0 at target.
+  rail_progress: string | null;
+  // Planned reward:risk.
+  reward_risk: string | null;
+  // "on_track" | "off_track" | "too_early" | "no_data".
+  verdict: string | null;
+  // One human sentence explaining the verdict.
+  verdict_reason: string | null;
 };
 
 export type PositionListOut = {

@@ -1,5 +1,11 @@
 <script lang="ts">
-  export type BadgeVariant = 'success' | 'destructive' | 'accent' | 'mute' | 'warning';
+  export type BadgeVariant =
+    | 'success'
+    | 'destructive'
+    | 'accent'
+    | 'mute'
+    | 'neutral'
+    | 'warning';
 
   type Props = {
     label: string;
@@ -44,6 +50,13 @@
     background: oklch(70% 0.012 250 / 0.14);
     color: var(--mute);
     border-color: var(--border);
+  }
+  /* Solid, stronger slate/grey — distinct from the lighter, dashed `mute`
+     "no data" chip. Used for a deliberate-but-neutral state ("too early"). */
+  .badge--neutral {
+    background: oklch(55% 0.02 250 / 0.55);
+    color: var(--ink);
+    border-color: oklch(55% 0.02 250 / 0.7);
   }
   .badge--warning {
     background: oklch(82% 0.16 95 / 0.18);
