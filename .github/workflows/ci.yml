@@ -68,7 +68,7 @@ jobs:
           echo "Skipping mypy until slice 2 lands runtime source."
 
   test:
-    name: Test (pytest)
+    name: Test (pytest — unit + property)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -79,22 +79,14 @@ jobs:
         run: pip install poetry
       - name: Install deps
         run: poetry install --no-interaction --with dev
-      - name: Detect Python sources
-        id: detect
-        run: |
-          if find apps packages -name '*.py' 2>/dev/null | grep -q .; then
-            echo "has_py=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_py=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: pytest
-        if: steps.detect.outputs.has_py == 'true'
-        run: poetry run pytest --collect-only
-      - name: Skip notice (no Python sources yet)
-        if: steps.detect.outputs.has_py == 'false'
-        run: |
-          echo "Slice 1 - no Python sources under apps/ or packages/."
-          echo "Skipping pytest until slice 2 lands runtime source."
+        # Run the self-contained suites for REAL (was --collect-only, which
+        # proved nothing). Integration tests (DB/Postgres/IBKR/network) need
+        # service containers + the `postgres` dep group and run in a separate
+        # job (TODO ci-integration) — excluded here via --ignore so this gate
+        # stays green without external services. pythonpath + asyncio_mode are
+        # set in [tool.pytest.ini_options]; --cov-fail-under is inert (no --cov).
+        run: poetry run pytest apps/api/tests --ignore=apps/api/tests/integration
 
   helm-lint:
     # Slice deployment-foundation §7 — verifies the helm/iguanatrader-stack
