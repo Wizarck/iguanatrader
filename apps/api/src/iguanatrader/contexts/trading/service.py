@@ -160,6 +160,9 @@ class _EntryGateDecisionLike(Protocol):
     @property
     def rationale(self) -> str: ...
 
+    @property
+    def confidence(self) -> Decimal: ...
+
 
 class EntryGateLike(Protocol):
     """Structural shape of the WS-2 entry veto gate (concrete: research
@@ -399,6 +402,14 @@ class TradingService:
         # proposal row and raises no approval card. The gate fails OPEN
         # internally, so a gate error proceeds to the normal HITL flow rather
         # than silently suppressing the trade.
+        # The rule strategies emit no confidence; capture the Opus entry-gate's
+        # conviction (when it ran + proceeded) so the position scorecard can
+        # show "model conviction" honestly. Persisted AT INSERT below — never a
+        # later UPDATE, since trade_proposals is append-only and
+        # ``confidence_score`` is not on the mutable whitelist. A fail-open gate
+        # returns conviction 0, which we treat as "no signal" (keep the
+        # strategy's value) rather than persisting a misleading 0.
+        entry_confidence = proposal.confidence_score
         if self._entry_gate is not None:
             decision = await self._entry_gate.evaluate(
                 symbol=proposal.symbol,
@@ -419,6 +430,8 @@ class TradingService:
                     rationale=decision.rationale,
                 )
                 return None
+            if decision.confidence > 0:
+                entry_confidence = decision.confidence
 
         # Persist the trade_proposals row. Column types match the ORM
         # model exactly; the slice-3 tenant listener stamps tenant_id +
@@ -443,7 +456,7 @@ class TradingService:
             entry_price_indicative=proposal.entry_price_indicative,
             stop_price=proposal.stop_price,
             target_price=proposal.target_price,
-            confidence_score=proposal.confidence_score,
+            confidence_score=entry_confidence,
             reasoning=proposal.reasoning,
             research_brief_id=proposal.research_brief_id,
             mode=proposal.mode,

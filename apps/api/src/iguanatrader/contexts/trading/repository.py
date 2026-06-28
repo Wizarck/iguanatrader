@@ -51,6 +51,13 @@ class OpenPositionRow:
     entry_price_indicative: Decimal | None
     stop_price: Decimal | None
     target_price: Decimal | None
+    # Recommendation provenance from the originating proposal (scorecard).
+    # ``confidence_score`` is the LLM's conviction at entry (0-1), the Opus
+    # entry-veto verdict when that gate ran, else ``None`` (rule strategies
+    # emit no confidence). It is NOT a calibrated win-probability.
+    # ``reasoning`` is the strategy's structured "why it fired" JSON.
+    confidence_score: Decimal | None
+    reasoning: dict[str, Any] | None
 
 
 class StrategyConfigRepository(BaseRepository):
@@ -402,6 +409,8 @@ class TradeRepository(BaseRepository):
                 TradeProposal.entry_price_indicative,
                 TradeProposal.stop_price,
                 TradeProposal.target_price,
+                TradeProposal.confidence_score,
+                TradeProposal.reasoning,
             )
             .join(TradeProposal, Trade.proposal_id == TradeProposal.id, isouter=True)
             .join(
@@ -420,6 +429,8 @@ class TradeRepository(BaseRepository):
                 entry_price_indicative=row[2],
                 stop_price=row[3],
                 target_price=row[4],
+                confidence_score=row[5],
+                reasoning=row[6],
             )
             for row in result.all()
         ]
