@@ -11,23 +11,23 @@
 
 <dl class="caps-card" data-testid="risk-caps-card">
   <div class="cell">
-    <dt>Por trade</dt>
+    <dt>Per trade</dt>
     <dd data-testid="cap-per-trade">{formatPercent(caps.per_trade_pct)}</dd>
   </div>
   <div class="cell">
-    <dt>Pérdida diaria</dt>
+    <dt>Daily loss</dt>
     <dd data-testid="cap-daily-loss">{formatPercent(caps.daily_loss_pct)}</dd>
   </div>
   <div class="cell">
-    <dt>Pérdida semanal</dt>
+    <dt>Weekly loss</dt>
     <dd data-testid="cap-weekly-loss">{formatPercent(caps.weekly_loss_pct)}</dd>
   </div>
   <div class="cell">
-    <dt>Posiciones máx.</dt>
+    <dt>Max positions</dt>
     <dd data-testid="cap-max-positions">{caps.max_open_positions}</dd>
   </div>
   <div class="cell">
-    <dt>Drawdown máx.</dt>
+    <dt>Max drawdown</dt>
     <dd data-testid="cap-max-drawdown">{formatPercent(caps.max_drawdown_pct)}</dd>
   </div>
 </dl>

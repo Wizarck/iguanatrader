@@ -13,13 +13,13 @@ const NOW_ISO = '2026-05-14T12:00:00Z';
 const NOW = new Date(NOW_ISO);
 
 describe('formatCountdown', () => {
-  it('returns "Expirado" when delta is negative', () => {
+  it('returns "Expired" when delta is negative', () => {
     const expiresAt = '2026-05-14T11:59:55Z'; // -5s
-    expect(formatCountdown(expiresAt, NOW)).toBe('Expirado');
+    expect(formatCountdown(expiresAt, NOW)).toBe('Expired');
   });
 
-  it('returns "Expirado" when delta is exactly zero', () => {
-    expect(formatCountdown(NOW_ISO, NOW)).toBe('Expirado');
+  it('returns "Expired" when delta is exactly zero', () => {
+    expect(formatCountdown(NOW_ISO, NOW)).toBe('Expired');
   });
 
   it('renders sub-minute deltas as "Ns"', () => {

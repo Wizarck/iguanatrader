@@ -22,25 +22,25 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {
   args: {
     name: 'enabled',
-    label: 'Enabled (genera señales)',
+    label: 'Enabled (generates signals)',
     checked: true,
-    helpText: 'Si está desmarcado, la estrategia se guarda pero no propondrá trades.',
+    helpText: 'If unchecked, the strategy is saved but will not propose trades.',
   },
 };
 
 export const WithError: Story = {
   args: {
     name: 'enabled',
-    label: 'Enabled (genera señales)',
+    label: 'Enabled (generates signals)',
     checked: false,
-    error: 'Debes habilitar la estrategia antes de guardar.',
+    error: 'You must enable the strategy before saving.',
   },
 };
 
 export const Disabled: Story = {
   args: {
     name: 'enabled',
-    label: 'Enabled (genera señales)',
+    label: 'Enabled (generates signals)',
     checked: true,
     disabled: true,
   },

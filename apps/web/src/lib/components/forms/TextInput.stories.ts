@@ -26,7 +26,7 @@ export const Default: Story = {
     label: 'Symbol',
     value: '',
     placeholder: 'SPY',
-    helpText: 'Letras mayúsculas A-Z y dígitos 0-9, máximo 16 caracteres.',
+    helpText: 'Uppercase letters A-Z and digits 0-9, maximum 16 characters.',
   },
 };
 
@@ -35,7 +35,7 @@ export const WithError: Story = {
     name: 'symbol',
     label: 'Symbol',
     value: 'spy lower!',
-    error: 'Symbol inválido: usa A-Z y 0-9, máximo 16 caracteres.',
+    error: 'Invalid symbol: use A-Z and 0-9, maximum 16 characters.',
   },
 };
 
@@ -45,6 +45,6 @@ export const Disabled: Story = {
     label: 'Symbol',
     value: 'SPY',
     disabled: true,
-    helpText: 'No editable en modo edición.',
+    helpText: 'Not editable in edit mode.',
   },
 };

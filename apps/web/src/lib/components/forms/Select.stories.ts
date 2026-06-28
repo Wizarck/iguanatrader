@@ -30,7 +30,7 @@ export const Default: Story = {
     label: 'Strategy kind',
     value: 'donchian_atr',
     options: KIND_OPTIONS,
-    helpText: 'Selecciona el tipo de estrategia.',
+    helpText: 'Select the strategy type.',
   },
 };
 
@@ -40,7 +40,7 @@ export const WithError: Story = {
     label: 'Strategy kind',
     value: 'donchian_atr',
     options: KIND_OPTIONS,
-    error: 'Strategy kind inválido. Permitidos: donchian_atr, sma_cross.',
+    error: 'Invalid strategy kind. Allowed: donchian_atr, sma_cross.',
   },
 };
 

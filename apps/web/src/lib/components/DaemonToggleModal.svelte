@@ -9,7 +9,7 @@
    *     password re-entry; server re-verifies via Argon2id
    *
    * On submit calls toggleDaemon(). On 403 (password-mismatch) the
-   * modal stays open with "contraseña incorrecta" + the password field
+   * modal stays open with "incorrect password" + the password field
    * cleared. On 200 the modal closes + refreshes the store.
    */
   import { isProblem } from '$lib/composables/useFetch';
@@ -73,10 +73,10 @@
       });
       if (isProblem(result)) {
         if (result.type.includes('password-mismatch')) {
-          error = 'Contraseña incorrecta.';
+          error = 'Incorrect password.';
           password = '';
         } else if (result.type.includes('live-toggle-payload-invalid')) {
-          error = result.detail ?? 'Datos inválidos. Revisa el motivo y la contraseña.';
+          error = result.detail ?? 'Invalid data. Check the reason and the password.';
         } else {
           error = result.detail ?? `Error ${result.status}: ${result.title}`;
         }
@@ -104,23 +104,23 @@
     <header class="modal__header">
       <h2 id="daemon-toggle-title">
         {#if isLive}
-          ⚠️ {targetEnabled ? 'ACTIVAR' : 'DESACTIVAR'} LIVE TRADING (dinero real)
+          ⚠️ {targetEnabled ? 'ENABLE' : 'DISABLE'} LIVE TRADING (real money)
         {:else}
-          {targetEnabled ? 'Activar' : 'Desactivar'} paper trading
+          {targetEnabled ? 'Enable' : 'Disable'} paper trading
         {/if}
       </h2>
       {#if isLive}
         <p class="modal__warn">
-          Estás a punto de {targetEnabled ? 'permitir' : 'bloquear'} la creación de
-          órdenes con dinero real. Esto requiere reconfirmación de contraseña + un
-          motivo claro para el audit log.
+          You are about to {targetEnabled ? 'allow' : 'block'} the creation of
+          real-money orders. This requires password reconfirmation + a
+          clear reason for the audit log.
         </p>
       {/if}
     </header>
 
     <label class="field">
       <span class="field__label">
-        Motivo {#if isLive}<em>(mínimo 20 caracteres)</em>{/if}
+        Reason {#if isLive}<em>(minimum 20 characters)</em>{/if}
       </span>
       <textarea
         class="field__input"
@@ -128,7 +128,7 @@
         bind:value={reason}
         placeholder={isLive
           ? 'Ej. promoting validated donchian strategy to live after 30 days of paper'
-          : 'Opcional — anotación rápida para el audit log'}
+          : 'Optional — quick note for the audit log'}
         required={isLive}
         minlength={isLive ? 20 : 0}
       ></textarea>
@@ -136,7 +136,7 @@
 
     {#if isLive}
       <label class="field">
-        <span class="field__label">Contraseña</span>
+        <span class="field__label">Password</span>
         <input
           class="field__input"
           type="password"
@@ -158,15 +158,15 @@
         onclick={onClose}
         disabled={submitting}
       >
-        Cancelar
+        Cancel
       </button>
       <button type="submit" class="btn btn--{mode}" disabled={submitDisabled}>
         {#if submitting}
-          Enviando…
+          Submitting…
         {:else if targetEnabled}
-          Activar {mode}
+          Enable {mode}
         {:else}
-          Desactivar {mode}
+          Disable {mode}
         {/if}
       </button>
     </footer>

@@ -65,9 +65,9 @@ test.describe('dashboard skeleton', () => {
     // Email visible in TopBar.
     await expect(page.getByText(VALID_EMAIL)).toBeVisible();
 
-    // ConnectionIndicator visible (status role; aria-label "Conexión de datos:
-    // …" — "Sin conexión de datos" initially, no streams active).
-    await expect(page.getByRole('status', { name: /conexión de datos/i })).toBeVisible();
+    // ConnectionIndicator visible (status role; aria-label "Data connection:
+    // …" — "No data connection" initially, no streams active).
+    await expect(page.getByRole('status', { name: /data connection/i })).toBeVisible();
 
     // KillSwitchSlot exists but is empty (W1 contract — K1 fills).
     const killSlot = page.locator('[data-slot="kill-switch"]');

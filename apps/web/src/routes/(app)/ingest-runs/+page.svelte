@@ -64,19 +64,19 @@
 
 <section aria-live="polite">
   <header class="page-header">
-    <h1>Historial de ingest scheduler (I7)</h1>
+    <h1>Ingest scheduler history (I7)</h1>
     <p class="hint">
-      Cada fila es una invocación del cron <code>research_ingest</code> registrada por
-      <code>IngestRunRecorder</code>. El scheduler corre 06:00 UTC diaria + Lun 06:00
-      semanal por watchlist · source. Status <code>error</code> con detalle suele indicar
-      env-var faltante (<code>BEA_API_KEY</code>, <code>SEC_EDGAR_USER_AGENT</code>, etc.) —
-      el ConfigError se propaga aquí.
+      Each row is an invocation of the <code>research_ingest</code> cron recorded by
+      <code>IngestRunRecorder</code>. The scheduler runs daily at 06:00 UTC + Mon 06:00
+      weekly per watchlist · source. Status <code>error</code> with detail usually means a
+      missing env-var (<code>BEA_API_KEY</code>, <code>SEC_EDGAR_USER_AGENT</code>, etc.) —
+      the ConfigError propagates here.
     </p>
     <nav class="filters">
-      <a class:active={!data.statusFilter} href="/ingest-runs">Todos</a>
+      <a class:active={!data.statusFilter} href="/ingest-runs">All</a>
       <a class:active={data.statusFilter === 'ok'} href="/ingest-runs?status=ok">OK</a>
-      <a class:active={data.statusFilter === 'error'} href="/ingest-runs?status=error">Errores</a>
-      <a class:active={data.statusFilter === 'started'} href="/ingest-runs?status=started">En curso</a>
+      <a class:active={data.statusFilter === 'error'} href="/ingest-runs?status=error">Errors</a>
+      <a class:active={data.statusFilter === 'started'} href="/ingest-runs?status=started">In progress</a>
     </nav>
   </header>
 
@@ -84,10 +84,10 @@
     <div class="error" role="alert">{data.loadError}</div>
   {:else if data.runs.length === 0}
     <p class="empty">
-      Sin ingest runs todavía
+      No ingest runs yet
       {#if data.statusFilter}
-        con status <code>{data.statusFilter}</code>
-      {/if}. El primer tick del cron es 06:00 UTC mañana mon-fri.
+        with status <code>{data.statusFilter}</code>
+      {/if}. The cron's first tick is 06:00 UTC tomorrow, Mon-Fri.
     </p>
   {:else}
     <DataTable

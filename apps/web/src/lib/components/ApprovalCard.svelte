@@ -27,7 +27,7 @@
   });
 
   const countdown = $derived(formatCountdown(approval.expires_at, now));
-  const expired = $derived(countdown === 'Expirado');
+  const expired = $derived(countdown === 'Expired');
 
   const headingId = $derived(`approval-${approval.id}`);
   const proposalShort = $derived(approval.proposal_id.slice(0, 8));
@@ -66,7 +66,7 @@
       Proposal <code>{proposalShort}</code>
     </h2>
     <div class="card__countdown" class:card__countdown--expired={expired}>
-      <span class="card__countdown-label">Expira en</span>
+      <span class="card__countdown-label">Expires in</span>
       <time
         datetime={approval.expires_at}
         class="card__countdown-value"
@@ -79,7 +79,7 @@
 
   <dl class="card__meta">
     <div class="card__meta-row">
-      <dt>Creado</dt>
+      <dt>Created</dt>
       <dd>
         <time datetime={approval.created_at}>{approval.created_at}</time>
       </dd>
@@ -92,7 +92,7 @@
 
   {#if approval.delivered_to_channels.length > 0}
     <div class="card__channels" data-testid="delivered-channels">
-      <span class="card__channels-label">Entregado a</span>
+      <span class="card__channels-label">Delivered to</span>
       {#each approval.delivered_to_channels as channel (channel)}
         <Badge label={channel} variant="accent" />
       {/each}
@@ -101,7 +101,7 @@
 
   {#if deliveryFailures.length > 0}
     <div class="card__channels" data-testid="delivery-failures">
-      <span class="card__channels-label">Fallos de entrega</span>
+      <span class="card__channels-label">Delivery failures</span>
       {#each deliveryFailures as failure, i (i)}
         <Badge label={failureChannel(failure)} variant="destructive" />
       {/each}
@@ -117,7 +117,7 @@
         data-testid="approve-{approval.id}"
         disabled={expired}
       >
-        Aprobar
+        Approve
       </button>
     </form>
 
@@ -129,19 +129,19 @@
         onclick={toggleReject}
         disabled={expired}
       >
-        Rechazar
+        Reject
       </button>
     {:else}
       <form method="POST" action="?/reject" use:enhance class="card__reject-form">
         <input type="hidden" name="request_id" value={approval.id} />
         <Textarea
           name="reason"
-          label="Motivo del rechazo (opcional)"
+          label="Rejection reason (optional)"
           bind:value={rejectReason}
           rows={3}
           monospace={false}
-          placeholder="Ej: riesgo demasiado alto para la sesión actual."
-          helpText="Opcional — el backend acepta enviar el rechazo sin motivo."
+          placeholder="e.g. risk too high for the current session."
+          helpText="Optional — the backend accepts a rejection with no reason."
         />
         <div class="card__reject-actions">
           <button
@@ -149,7 +149,7 @@
             class="btn btn--danger"
             data-testid="reject-confirm-{approval.id}"
           >
-            Confirmar rechazo
+            Confirm rejection
           </button>
           <button
             type="button"
@@ -157,7 +157,7 @@
             data-testid="reject-cancel-{approval.id}"
             onclick={toggleReject}
           >
-            Cancelar
+            Cancel
           </button>
         </div>
       </form>

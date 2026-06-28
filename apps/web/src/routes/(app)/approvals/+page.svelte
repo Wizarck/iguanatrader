@@ -28,7 +28,7 @@
 
   const pendingCount = $derived(data.approvals.length);
   const countLabel = $derived(
-    pendingCount === 1 ? '1 pendiente' : `${pendingCount} pendientes`,
+    pendingCount === 1 ? '1 pending' : `${pendingCount} pending`,
   );
 </script>
 
@@ -55,9 +55,9 @@
 
     {#if data.approvals.length === 0}
       <EmptyState
-        title="Sin aprobaciones pendientes."
-        body="No hay proposals en cola. Cuando el daemon trading genere una propuesta, aparecerá aquí con su countdown."
-        hint="También puedes responder desde Telegram o WhatsApp si tu tenant tiene esos canales configurados."
+        title="No pending approvals."
+        body="No proposals in the queue. When the trading daemon generates a proposal, it will appear here with its countdown."
+        hint="You can also respond from Telegram or WhatsApp if your tenant has those channels configured."
       />
     {:else}
       <ul class="cards" data-testid="approvals-list">

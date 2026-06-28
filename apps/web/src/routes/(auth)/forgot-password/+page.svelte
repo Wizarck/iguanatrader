@@ -16,7 +16,7 @@
 </script>
 
 <svelte:head>
-  <title>Recuperar contraseña · iguanatrader</title>
+  <title>Reset password · iguanatrader</title>
 </svelte:head>
 
 <main>
@@ -29,18 +29,18 @@
     {#if form?.submitted}
       <div class="alert alert--info" role="status">
         {form.message ??
-          'Si la dirección está registrada, recibirás instrucciones por email, Telegram o WhatsApp en los próximos minutos.'}
+          'If the address is registered, you will receive instructions by email, Telegram, or WhatsApp within the next few minutes.'}
       </div>
       <p class="help">
-        Cuando llegue la contraseña temporal, vuelve a
-        <a href="/login">iniciar sesión</a> e introdúcela. En el primer
-        login te pediremos que la cambies por una nueva.
+        When the temporary password arrives, head back to
+        <a href="/login">sign in</a> and enter it. On your first
+        login we will ask you to change it for a new one.
       </p>
     {:else}
-      <h1>Recuperar contraseña</h1>
+      <h1>Reset password</h1>
       <p class="help">
-        Introduce tu email. Te enviaremos una contraseña temporal por
-        los canales que tengas configurados (email, Telegram, WhatsApp).
+        Enter your email. We will send a temporary password through
+        whichever channels you have configured (email, Telegram, WhatsApp).
       </p>
 
       {#if form?.alert_variant}
@@ -62,11 +62,11 @@
           />
         </label>
 
-        <button type="submit">Enviar contraseña temporal</button>
+        <button type="submit">Send temporary password</button>
       </form>
 
       <p class="back">
-        <a href="/login">Volver al inicio de sesión</a>
+        <a href="/login">Back to sign in</a>
       </p>
     {/if}
   </div>

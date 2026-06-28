@@ -11,7 +11,7 @@
  *   6. Reject action with reason → POST { reason } + redirect.
  *   7. Expired countdown — covered indirectly via the pure `formatCountdown`
  *      contract, asserted here on a real `ApprovalRequest` payload (delta
- *      negative → "Expirado").
+ *      negative → "Expired").
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -247,9 +247,9 @@ describe('approvals reject action', () => {
 });
 
 describe('expired countdown contract (sanity)', () => {
-  it('returns "Expirado" when an approval row is past its expiry', () => {
+  it('returns "Expired" when an approval row is past its expiry', () => {
     const approval = SAMPLE_APPROVALS[1];
     const now = new Date('2026-05-14T13:00:00Z');
-    expect(formatCountdown(approval.expires_at, now)).toBe('Expirado');
+    expect(formatCountdown(approval.expires_at, now)).toBe('Expired');
   });
 });

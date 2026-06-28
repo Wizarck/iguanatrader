@@ -39,13 +39,13 @@
 
 <section aria-live="polite">
   <header class="page-header">
-    <h1>Catálogo IBKR — sec_type / order_type / algo_kind</h1>
+    <h1>IBKR catalogue — sec_type / order_type / algo_kind</h1>
     <p class="hint">
-      Vocabulario que el daemon acepta al construir contratos + órdenes via
-      <code>ib_async</code>. Source-of-truth en
-      <code>contexts/trading/brokers/translator_docs.py</code> y servido por
-      <code>GET /api/v1/broker/types</code> para que esta página y futuros
-      order-builder forms compartan los textos sin duplicación.
+      Vocabulary the daemon accepts when building contracts + orders via
+      <code>ib_async</code>. Source-of-truth in
+      <code>contexts/trading/brokers/translator_docs.py</code> and served by
+      <code>GET /api/v1/broker/types</code> so this page and future
+      order-builder forms share the copy without duplication.
     </p>
   </header>
 
@@ -67,7 +67,7 @@
               <span class="code">{opt.code}</span>
               <span class="label">{opt.label}</span>
               {#if opt.required_fields.length > 0}
-                <span class="required">requiere: {opt.required_fields.join(', ')}</span>
+                <span class="required">requires: {opt.required_fields.join(', ')}</span>
               {/if}
               <span class="chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
             </button>

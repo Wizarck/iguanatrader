@@ -32,7 +32,7 @@
     if (isoStart === null) return '';
     const parsed = new Date(isoStart);
     if (Number.isNaN(parsed.valueOf())) return '';
-    const raw = new Intl.DateTimeFormat('es-ES', {
+    const raw = new Intl.DateTimeFormat('en-US', {
       month: 'long',
       year: 'numeric',
       timeZone: 'UTC'
@@ -63,9 +63,9 @@
     </div>
   {:else if isEmpty}
     <EmptyState
-      title="Sin coste registrado aún"
-      body="Los costes se acumulan cuando los nodes LangGraph y APIs externas se invocan."
-      hint="Consulta docs/observability.md para el detalle de la cost-meter."
+      title="No cost recorded yet"
+      body="Costs accumulate as LangGraph nodes and external APIs are invoked."
+      hint="See docs/observability.md for cost-meter details."
     />
   {:else if data.summary && data.byProvider && data.perTrade}
     <div class="grid">
@@ -77,9 +77,9 @@
       </div>
     </div>
 
-    <h2>Desglose por proveedor</h2>
+    <h2>Breakdown by provider</h2>
     {#if data.byProvider.breakdown.length === 0}
-      <p class="muted" data-testid="by-provider-empty">Sin proveedores con coste registrado.</p>
+      <p class="muted" data-testid="by-provider-empty">No providers with recorded cost.</p>
     {:else}
       <DataTable
         rows={data.byProvider.breakdown}

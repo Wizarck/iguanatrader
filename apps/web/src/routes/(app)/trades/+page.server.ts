@@ -22,7 +22,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
       return {
         trades: [] as TradeOut[],
         total: 0,
-        loadError: `No se pudieron cargar los trades: ${res.status} ${res.statusText}`
+        loadError: `Could not load trades: ${res.status} ${res.statusText}`
       };
     }
     const body = (await res.json()) as TradeListOut;
@@ -36,7 +36,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     return {
       trades: [] as TradeOut[],
       total: 0,
-      loadError: `No se pudieron cargar los trades: ${message}`
+      loadError: `Could not load trades: ${message}`
     };
   }
 };

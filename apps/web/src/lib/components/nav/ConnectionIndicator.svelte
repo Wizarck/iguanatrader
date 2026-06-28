@@ -9,10 +9,10 @@
    * (that is `DaemonModeChip`); labels deliberately avoid the word "Live".
    * Variants:
    *
-   * - `idle` (no stream registered yet) → grey dot + "Sin conexión de datos".
-   * - `open` → green dot + "Datos en vivo".
-   * - `reconnecting` → amber dot + "Reconectando".
-   * - `closed` → red dot + "Sin datos" + tooltip with stream names. A
+   * - `idle` (no stream registered yet) → grey dot + "No data connection".
+   * - `open` → green dot + "Live data".
+   * - `reconnecting` → amber dot + "Reconnecting".
+   * - `closed` → red dot + "No data" + tooltip with stream names. A
    *   persistent banner under the indicator surfaces if the drop exceeds 5s
    *   (slice 5 contract — the banner shows the streams that are closed).
    *
@@ -24,7 +24,7 @@
   const streamDetail = $derived(() => {
     const streams = connectionStore.streams;
     const entries = Object.entries(streams);
-    if (entries.length === 0) return 'Sin streams de datos activos';
+    if (entries.length === 0) return 'No active data streams';
     return entries.map(([name, state]) => `${name}: ${state}`).join(', ');
   });
 
@@ -37,12 +37,12 @@
   const variant = $derived(hasStreams ? connectionStore.global : 'idle');
   const label = $derived(
     variant === 'idle'
-      ? 'Sin conexión de datos'
+      ? 'No data connection'
       : variant === 'open'
-        ? 'Datos en vivo'
+        ? 'Live data'
         : variant === 'reconnecting'
-          ? 'Reconectando'
-          : 'Sin datos'
+          ? 'Reconnecting'
+          : 'No data'
   );
 </script>
 
@@ -51,7 +51,7 @@
   data-variant={variant}
   role="status"
   aria-live="polite"
-  aria-label="Conexión de datos: {label}"
+  aria-label="Data connection: {label}"
   title={streamDetail()}
 >
   <span class="indicator__dot" aria-hidden="true"></span>

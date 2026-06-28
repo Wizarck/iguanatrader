@@ -99,7 +99,7 @@
       </button>
 
       <p class="forgot-link">
-        <a href="/forgot-password">¿Olvidaste tu contraseña?</a>
+        <a href="/forgot-password">Forgot your password?</a>
       </p>
     </form>
 

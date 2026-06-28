@@ -58,7 +58,7 @@
     const nowIso = new Date().toISOString();
     const userId = page.data.user?.user_id;
     if (!userId) {
-      overrideError = 'No hay user_id en sesión — re-loggear.';
+      overrideError = 'No user_id in session — please log in again.';
       overrideSubmitting = false;
       return;
     }
@@ -88,9 +88,9 @@
       });
       if (!res.ok) {
         const detail = await res.text();
-        overrideError = `Override falló (${res.status}): ${detail || res.statusText}`;
+        overrideError = `Override failed (${res.status}): ${detail || res.statusText}`;
       } else {
-        overrideSuccess = 'Override registrada. Audit row creada.';
+        overrideSuccess = 'Override recorded. Audit row created.';
         proposalId = '';
         riskEvalId = '';
         reasonText = '';
@@ -112,7 +112,7 @@
     <h1>Risk</h1>
     {#if data.risk}
       <Badge
-        label={data.risk.kill_switch_active ? 'Kill-switch ACTIVO' : 'Operativo'}
+        label={data.risk.kill_switch_active ? 'Kill-switch ACTIVE' : 'Operational'}
         variant={data.risk.kill_switch_active ? 'destructive' : 'success'}
       />
     {/if}
@@ -124,31 +124,31 @@
     </div>
   {:else if data.risk && isAllEmpty}
     <EmptyState
-      title="Sin actividad de riesgo aún"
-      body="El estado se inicializará cuando arranque el daemon."
-      hint="Arranca el daemon: `iguanatrader trading run --mode paper`."
+      title="No risk activity yet"
+      body="State will initialize when the daemon starts."
+      hint="Start the daemon: `iguanatrader trading run --mode paper`."
     />
   {:else if data.risk}
     <h2>Caps</h2>
     <RiskCapsCard caps={data.risk.caps} />
 
-    <h2>Utilización</h2>
+    <h2>Utilisation</h2>
     <RiskUtilisationCard utilisation={data.risk.utilisation} caps={data.risk.caps} />
 
-    <h2>Estado</h2>
+    <h2>State</h2>
     <dl class="state-card" data-testid="risk-state-card">
       <div class="cell">
         <dt>Capital</dt>
         <dd data-testid="state-capital">{formatMoney(data.risk.state.capital, 'USD')}</dd>
       </div>
       <div class="cell">
-        <dt>Posiciones abiertas</dt>
+        <dt>Open positions</dt>
         <dd data-testid="state-open-positions">
           {data.risk.state.open_positions_count} / {data.risk.caps.max_open_positions}
         </dd>
       </div>
       <div class="cell">
-        <dt>Última actualización</dt>
+        <dt>Last update</dt>
         <dd data-testid="state-fetched-at">{data.risk.fetched_at}</dd>
       </div>
     </dl>
@@ -160,15 +160,15 @@
         onclick={() => (overrideOpen = !overrideOpen)}
         aria-expanded={overrideOpen}
       >
-        {overrideOpen ? '▾' : '▸'} Override de risk cap (FR25 — audit trail)
+        {overrideOpen ? '▾' : '▸'} Risk cap override (FR25 — audit trail)
       </button>
       {#if overrideOpen}
         <p class="hint">
-          Registra un override autorizado contra un risk-eval que rechazó
-          una propuesta. La row de audit se persiste en
-          <code>risk_overrides</code> con doble confirmación (este formulario
-          aporta una; la segunda debe venir de Telegram / WhatsApp / CLI).
-          Reason text mínimo 20 caracteres (Pydantic <code>Field(min_length=20)</code>).
+          Record an authorized override against a risk-eval that rejected
+          a proposal. The audit row is persisted in
+          <code>risk_overrides</code> with double confirmation (this form
+          contributes one; the second must come from Telegram / WhatsApp / CLI).
+          Reason text minimum 20 characters (Pydantic <code>Field(min_length=20)</code>).
         </p>
         <form onsubmit={submitOverride} class="override-form">
           <label>
@@ -184,17 +184,17 @@
             <textarea bind:value={reasonText} required rows="3" minlength={20}></textarea>
           </label>
           <label>
-            <span>Segundo canal de confirmación</span>
+            <span>Second confirmation channel</span>
             <select bind:value={secondChannel}>
               <option value="telegram">telegram</option>
               <option value="whatsapp">whatsapp</option>
               <option value="cli">cli</option>
-              <option value="dashboard">dashboard (mismo canal — débil)</option>
+              <option value="dashboard">dashboard (same channel — weak)</option>
             </select>
           </label>
           <div class="override-actions">
             <button type="submit" class="primary" disabled={overrideSubmitting}>
-              {overrideSubmitting ? 'Registrando...' : 'Registrar override'}
+              {overrideSubmitting ? 'Recording…' : 'Record override'}
             </button>
           </div>
         </form>

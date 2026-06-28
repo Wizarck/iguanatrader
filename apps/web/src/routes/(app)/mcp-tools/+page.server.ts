@@ -52,7 +52,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
       return {
         tools: null as McpToolList | null,
         tokenConfigured: !!mcpToken,
-        loadError: `No se pudo cargar el catálogo MCP: ${res.status} ${res.statusText}`
+        loadError: `Could not load the MCP catalogue: ${res.status} ${res.statusText}`
       };
     }
     const tools = (await res.json()) as McpToolList;
@@ -62,7 +62,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     return {
       tools: null as McpToolList | null,
       tokenConfigured: !!mcpToken,
-      loadError: `No se pudo cargar el catálogo MCP: ${message}`
+      loadError: `Could not load the MCP catalogue: ${message}`
     };
   }
 };

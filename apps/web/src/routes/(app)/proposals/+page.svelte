@@ -46,17 +46,17 @@
   <header class="page-header">
     <h1>Proposals</h1>
     <p class="hint">
-      Lista de propuestas emitidas por las strategies. Cada propuesta lleva su
-      <code>stop_price</code> y (cuando aplica) un <code>target_price</code> emitido por la
-      LLM. Click en cualquier fila para abrir el detalle, ejecutar
-      <code>explain_proposal</code> o lanzar el <code>risk_review</code>.
+      List of proposals emitted by the strategies. Each proposal carries its
+      <code>stop_price</code> and (when applicable) a <code>target_price</code> emitted by the
+      LLM. Click any row to open the detail, run
+      <code>explain_proposal</code>, or launch the <code>risk_review</code>.
     </p>
   </header>
 
   {#if data.loadError}
     <div class="error" role="alert">{data.loadError}</div>
   {:else if data.proposals.length === 0}
-    <p class="empty">No hay proposals todavía.</p>
+    <p class="empty">No proposals yet.</p>
   {:else}
     <DataTable
       rows={data.proposals}
