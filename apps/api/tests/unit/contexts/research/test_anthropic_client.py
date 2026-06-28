@@ -12,14 +12,20 @@ explicit ``api_key`` string (or use the composition-root helper with
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
 import pytest
+from iguanatrader.contexts.observability.budget import BudgetState, BudgetStatus
+from iguanatrader.contexts.observability.errors import BudgetExceededError
+from iguanatrader.contexts.research.synthesis import anthropic_client as ac_mod
 from iguanatrader.contexts.research.synthesis.anthropic_client import (
     AnthropicLLMClient,
     build_anthropic_llm_client_from_env,
 )
 from iguanatrader.contexts.research.synthesis.llm_client import LLMCompletion
+from iguanatrader.shared.contextvars import session_var, tenant_id_var
 
 
 class _FakeUsage:
@@ -158,6 +164,136 @@ def test_composition_root_helper_uses_secret_env(
 
     assert isinstance(client, AnthropicLLMClient)
     assert client._api_key == "sk-ant-from-env"
+
+
+# ---------------------------------------------------------------------------
+# Hard per-tenant LLM budget cutoff (flag-gated) — the "corte duro"
+# ---------------------------------------------------------------------------
+
+
+def _budget_state(status: BudgetStatus, percent: int) -> BudgetState:
+    return BudgetState(
+        tenant_id=uuid4(),
+        status=status,
+        percent_used=percent,
+        spent_usd=Decimal("60.00"),
+        cap_usd=Decimal("50.00"),
+        remaining_usd=Decimal("0"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_budget_enforce_off_by_default_skips_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flag OFF (default): check_budget is never consulted; call is served."""
+
+    async def _must_not_run(*_a: Any, **_k: Any) -> BudgetState:
+        raise AssertionError("check_budget must not run when enforcement is off")
+
+    monkeypatch.setattr(ac_mod, "check_budget", _must_not_run)
+    fake = _FakeAsyncAnthropic(_FakeMessage(text_blocks=["ok"], input_tokens=1, output_tokens=1))
+    adapter = AnthropicLLMClient(api_key="sk", client=fake)  # type: ignore[arg-type]
+
+    tok_t, tok_s = tenant_id_var.set(uuid4()), session_var.set(object())
+    try:
+        result = await adapter.complete(
+            prompt="x", model="claude-opus-4-8", replay_key=None, max_tokens=8
+        )
+    finally:
+        tenant_id_var.reset(tok_t)
+        session_var.reset(tok_s)
+    assert result.text == "ok"
+
+
+@pytest.mark.asyncio
+async def test_budget_enforce_blocks_over_cap_without_calling_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flag ON + BLOCK_100 → raise BEFORE the SDK call, so no spend is recorded."""
+
+    async def _block(*_a: Any, **_k: Any) -> BudgetState:
+        return _budget_state(BudgetStatus.BLOCK_100, 120)
+
+    monkeypatch.setattr(ac_mod, "check_budget", _block)
+    fake = _FakeAsyncAnthropic(
+        _FakeMessage(text_blocks=["should not happen"], input_tokens=1, output_tokens=1)
+    )
+    adapter = AnthropicLLMClient(api_key="sk", client=fake, enforce_budget=True)  # type: ignore[arg-type]
+
+    tok_t, tok_s = tenant_id_var.set(uuid4()), session_var.set(object())
+    try:
+        with pytest.raises(BudgetExceededError):
+            await adapter.complete(
+                prompt="x", model="claude-opus-4-8", replay_key=None, max_tokens=8
+            )
+    finally:
+        tenant_id_var.reset(tok_t)
+        session_var.reset(tok_s)
+    # The SDK was never invoked → the cost meter recorded nothing for the block.
+    assert fake.messages.calls == []
+
+
+@pytest.mark.asyncio
+async def test_budget_enforce_allows_under_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _ok(*_a: Any, **_k: Any) -> BudgetState:
+        return _budget_state(BudgetStatus.OK, 10)
+
+    monkeypatch.setattr(ac_mod, "check_budget", _ok)
+    fake = _FakeAsyncAnthropic(
+        _FakeMessage(text_blocks=["served"], input_tokens=1, output_tokens=1)
+    )
+    adapter = AnthropicLLMClient(api_key="sk", client=fake, enforce_budget=True)  # type: ignore[arg-type]
+
+    tok_t, tok_s = tenant_id_var.set(uuid4()), session_var.set(object())
+    try:
+        result = await adapter.complete(
+            prompt="x", model="claude-opus-4-8", replay_key=None, max_tokens=8
+        )
+    finally:
+        tenant_id_var.reset(tok_t)
+        session_var.reset(tok_s)
+    assert result.text == "served"
+
+
+@pytest.mark.asyncio
+async def test_budget_enforce_fail_open_without_tenant_or_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flag ON but no tenant/session bound → cannot price cap → fail-OPEN."""
+
+    async def _must_not_run(*_a: Any, **_k: Any) -> BudgetState:
+        raise AssertionError("check_budget must not run without tenant context")
+
+    monkeypatch.setattr(ac_mod, "check_budget", _must_not_run)
+    fake = _FakeAsyncAnthropic(
+        _FakeMessage(text_blocks=["served"], input_tokens=1, output_tokens=1)
+    )
+    adapter = AnthropicLLMClient(api_key="sk", client=fake, enforce_budget=True)  # type: ignore[arg-type]
+
+    tok_t = tenant_id_var.set(None)  # explicitly no tenant
+    try:
+        result = await adapter.complete(
+            prompt="x", model="claude-opus-4-8", replay_key=None, max_tokens=8
+        )
+    finally:
+        tenant_id_var.reset(tok_t)
+    assert result.text == "served"
+
+
+def test_composition_root_helper_reads_budget_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-from-env")
+
+    monkeypatch.setenv("IGUANATRADER_LLM_BUDGET_ENFORCE_ENABLED", "true")
+    assert build_anthropic_llm_client_from_env()._enforce_budget is True
+
+    monkeypatch.setenv("IGUANATRADER_LLM_BUDGET_ENFORCE_ENABLED", "off")
+    assert build_anthropic_llm_client_from_env()._enforce_budget is False
+
+    monkeypatch.delenv("IGUANATRADER_LLM_BUDGET_ENFORCE_ENABLED", raising=False)
+    assert build_anthropic_llm_client_from_env()._enforce_budget is False
 
 
 # ---------------------------------------------------------------------------
