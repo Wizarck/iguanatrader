@@ -20,12 +20,19 @@
   }: Props = $props();
 
   const pnlNumeric = $derived(dayPnlAbs === null ? null : Number(dayPnlAbs));
-  const pnlSignClass = $derived(
+  // Three states so a flat/closed market doesn't show a loud "$0.00 (0.00%)":
+  //   'none'  → no snapshot for today yet (market not opened / no data)
+  //   'flat'  → equity unchanged since the day's first snapshot (no movement)
+  //   'value' → a real move worth colouring green/red
+  const dayPnlState = $derived(
     pnlNumeric === null || !Number.isFinite(pnlNumeric)
-      ? ''
-      : pnlNumeric >= 0
-        ? 'pnl-positive'
-        : 'pnl-negative'
+      ? 'none'
+      : pnlNumeric === 0
+        ? 'flat'
+        : 'value'
+  );
+  const pnlSignClass = $derived(
+    dayPnlState !== 'value' ? '' : pnlNumeric! >= 0 ? 'pnl-positive' : 'pnl-negative'
   );
 </script>
 
@@ -37,11 +44,14 @@
   <div class="cell">
     <dt>Day P&amp;L</dt>
     <dd class={pnlSignClass} data-testid="summary-day-pnl">
-      {#if dayPnlAbs === null && dayPnlPct === null}
-        —
-      {:else}
+      {#if dayPnlState === 'value'}
         <span>{formatMoney(dayPnlAbs, currency)}</span>
         <span class="pnl-pct">({formatPercent(dayPnlPct)})</span>
+      {:else}
+        <span class="dash">—</span>
+        <span class="pnl-note">
+          {dayPnlState === 'flat' ? 'No movement today' : 'No data yet'}
+        </span>
       {/if}
     </dd>
   </div>
@@ -92,6 +102,15 @@
     font-size: 13px;
     font-weight: 500;
     margin-left: 4px;
+  }
+  .pnl-note {
+    display: block;
+    color: var(--mute);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .dash {
+    color: var(--mute);
   }
   .pnl-positive {
     color: var(--success);
