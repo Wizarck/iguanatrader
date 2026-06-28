@@ -425,10 +425,13 @@ async def test_reconcile_stamps_broker_marks_on_held_position(
 
         row = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
     # Marks stamped from the broker book — the append-only whitelist permitted
-    # the UPDATE (regression guard for the L1/L2 lockstep).
+    # the UPDATE (regression guard for the L1/L2 lockstep). Narrow the
+    # ``Mapped[Any | None]`` columns before constructing a Decimal.
+    assert row.avg_entry_price is not None
+    assert row.unrealized_pnl is not None
+    assert row.marks_updated_at is not None
     assert Decimal(row.avg_entry_price) == Decimal("176.90")
     assert Decimal(row.unrealized_pnl) == Decimal("42.50")
-    assert row.marks_updated_at is not None
     # Still open — marks do not transition state.
     assert row.state == "open"
     assert row.exit_reason is None
