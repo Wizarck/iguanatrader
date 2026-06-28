@@ -136,7 +136,6 @@ def _position_from_row(
     row: OpenPositionRow,
     fill_avg_entry: Decimal | None,
     last_price: Decimal | None,
-    computed_unrealized: Decimal | None,
 ) -> PositionOut:
     """Project an :class:`OpenPositionRow` + computed fields into a DTO row.
 
@@ -148,8 +147,13 @@ def _position_from_row(
     * ``avg_entry_price`` — fill-weighted average when fills exist, else the
       broker's reconciled avgCost. Keeps continuity for normally-filled trades
       while recovering positions whose fills predate the reqExecutions window.
-    * ``unrealized_pnl`` — the broker's mark-to-market when reconciled (fresher
-      + currency-correct), else the value computed from avg vs ``last_price``.
+    * ``unrealized_pnl`` — mark-to-market computed from the RESOLVED avg vs
+      ``last_price``, so the figure is always self-consistent with the avg +
+      last columns the row displays. Falls back to the broker's own uPnL only
+      when avg or last is unavailable (e.g. no market-data bars yet). The
+      broker's paper-account uPnL is frequently ``0`` without a live
+      market-data subscription, so computing it ourselves is both more
+      informative and coherent with the displayed prices.
 
     The strategy / planned-entry / stop / target come straight off the joined
     proposal + config.
@@ -158,7 +162,10 @@ def _position_from_row(
     broker_avg = Decimal(trade.avg_entry_price) if trade.avg_entry_price is not None else None
     broker_unrealized = Decimal(trade.unrealized_pnl) if trade.unrealized_pnl is not None else None
     avg_entry_price = fill_avg_entry if fill_avg_entry is not None else broker_avg
-    unrealized_pnl = broker_unrealized if broker_unrealized is not None else computed_unrealized
+    computed_unrealized = _compute_unrealized_pnl(
+        trade=trade, avg_entry=avg_entry_price, last_price=last_price
+    )
+    unrealized_pnl = computed_unrealized if computed_unrealized is not None else broker_unrealized
     return PositionOut(
         trade_id=trade.id,
         symbol=trade.symbol,
@@ -250,10 +257,10 @@ async def list_positions(
       positions whose entry predates IBKR's reqExecutions window.
     * ``last_price`` = latest 1d-bar close from ``market_data_bars`` via
       :class:`DBMarketDataAdapter`, ``None`` when no bars exist.
-    * ``unrealized_pnl`` = the broker's reconciled mark-to-market
-      (``trade.unrealized_pnl``) when present, else computed against
-      ``last_price`` per the buy/sell sign convention. ``None`` when neither
-      resolves.
+    * ``unrealized_pnl`` = mark-to-market of the RESOLVED avg vs ``last_price``
+      per the buy/sell sign convention (coherent with the displayed avg + last);
+      falls back to the broker's reconciled ``trade.unrealized_pnl`` only when
+      avg or last is missing. ``None`` when neither resolves.
 
     Per-symbol cache: 1 SELECT per unique symbol regardless of position
     count. Stale-MD silently degrades to ``None`` — frontend renders "—".
@@ -276,10 +283,9 @@ async def list_positions(
     positions: list[PositionOut] = []
     for row in open_rows:
         trade = row.trade
-        avg = await _compute_avg_entry_price(fill_repo, trade.id)
+        fill_avg = await _compute_avg_entry_price(fill_repo, trade.id)
         last_price = last_price_by_symbol[trade.symbol]
-        unrealized = _compute_unrealized_pnl(trade=trade, avg_entry=avg, last_price=last_price)
-        positions.append(_position_from_row(row, avg, last_price, unrealized))
+        positions.append(_position_from_row(row, fill_avg, last_price))
 
     log.info(
         "portfolio.positions.fetched",
