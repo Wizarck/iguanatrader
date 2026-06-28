@@ -24,7 +24,7 @@
         headers: { 'Content-Type': 'application/json' }
       });
       if (!res.ok) {
-        explainError = `Explain falló (${res.status}): ${res.statusText}`;
+        explainError = `Explain failed (${res.status}): ${res.statusText}`;
       } else {
         const payload = (await res.json()) as ExplainResponse;
         explainNarrative = payload.narrative;
@@ -50,7 +50,7 @@
         headers: { 'Content-Type': 'application/json' }
       });
       if (!res.ok) {
-        riskError = `Risk-review falló (${res.status}): ${res.statusText}`;
+        riskError = `Risk-review failed (${res.status}): ${res.statusText}`;
       } else {
         const payload = (await res.json()) as RiskReviewResponse;
         riskResult = payload.risk_assessment;
@@ -68,8 +68,8 @@
 </svelte:head>
 
 <section aria-live="polite">
-  <p class="back"><a href="/proposals">← Volver a proposals</a></p>
-  <h1>Detalle del proposal</h1>
+  <p class="back"><a href="/proposals">← Back to proposals</a></p>
+  <h1>Proposal detail</h1>
 
   {#if data.loadError}
     <div class="error" role="alert">{data.loadError}</div>
@@ -100,24 +100,24 @@
     </article>
 
     <section class="actions">
-      <h2>Acciones LLM</h2>
+      <h2>LLM actions</h2>
       <p class="hint">
-        Las dos acciones consumen presupuesto LLM (A0 cap) y disparan llamadas
-        a Anthropic. Resultados de cada una se renderizan abajo.
+        Both actions consume LLM budget (A0 cap) and trigger calls
+        to Anthropic. Results for each render below.
       </p>
       <div class="action-row">
         <button type="button" onclick={runExplain} disabled={explainLoading}>
-          {explainLoading ? 'Generando...' : 'Explain proposal (A1)'}
+          {explainLoading ? 'Generating…' : 'Explain proposal (A1)'}
         </button>
         <button type="button" onclick={runRiskReview} disabled={riskLoading}>
-          {riskLoading ? 'Analizando...' : 'Risk review (A2)'}
+          {riskLoading ? 'Analyzing…' : 'Risk review (A2)'}
         </button>
       </div>
     </section>
 
     {#if explainNarrative}
       <section class="result" data-testid="explain-result">
-        <h3>Narrativa (explain)</h3>
+        <h3>Narrative (explain)</h3>
         <article class="narrative">{explainNarrative}</article>
       </section>
     {/if}

@@ -30,7 +30,7 @@ export const actions: Actions = {
     if (!email) {
       return fail(400, {
         alert_variant: 'destructive' as const,
-        message: 'Introduce un email para continuar.'
+        message: 'Enter an email to continue.'
       });
     }
 
@@ -50,7 +50,7 @@ export const actions: Actions = {
 
     if (response.status === 200) {
       let message =
-        'Si la dirección está registrada, recibirás instrucciones por email, Telegram o WhatsApp en los próximos minutos.';
+        'If the address is registered, you will receive instructions by email, Telegram, or WhatsApp within the next few minutes.';
       try {
         const body = (await response.json()) as { message?: string };
         if (typeof body.message === 'string' && body.message.length > 0) {
@@ -69,7 +69,7 @@ export const actions: Actions = {
       const retryAfter = parseRetryAfter(response);
       return fail(429, {
         alert_variant: 'destructive' as const,
-        message: `Demasiados intentos. Espera ${retryAfter}s antes de reintentar.`,
+        message: `Too many attempts. Wait ${retryAfter}s before retrying.`,
         retry_after: retryAfter
       });
     }
@@ -77,7 +77,7 @@ export const actions: Actions = {
     if (response.status === 422 || response.status === 400) {
       return fail(400, {
         alert_variant: 'destructive' as const,
-        message: 'Email con formato inválido.'
+        message: 'Email is not a valid format.'
       });
     }
 

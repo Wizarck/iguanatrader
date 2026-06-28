@@ -44,18 +44,18 @@
   const tooltip = $derived.by(() => {
     const M = mode.toUpperCase();
     // The LIVE chip is red on purpose — make clear it is a warning, not a fault.
-    const realMoney = mode === 'live' ? ' Rojo = hay dinero real en riesgo, no es un error.' : '';
+    const realMoney = mode === 'live' ? ' Red = real money at risk, not an error.' : '';
     if (row === null) {
       return unknown
-        ? `No se pudo leer el estado del daemon ${M}.${realMoney}`
-        : `Cargando estado del daemon ${M}…`;
+        ? `Could not read the ${M} daemon status.${realMoney}`
+        : `Loading ${M} daemon status…`;
     }
-    if (!row.enabled) return `Daemon ${M} apagado (OFF).${realMoney}`;
+    if (!row.enabled) return `${M} daemon off (OFF).${realMoney}`;
     if (!row.ib_connected) {
-      return `Daemon ${M} encendido, pero sin conexión con el IB Gateway.${realMoney}`;
+      return `${M} daemon on, but not connected to the IB Gateway.${realMoney}`;
     }
     const pending = row.pending_proposals_count;
-    return `Daemon ${M} activo. ${pending} propuesta${pending === 1 ? '' : 's'} pendiente${pending === 1 ? '' : 's'}.${realMoney}`;
+    return `${M} daemon active. ${pending} pending proposal${pending === 1 ? '' : 's'}.${realMoney}`;
   });
 
   function onclick(): void {

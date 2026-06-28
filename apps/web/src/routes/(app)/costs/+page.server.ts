@@ -36,17 +36,17 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
 
     if (!summaryRes.ok) {
       return emptyResult(
-        `No se pudo cargar el resumen de costes: ${summaryRes.status} ${summaryRes.statusText}`,
+        `Could not load the cost summary: ${summaryRes.status} ${summaryRes.statusText}`,
       );
     }
     if (!byProviderRes.ok) {
       return emptyResult(
-        `No se pudo cargar el desglose por proveedor: ${byProviderRes.status} ${byProviderRes.statusText}`,
+        `Could not load the breakdown by provider: ${byProviderRes.status} ${byProviderRes.statusText}`,
       );
     }
     if (!perTradeRes.ok) {
       return emptyResult(
-        `No se pudo cargar el coste por trade: ${perTradeRes.status} ${perTradeRes.statusText}`,
+        `Could not load the cost per trade: ${perTradeRes.status} ${perTradeRes.statusText}`,
       );
     }
 
@@ -62,7 +62,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return emptyResult(`No se pudo cargar el dashboard de costes: ${message}`);
+    return emptyResult(`Could not load the costs dashboard: ${message}`);
   }
 };
 

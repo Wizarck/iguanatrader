@@ -27,7 +27,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     const res = await fetch(stateUrl, { headers });
 
     if (!res.ok) {
-      return emptyResult(`No se pudo cargar el estado de riesgo: ${res.status} ${res.statusText}`);
+      return emptyResult(`Could not load risk state: ${res.status} ${res.statusText}`);
     }
 
     const risk = (await res.json()) as RiskStateResponse;
@@ -38,7 +38,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return emptyResult(`No se pudo cargar el estado de riesgo: ${message}`);
+    return emptyResult(`Could not load risk state: ${message}`);
   }
 };
 

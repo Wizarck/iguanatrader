@@ -30,7 +30,7 @@ export const Default: Story = {
     value: SAMPLE_PARAMS,
     rows: 8,
     monospace: true,
-    helpText: 'Objeto JSON con los parámetros del kind.',
+    helpText: 'JSON object with the kind parameters.',
   },
 };
 
@@ -41,7 +41,7 @@ export const WithError: Story = {
     value: '{not-json',
     rows: 8,
     monospace: true,
-    error: 'JSON inválido: Unexpected token n in JSON at position 1.',
+    error: 'Invalid JSON: Unexpected token n in JSON at position 1.',
   },
 };
 

@@ -21,7 +21,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     if (!res.ok) {
       return {
         catalogue: null as BrokerTypesResponse | null,
-        loadError: `No se pudo cargar el catálogo IBKR: ${res.status} ${res.statusText}`
+        loadError: `Could not load the IBKR catalogue: ${res.status} ${res.statusText}`
       };
     }
     const catalogue = (await res.json()) as BrokerTypesResponse;
@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     const message = err instanceof Error ? err.message : String(err);
     return {
       catalogue: null as BrokerTypesResponse | null,
-      loadError: `No se pudo cargar el catálogo IBKR: ${message}`
+      loadError: `Could not load the IBKR catalogue: ${message}`
     };
   }
 };

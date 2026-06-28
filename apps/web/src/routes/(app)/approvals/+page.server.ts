@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }): Promise<LoadResu
     if (!res.ok) {
       return {
         approvals: [],
-        loadError: `No se pudieron cargar las aprobaciones: ${res.status} ${res.statusText}`,
+        loadError: `Could not load approvals: ${res.status} ${res.statusText}`,
       };
     }
     const approvals = (await res.json()) as ApprovalRequest[];
@@ -44,7 +44,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }): Promise<LoadResu
     const message = err instanceof Error ? err.message : String(err);
     return {
       approvals: [],
-      loadError: `No se pudieron cargar las aprobaciones: ${message}`,
+      loadError: `Could not load approvals: ${message}`,
     };
   }
 };
@@ -62,7 +62,7 @@ export const actions: Actions = {
     const requestId = String(formData.get('request_id') ?? '').trim();
 
     if (!requestId || !isValidRequestId(requestId)) {
-      return fail(400, { formError: 'request_id inválido.' });
+      return fail(400, { formError: 'Invalid request_id.' });
     }
 
     const sessionCookie = cookies.get(COOKIE_NAME);
@@ -79,14 +79,14 @@ export const actions: Actions = {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(502, { formError: `Backend inaccesible: ${message}` });
+      return fail(502, { formError: `Backend unreachable: ${message}` });
     }
 
     if (response.status >= 200 && response.status < 300) {
       throw redirect(303, '/approvals');
     }
 
-    let detail = `Error ${response.status} al aprobar.`;
+    let detail = `Error ${response.status} while approving.`;
     try {
       const body = (await response.json()) as { detail?: string };
       if (typeof body.detail === 'string') detail = body.detail;
@@ -106,7 +106,7 @@ export const actions: Actions = {
         : null;
 
     if (!requestId || !isValidRequestId(requestId)) {
-      return fail(400, { formError: 'request_id inválido.' });
+      return fail(400, { formError: 'Invalid request_id.' });
     }
 
     const sessionCookie = cookies.get(COOKIE_NAME);
@@ -123,14 +123,14 @@ export const actions: Actions = {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(502, { formError: `Backend inaccesible: ${message}` });
+      return fail(502, { formError: `Backend unreachable: ${message}` });
     }
 
     if (response.status >= 200 && response.status < 300) {
       throw redirect(303, '/approvals');
     }
 
-    let detail = `Error ${response.status} al rechazar.`;
+    let detail = `Error ${response.status} while rejecting.`;
     try {
       const body = (await response.json()) as { detail?: string };
       if (typeof body.detail === 'string') detail = body.detail;

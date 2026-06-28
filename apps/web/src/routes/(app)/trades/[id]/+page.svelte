@@ -36,9 +36,9 @@
       });
       if (!res.ok) {
         const detail = await res.text();
-        closeError = `No se pudo cerrar (${res.status}): ${detail || res.statusText}`;
+        closeError = `Could not close (${res.status}): ${detail || res.statusText}`;
       } else {
-        closeSuccess = 'Cierre enviado. El estado pasará a "closing" cuando el broker confirme.';
+        closeSuccess = 'Close submitted. The state will move to "closing" once the broker confirms.';
       }
     } catch (err) {
       closeError = err instanceof Error ? err.message : String(err);
@@ -67,7 +67,7 @@
         headers: { 'Content-Type': 'application/json' }
       });
       if (!res.ok) {
-        journalError = `No se pudo regenerar (${res.status}): ${res.statusText}`;
+        journalError = `Could not regenerate (${res.status}): ${res.statusText}`;
       } else {
         const payload = (await res.json()) as { narrative: string };
         journalNarrative = payload.narrative;
@@ -94,10 +94,10 @@
 
 <section aria-live="polite">
   <p class="back">
-    <a href="/trades" data-testid="trades-back-link">← Volver a trades</a>
+    <a href="/trades" data-testid="trades-back-link">← Back to trades</a>
   </p>
 
-  <h1>Detalle del trade</h1>
+  <h1>Trade detail</h1>
 
   {#if data.loadError}
     <div class="error" role="alert" data-testid="trade-load-error">
@@ -126,25 +126,25 @@
 
     {#if data.trade.state === 'open'}
       <section class="close-form" data-testid="close-trade-form">
-        <h2>Cerrar trade</h2>
+        <h2>Close trade</h2>
         <p class="hint">
-          Envía una <code>CloseTradeRequested</code> al daemon. El estado pasa a
-          <code>closing</code> al confirmar el broker, y a <code>closed</code> cuando
-          el fill terminal aterriza. La razón se persiste en
-          <code>trades.exit_reason</code> y la usa el K1 stoploss_guard.
+          Sends a <code>CloseTradeRequested</code> to the daemon. The state moves to
+          <code>closing</code> once the broker confirms, and to <code>closed</code> when
+          the terminal fill lands. The reason is persisted in
+          <code>trades.exit_reason</code> and used by the K1 stoploss_guard.
         </p>
         <form onsubmit={handleClose}>
           <label>
-            <span>Razón</span>
+            <span>Reason</span>
             <select bind:value={closeReason} disabled={closeSubmitting}>
-              <option value="manual">manual — cierre operador</option>
-              <option value="stop">stop — disparado por stop-loss</option>
-              <option value="target">target — take-profit alcanzado</option>
-              <option value="expiry">expiry — vencimiento (opciones / futuros)</option>
+              <option value="manual">manual — operator close</option>
+              <option value="stop">stop — triggered by stop-loss</option>
+              <option value="target">target — take-profit reached</option>
+              <option value="expiry">expiry — expiration (options / futures)</option>
             </select>
           </label>
           <button type="submit" class="primary" disabled={closeSubmitting}>
-            {closeSubmitting ? 'Enviando...' : 'Cerrar trade'}
+            {closeSubmitting ? 'Submitting…' : 'Close trade'}
           </button>
         </form>
         {#if closeError}
@@ -162,12 +162,12 @@
         {#if journalNarrative}
           <article class="narrative">{journalNarrative}</article>
           <button type="button" onclick={handleJournalRegenerate} disabled={journalSubmitting}>
-            {journalSubmitting ? 'Regenerando...' : 'Regenerar narrativa'}
+            {journalSubmitting ? 'Regenerating…' : 'Regenerate narrative'}
           </button>
         {:else}
-          <p class="hint">Aún no hay narrativa generada para este trade.</p>
+          <p class="hint">No narrative generated yet for this trade.</p>
           <button type="button" onclick={handleJournalRegenerate} disabled={journalSubmitting}>
-            {journalSubmitting ? 'Generando...' : 'Generar narrativa'}
+            {journalSubmitting ? 'Generating…' : 'Generate narrative'}
           </button>
         {/if}
         {#if journalError}
@@ -179,7 +179,7 @@
     <section class="orders" data-testid="orders-timeline">
       <h2>Order timeline</h2>
       {#if data.orders.length === 0}
-        <p class="orders-empty" data-testid="orders-empty">Sin orders aún.</p>
+        <p class="orders-empty" data-testid="orders-empty">No orders yet.</p>
       {:else}
         <ol class="timeline">
           {#each data.orders as order (order.id)}
@@ -224,7 +224,7 @@
 
     <h2 class="fills-heading">Fills</h2>
     {#if data.fills.length === 0}
-      <p class="fills-empty" data-testid="fills-empty">Sin fills aún.</p>
+      <p class="fills-empty" data-testid="fills-empty">No fills yet.</p>
     {:else}
       <DataTable
         rows={data.fills}

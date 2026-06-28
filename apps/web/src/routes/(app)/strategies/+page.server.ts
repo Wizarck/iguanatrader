@@ -22,7 +22,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
       return {
         strategies: [] as StrategyConfigOut[],
         total: 0,
-        loadError: `No se pudieron cargar las estrategias: ${res.status} ${res.statusText}`,
+        loadError: `Could not load strategies: ${res.status} ${res.statusText}`,
       };
     }
     const body = (await res.json()) as StrategyConfigListOut;
@@ -36,7 +36,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     return {
       strategies: [] as StrategyConfigOut[],
       total: 0,
-      loadError: `No se pudieron cargar las estrategias: ${message}`,
+      loadError: `Could not load strategies: ${message}`,
     };
   }
 };

@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }) => {
     if (!res.ok) {
       return {
         proposal: null as ProposalOut | null,
-        loadError: `No se pudo cargar el proposal: ${res.status} ${res.statusText}`
+        loadError: `Could not load the proposal: ${res.status} ${res.statusText}`
       };
     }
     const proposal = (await res.json()) as ProposalOut;
@@ -29,7 +29,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }) => {
     const message = err instanceof Error ? err.message : String(err);
     return {
       proposal: null as ProposalOut | null,
-      loadError: `No se pudo cargar el proposal: ${message}`
+      loadError: `Could not load the proposal: ${message}`
     };
   }
 };

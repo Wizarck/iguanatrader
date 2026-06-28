@@ -47,7 +47,7 @@
         reconcileError = result.detail ?? `Error ${result.status}: ${result.title}`;
         return;
       }
-      reconcileMessage = `Reconcile ${mode} aceptado · ${result.correlation_id.slice(0, 8)}`;
+      reconcileMessage = `Reconcile ${mode} accepted · ${result.correlation_id.slice(0, 8)}`;
       await daemonStatusStore.refresh();
     } catch (exc) {
       reconcileError = exc instanceof Error ? exc.message : String(exc);
@@ -120,23 +120,23 @@
 
   <h2>Daemons</h2>
   <p class="daemons-help">
-    Estado per-modo del trading daemon. Click en un chip del header (o
-    el botón aquí) abre el modal de toggle. Reconcile dispara una
-    sincronización forzada con IBKR (fills + equity snapshot).
+    Per-mode trading daemon status. Clicking a header chip (or the
+    button here) opens the toggle modal. Reconcile triggers a
+    forced sync with IBKR (fills + equity snapshot).
   </p>
   {#if daemons.length === 0}
-    <p class="status">Cargando estado…</p>
+    <p class="status">Loading status…</p>
   {:else}
     <table class="daemons-table">
       <thead>
         <tr>
-          <th>Modo</th>
+          <th>Mode</th>
           <th>Enabled</th>
-          <th>IB conectado</th>
-          <th>Última heartbeat</th>
-          <th>Último fill</th>
+          <th>IB connected</th>
+          <th>Last heartbeat</th>
+          <th>Last fill</th>
           <th>Pending</th>
-          <th>Acciones</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>

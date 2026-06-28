@@ -18,18 +18,18 @@
 
 <dl class="summary-card" data-testid="costs-summary-card">
   <div class="cell">
-    <dt>Coste total</dt>
+    <dt>Total cost</dt>
     <dd data-testid="summary-total-cost">{formatMoney(summary.total_cost_usd, 'USD')}</dd>
   </div>
   <div class="cell">
-    <dt>Llamadas</dt>
+    <dt>Calls</dt>
     <dd data-testid="summary-calls">
       <span>{summary.total_calls}</span>
       <span class="calls-cached">({summary.cached_calls} cached)</span>
     </dd>
   </div>
   <div class="cell">
-    <dt>Coste por trade</dt>
+    <dt>Cost per trade</dt>
     <dd data-testid="summary-cost-per-trade">{costPerTradeDisplay}</dd>
   </div>
 </dl>

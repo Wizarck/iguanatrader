@@ -33,7 +33,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }) => {
         trade: null,
         fills: [] as FillOut[],
         orders: [] as OrderOut[],
-        loadError: `No se pudo cargar el trade: ${tradeRes.status} ${tradeRes.statusText}`,
+        loadError: `Could not load the trade: ${tradeRes.status} ${tradeRes.statusText}`,
       };
     }
     if (!fillsRes.ok) {
@@ -41,7 +41,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }) => {
         trade: null,
         fills: [] as FillOut[],
         orders: [] as OrderOut[],
-        loadError: `No se pudieron cargar los fills: ${fillsRes.status} ${fillsRes.statusText}`,
+        loadError: `Could not load fills: ${fillsRes.status} ${fillsRes.statusText}`,
       };
     }
     if (!ordersRes.ok) {
@@ -49,7 +49,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }) => {
         trade: null,
         fills: [] as FillOut[],
         orders: [] as OrderOut[],
-        loadError: `No se pudieron cargar las orders: ${ordersRes.status} ${ordersRes.statusText}`,
+        loadError: `Could not load orders: ${ordersRes.status} ${ordersRes.statusText}`,
       };
     }
     const trade = (await tradeRes.json()) as TradeOut;
@@ -67,7 +67,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, params }) => {
       trade: null,
       fills: [] as FillOut[],
       orders: [] as OrderOut[],
-      loadError: `No se pudo cargar el trade: ${message}`,
+      loadError: `Could not load the trade: ${message}`,
     };
   }
 };

@@ -19,23 +19,23 @@ type Story = StoryObj<typeof meta>;
 
 export const NoTrades: Story = {
   args: {
-    title: 'No trades aún',
-    body: 'Arranca el daemon para empezar a generar trades: `iguanatrader trading run --mode paper`.',
-    hint: 'Consulta docs/mvp-deploy.md para el detalle del flujo de despliegue.'
+    title: 'No trades yet',
+    body: 'Start the daemon to begin generating trades: `iguanatrader trading run --mode paper`.',
+    hint: 'See docs/mvp-deploy.md for the deployment flow.'
   }
 };
 
 export const TitleAndBodyOnly: Story = {
   args: {
-    title: 'Sin estrategias configuradas',
-    body: 'Aún no has configurado ninguna estrategia para este tenant.'
+    title: 'No strategies configured',
+    body: 'You have not configured any strategy for this tenant yet.'
   }
 };
 
 export const LongBody: Story = {
   args: {
-    title: 'Sin snapshots de equity',
-    body: 'El cron de snapshots se ejecuta cada minuto pero requiere que el daemon esté corriendo. Si esperaste más de 90 segundos y sigue vacío, revisa los logs del daemon.',
-    hint: 'docs/runbook.md#equity-snapshots tiene el detalle de troubleshooting.'
+    title: 'No equity snapshots',
+    body: 'The snapshots cron runs every minute but requires the daemon to be running. If you waited more than 90 seconds and it is still empty, check the daemon logs.',
+    hint: 'docs/runbook.md#equity-snapshots has the troubleshooting detail.'
   }
 };

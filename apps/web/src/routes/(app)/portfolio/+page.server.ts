@@ -41,17 +41,17 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
 
     if (!summaryRes.ok) {
       return emptyResult(
-        `No se pudo cargar el portfolio: ${summaryRes.status} ${summaryRes.statusText}`,
+        `Could not load the portfolio: ${summaryRes.status} ${summaryRes.statusText}`,
       );
     }
     if (!positionsRes.ok) {
       return emptyResult(
-        `No se pudieron cargar las posiciones: ${positionsRes.status} ${positionsRes.statusText}`,
+        `Could not load positions: ${positionsRes.status} ${positionsRes.statusText}`,
       );
     }
     if (!seriesRes.ok) {
       return emptyResult(
-        `No se pudo cargar la serie de equity: ${seriesRes.status} ${seriesRes.statusText}`,
+        `Could not load the equity series: ${seriesRes.status} ${seriesRes.statusText}`,
       );
     }
 
@@ -67,7 +67,7 @@ export const load: PageServerLoad = async ({ fetch, cookies }) => {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return emptyResult(`No se pudo cargar el portfolio: ${message}`);
+    return emptyResult(`Could not load the portfolio: ${message}`);
   }
 };
 

@@ -24,34 +24,34 @@
   <header class="page-header">
     <h1>MCP server — tool catalogue</h1>
     <p class="hint">
-      Lista de herramientas que el daemon expone bajo
-      <code>/api/v1/mcp/tools/*</code> para Hermes / Telegram. Cada tool
-      es un POST autenticado con bearer token
-      (<code>IGUANATRADER_MCP_TOKEN</code>). Las acciones equivalentes
-      están disponibles también vía session-auth desde
-      <code>/proposals/{'{'}id{'}'}</code>, <code>/trades/{'{'}id{'}'}</code> y
-      <code>/research/{'{'}symbol{'}'}</code> — el endpoint MCP es la
-      capa para integraciones externas.
+      List of tools the daemon exposes under
+      <code>/api/v1/mcp/tools/*</code> for Hermes / Telegram. Each tool
+      is a POST authenticated with a bearer token
+      (<code>IGUANATRADER_MCP_TOKEN</code>). The equivalent actions
+      are also available via session-auth from
+      <code>/proposals/{'{'}id{'}'}</code>, <code>/trades/{'{'}id{'}'}</code> and
+      <code>/research/{'{'}symbol{'}'}</code> — the MCP endpoint is the
+      layer for external integrations.
     </p>
   </header>
 
   <section class="status-card" data-testid="mcp-status">
-    <h2>Estado del server</h2>
+    <h2>Server status</h2>
     <dl>
-      <dt>Token configurado en web</dt>
+      <dt>Token configured in web</dt>
       <dd>
         {#if data.tokenConfigured}
-          <span class="ok">✓ sí</span>
+          <span class="ok">✓ yes</span>
         {:else}
-          <span class="bad">✗ no — set <code>IGUANATRADER_MCP_TOKEN</code> en el contenedor web</span>
+          <span class="bad">✗ no — set <code>IGUANATRADER_MCP_TOKEN</code> in the web container</span>
         {/if}
       </dd>
-      <dt>Catálogo accesible</dt>
+      <dt>Catalogue accessible</dt>
       <dd>
         {#if data.tools}
-          <span class="ok">✓ {data.tools.tools.length} herramientas registradas</span>
+          <span class="ok">✓ {data.tools.tools.length} tools registered</span>
         {:else}
-          <span class="bad">✗ no — ver error abajo</span>
+          <span class="bad">✗ no — see error below</span>
         {/if}
       </dd>
     </dl>
@@ -62,7 +62,7 @@
   {/if}
 
   {#if data.tools}
-    <h2>Herramientas</h2>
+    <h2>Tools</h2>
     <ul class="tools">
       {#each data.tools.tools as tool (tool.name)}
         <li class="tool">
@@ -80,9 +80,9 @@
     </ul>
 
     <section class="hermes-howto">
-      <h2>Configurar Hermes / Telegram</h2>
+      <h2>Configure Hermes / Telegram</h2>
       <p>
-        En el host de Hermes, registra el server MCP apuntando al api container:
+        On the Hermes host, register the MCP server pointing to the api container:
       </p>
       <pre><code># eligia-core/mcp-servers.yaml (SOPS-encrypted)
 servers:
@@ -93,9 +93,9 @@ servers:
       token: $&#123;IGUANATRADER_MCP_TOKEN&#125;
     tools_path: /tools</code></pre>
       <p class="hint-small">
-        El token debe ser idéntico al que configuras en
+        The token must be identical to the one you set in
         <code>/opt/iguanatrader/.env</code> (variable
-        <code>IGUANATRADER_MCP_TOKEN</code>) + el slug del tenant en
+        <code>IGUANATRADER_MCP_TOKEN</code>) + the tenant slug in
         <code>IGUANATRADER_MCP_TENANT_SLUG</code>.
       </p>
     </section>

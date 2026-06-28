@@ -27,10 +27,10 @@
   data-tier={tier}
   aria-labelledby="cpt-label"
 >
-  <p id="cpt-label" class="label">Coste por trade</p>
+  <p id="cpt-label" class="label">Cost per trade</p>
   <p class="big-number" data-testid="cpt-big-number">{bigNumber}</p>
   {#if isNull}
-    <p class="subtitle" data-testid="cpt-subtitle">Sin trades cerrados aún</p>
+    <p class="subtitle" data-testid="cpt-subtitle">No closed trades yet</p>
   {:else}
     <p class="subtitle" data-testid="cpt-subtitle">
       = {formatMoney(perTrade.total_llm_cost_usd, 'USD')} / {perTrade.closed_trades_count}

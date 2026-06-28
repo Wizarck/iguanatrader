@@ -26,7 +26,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, url }) => {
       return {
         runs: [] as IngestRunOut[],
         statusFilter: status,
-        loadError: `No se pudieron cargar los ingest runs: ${res.status} ${res.statusText}`
+        loadError: `Could not load ingest runs: ${res.status} ${res.statusText}`
       };
     }
     const body = (await res.json()) as IngestRunListOut;
@@ -40,7 +40,7 @@ export const load: PageServerLoad = async ({ fetch, cookies, url }) => {
     return {
       runs: [] as IngestRunOut[],
       statusFilter: status,
-      loadError: `No se pudieron cargar los ingest runs: ${message}`
+      loadError: `Could not load ingest runs: ${message}`
     };
   }
 };

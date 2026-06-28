@@ -30,7 +30,7 @@
   const isPaperAccount = $derived((data.summary?.equity.mode ?? 'paper') !== 'live');
   const resolvedCurrency = $derived(resolveCurrencyCode(currency));
   const accountNote = $derived(
-    `${isPaperAccount ? 'dinero simulado' : 'dinero real'} · ${resolvedCurrency}`
+    `${isPaperAccount ? 'Simulated money' : 'Real money'} · ${resolvedCurrency}`
   );
   // Most recent broker-reconcile timestamp across positions — drives the
   // honesty caption that the real entry / unrealized P&L are point-in-time
@@ -46,7 +46,7 @@
     const d = new Date(iso);
     return Number.isNaN(d.getTime())
       ? iso
-      : d.toLocaleString('es-ES', {
+      : d.toLocaleString('en-US', {
           day: '2-digit',
           month: '2-digit',
           hour: '2-digit',
@@ -78,7 +78,7 @@
 
 {#snippet avgEntryCell(row: PositionOut)}
   {#if row.avg_entry_price === null}
-    <Badge label="pendiente de ejecución" variant="mute" />
+    <Badge label="Awaiting fill" variant="mute" />
   {:else}
     {formatMoney(row.avg_entry_price, currency)}
   {/if}
@@ -113,9 +113,9 @@
     </div>
   {:else if isAllEmpty}
     <EmptyState
-      title="No portfolio activity aún"
-      body="Arranca el daemon: `iguanatrader trading run --mode paper`."
-      hint="Consulta docs/mvp-deploy.md para el detalle del flujo de despliegue."
+      title="No portfolio activity yet"
+      body="Start the daemon: `iguanatrader trading run --mode paper`."
+      hint="See docs/mvp-deploy.md for the deployment flow."
     />
   {:else if data.summary}
     <div class="account-badge" data-testid="account-badge">
@@ -141,25 +141,25 @@
       </div>
     </div>
 
-    <h2>Posiciones</h2>
+    <h2>Positions</h2>
     {#if data.positions.length === 0}
-      <p class="muted" data-testid="positions-empty">Sin posiciones abiertas.</p>
+      <p class="muted" data-testid="positions-empty">No open positions.</p>
     {:else}
       <DataTable
         rows={data.positions}
         columns={[
           { key: 'symbol', header: 'Symbol' },
           { key: 'side', header: 'Side', cell: sideCell },
-          { key: 'strategy_kind', header: 'Estrategia', cell: strategyCell },
+          { key: 'strategy_kind', header: 'Strategy', cell: strategyCell },
           { key: 'quantity', header: 'Qty' },
           {
             key: 'entry_price_indicative',
-            header: 'Entrada prev.',
+            header: 'Planned entry',
             cell: plannedEntryCell
           },
-          { key: 'avg_entry_price', header: 'Entrada real', cell: avgEntryCell },
+          { key: 'avg_entry_price', header: 'Avg fill', cell: avgEntryCell },
           { key: 'stop_price', header: 'Stop', cell: stopCell },
-          { key: 'target_price', header: 'Objetivo', cell: targetCell },
+          { key: 'target_price', header: 'Target', cell: targetCell },
           { key: 'last_price', header: 'Last', cell: lastPriceCell },
           {
             key: 'unrealized_pnl',
@@ -172,8 +172,8 @@
       />
       {#if marksSyncedAt}
         <p class="sync-note" data-testid="marks-sync-note">
-          Entrada real y P&L no realizado reconciliados con IBKR · última sinc.
-          {formatSyncTime(marksSyncedAt)} · no es tiempo real
+          Avg fill and unrealized P&L reconciled with IBKR · last sync
+          {formatSyncTime(marksSyncedAt)} · not real-time
         </p>
       {/if}
     {/if}
