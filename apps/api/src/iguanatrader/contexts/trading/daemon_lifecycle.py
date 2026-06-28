@@ -343,20 +343,24 @@ class DaemonLifecycleService:
         )
 
     async def _reconcile_positions(self, *, correlation_id: UUID) -> None:
-        """Close local open trades that IBKR no longer holds.
+        """Reconcile local open trades against IBKR's position book.
 
-        Compares :meth:`BrokerPort.list_positions` (the broker's
-        authoritative open-position book) against the daemon's local
-        ``trades`` rows in ``state IN ('open', 'closing')``. Any local
-        row whose ``symbol`` does NOT appear in the broker set is
-        considered orphaned and closed via the slice
-        ``ibkr_reconcile`` exit-reason path.
+        Two effects, both driven by a single :meth:`BrokerPort.list_positions`
+        read (the broker's authoritative open-position book):
 
-        Idempotency: a second reconcile in the same correlation finds
-        the trades already in ``state='closed'`` and skips them. We
-        rely on the slice-3 append-only listener's whitelist to permit
-        the UPDATE on ``state`` / ``exit_reason`` / ``closed_at`` —
-        same whitelist the close-flow service uses for stop/target.
+        1. **Marks** — for every local open trade whose ``symbol`` IBKR still
+           holds, stamp the broker's ``avgCost`` onto ``avg_entry_price`` + its
+           mark-to-market onto ``unrealized_pnl`` (+ ``marks_updated_at``). This
+           is the ONLY reliable source for a position whose entry fills predate
+           the ``reqExecutions`` window: the fills never reconcile, so the
+           positions API would otherwise show "pendiente de ejecución" forever.
+           The columns are on the append-only whitelist (migration 0040).
+        2. **Orphan close** — any local row whose ``symbol`` does NOT appear in
+           the broker set is closed via the ``ibkr_reconcile`` exit-reason path.
+
+        Idempotency: a second reconcile re-stamps marks (cheap, monotonic) and
+        finds orphans already ``state='closed'``. We rely on the slice-3
+        append-only listener's whitelist to permit both UPDATEs.
 
         No-op when ``self._trade_repo`` is None (backwards-compat for
         tests that constructed the service without Phase-2.5 wiring).
@@ -370,7 +374,10 @@ class DaemonLifecycleService:
             return
 
         broker_positions = await self._broker.list_positions()
-        broker_symbols = {pos.symbol for pos in broker_positions if pos.quantity != 0}
+        # Non-zero broker positions keyed by symbol. ``list_positions`` already
+        # filters zero-quantity rows adapter-side, but guard again defensively.
+        marks_by_symbol = {pos.symbol: pos for pos in broker_positions if pos.quantity != 0}
+        broker_symbols = set(marks_by_symbol)
 
         local_open = await self._trade_repo.list_open_for_tenant()
         # Filter to this daemon's mode — the same TradeRepository is
@@ -378,28 +385,37 @@ class DaemonLifecycleService:
         # deployment; per-mode session isolation is provided by the
         # session_var binding, but a defensive filter keeps the diff
         # honest if a future call site changes session scoping.
-        orphans = [t for t in local_open if t.mode == self._mode and t.symbol not in broker_symbols]
+        local_mine = [t for t in local_open if t.mode == self._mode]
 
-        if not orphans:
-            log.info(
-                "daemon_lifecycle.reconcile.positions_in_sync",
-                mode=self._mode,
-                correlation_id=str(correlation_id),
-                local_open_count=len(local_open),
-                broker_symbol_count=len(broker_symbols),
-            )
-            return
+        # 1. Stamp broker marks on the matched (still-held) positions. IBKR
+        # aggregates by symbol, so when >1 local trade shares a symbol they all
+        # receive the same avg/uPnL (acceptable for the MVP single-position-
+        # per-symbol watchlist; revisit if partial scaling lands).
+        now = utc_now()
+        marked = 0
+        for trade in local_mine:
+            pos = marks_by_symbol.get(trade.symbol)
+            if pos is None:
+                continue
+            trade.avg_entry_price = pos.average_price
+            trade.unrealized_pnl = pos.unrealized_pnl
+            trade.marks_updated_at = now
+            marked += 1
 
-        closed_at = utc_now()
+        # 2. Orphan close — symbols the broker no longer holds.
+        orphans = [t for t in local_mine if t.symbol not in broker_symbols]
         for trade in orphans:
             trade.state = "closed"
             trade.exit_reason = "ibkr_reconcile"
-            trade.closed_at = closed_at
+            trade.closed_at = now
 
         log.info(
-            "daemon_lifecycle.reconcile.positions_closed",
+            "daemon_lifecycle.reconcile.positions_reconciled",
             mode=self._mode,
             correlation_id=str(correlation_id),
+            local_open_count=len(local_mine),
+            broker_symbol_count=len(broker_symbols),
+            marks_updated=marked,
             closed_count=len(orphans),
             closed_symbols=[t.symbol for t in orphans],
         )

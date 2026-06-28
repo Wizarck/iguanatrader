@@ -69,6 +69,7 @@ const SAMPLE_POSITION: PositionOut = {
   avg_entry_price: '180.50',
   last_price: null,
   unrealized_pnl: null,
+  marks_updated_at: null,
   opened_at: '2026-05-01T10:00:00Z',
   strategy_kind: 'donchian_atr',
   entry_price_indicative: '179.90',

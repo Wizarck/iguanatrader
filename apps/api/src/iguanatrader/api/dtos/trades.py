@@ -254,11 +254,26 @@ class PositionOut(BaseModel):
     quantity: Decimal = Field(examples=[Decimal("10.0")])
     avg_entry_price: Decimal | None = Field(
         default=None,
-        description="REAL fill-weighted average entry; null until the broker reports fills.",
+        description=(
+            "REAL average entry. Fill-weighted when fills exist; otherwise the "
+            "broker's reconciled avgCost (when the position predates the "
+            "reqExecutions window). Null only when neither is available."
+        ),
         examples=[Decimal("450.25")],
     )
     last_price: Decimal | None = None
-    unrealized_pnl: Decimal | None = None
+    unrealized_pnl: Decimal | None = Field(
+        default=None,
+        description=(
+            "Mark-to-market P&L. Broker-reconciled value (as of "
+            "``marks_updated_at``) when present, else computed from "
+            "``avg_entry_price`` vs ``last_price``. Null when neither resolves."
+        ),
+    )
+    # When the broker-reconciled marks above were last refreshed (boot /
+    # on-demand reconcile). Null when no reconcile has stamped this trade yet —
+    # the avg/uPnL then come purely from local fills + market data.
+    marks_updated_at: datetime | None = Field(default=None)
     opened_at: datetime
     # Plan-of-record from the originating proposal/strategy — already in the DB,
     # surfaced by the Trade→TradeProposal→StrategyConfig join. NOT the broker's

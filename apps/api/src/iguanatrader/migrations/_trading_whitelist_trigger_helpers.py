@@ -51,6 +51,16 @@ MUTABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "journal_narrative",
         "journal_generated_at",
         "journal_model",
+        # Migration 0040: broker-reconciled position marks (avgCost / uPnL /
+        # sync timestamp) — mutable so the on-boot/on-demand reconcile can
+        # restamp them. NON_WHITELISTED_COLUMNS['trades'] is unchanged (these
+        # never join the immutable set), so the L2 trigger predicate is
+        # identical and migration 0040 does NOT need to recreate the trigger;
+        # this entry only keeps the human-readable RAISE message + the
+        # lockstep test accurate.
+        "avg_entry_price",
+        "unrealized_pnl",
+        "marks_updated_at",
     ),
     "orders": (
         "state",

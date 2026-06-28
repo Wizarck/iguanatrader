@@ -134,17 +134,31 @@ def _compute_unrealized_pnl(
 
 def _position_from_row(
     row: OpenPositionRow,
-    avg_entry_price: Decimal | None,
+    fill_avg_entry: Decimal | None,
     last_price: Decimal | None,
-    unrealized_pnl: Decimal | None,
+    computed_unrealized: Decimal | None,
 ) -> PositionOut:
     """Project an :class:`OpenPositionRow` + computed fields into a DTO row.
 
-    ``avg_entry_price`` (fill-weighted, real) and ``unrealized_pnl`` are
-    computed from fills/market data; the strategy/planned-entry/stop/target come
-    straight off the joined proposal + config.
+    Source preference reconciles the two truths an open position can have —
+    locally-derived (fills + market data) vs broker-reconciled marks
+    (``trade.avg_entry_price`` / ``trade.unrealized_pnl``, stamped by the
+    daemon's IBKR reconcile, migration 0040):
+
+    * ``avg_entry_price`` — fill-weighted average when fills exist, else the
+      broker's reconciled avgCost. Keeps continuity for normally-filled trades
+      while recovering positions whose fills predate the reqExecutions window.
+    * ``unrealized_pnl`` — the broker's mark-to-market when reconciled (fresher
+      + currency-correct), else the value computed from avg vs ``last_price``.
+
+    The strategy / planned-entry / stop / target come straight off the joined
+    proposal + config.
     """
     trade = row.trade
+    broker_avg = Decimal(trade.avg_entry_price) if trade.avg_entry_price is not None else None
+    broker_unrealized = Decimal(trade.unrealized_pnl) if trade.unrealized_pnl is not None else None
+    avg_entry_price = fill_avg_entry if fill_avg_entry is not None else broker_avg
+    unrealized_pnl = broker_unrealized if broker_unrealized is not None else computed_unrealized
     return PositionOut(
         trade_id=trade.id,
         symbol=trade.symbol,
@@ -153,6 +167,7 @@ def _position_from_row(
         avg_entry_price=avg_entry_price,
         last_price=last_price,
         unrealized_pnl=unrealized_pnl,
+        marks_updated_at=trade.marks_updated_at,
         opened_at=trade.opened_at,
         strategy_kind=row.strategy_kind,
         entry_price_indicative=(
@@ -226,14 +241,19 @@ async def list_positions(
     """List derived positions — one row per open trade.
 
     A "position" is computed from each open :class:`Trade` plus the
-    cumulative fills attached to its order(s):
+    cumulative fills attached to its order(s), with the daemon's
+    broker-reconciled marks (migration 0040) as the fallback source:
 
-    * ``avg_entry_price`` = ``sum(fill_price * quantity_filled) /
-      sum(quantity_filled)`` across fills, or ``None`` if no fills yet.
+    * ``avg_entry_price`` = fill-weighted ``sum(fill_price * quantity_filled) /
+      sum(quantity_filled)``; falls back to the broker's reconciled avgCost
+      (``trade.avg_entry_price``) when there are no fills — the case for
+      positions whose entry predates IBKR's reqExecutions window.
     * ``last_price`` = latest 1d-bar close from ``market_data_bars`` via
       :class:`DBMarketDataAdapter`, ``None`` when no bars exist.
-    * ``unrealized_pnl`` = mark-to-market against ``last_price`` per the
-      buy/sell sign convention, ``None`` when either input is missing.
+    * ``unrealized_pnl`` = the broker's reconciled mark-to-market
+      (``trade.unrealized_pnl``) when present, else computed against
+      ``last_price`` per the buy/sell sign convention. ``None`` when neither
+      resolves.
 
     Per-symbol cache: 1 SELECT per unique symbol regardless of position
     count. Stale-MD silently degrades to ``None`` — frontend renders "—".

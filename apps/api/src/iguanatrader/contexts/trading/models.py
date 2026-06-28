@@ -235,6 +235,17 @@ class Trade(Base):
     # endpoint adds ``journal_narrative`` + ``journal_generated_at`` +
     # ``journal_model`` so an LLM-generated post-mortem can be
     # persisted on the trade row (migration 0018).
+    #
+    # Slice ``portfolio-broker-position-marks`` extension (migration 0040):
+    # ``avg_entry_price`` + ``unrealized_pnl`` + ``marks_updated_at`` carry the
+    # broker's authoritative position figures (IBKR ``avgCost`` /
+    # ``unrealizedPnL``) reconciled on boot + on-demand. They exist because
+    # ``reqExecutions`` does NOT reliably surface fills older than the prior
+    # session, so a position can be live broker-side with zero local fills —
+    # leaving the fill-derived avg/uPnL forever null. The reconcile UPDATEs
+    # these three columns on the existing open-trade row, so all three join the
+    # whitelist (kept in lockstep with the L2 trigger via
+    # ``MUTABLE_COLUMNS['trades']`` + ``test_snapshot_in_lockstep_with_orm``).
     __append_only_mutable_columns__: ClassVar[frozenset[str]] = frozenset(
         {
             "state",
@@ -244,6 +255,9 @@ class Trade(Base):
             "journal_narrative",
             "journal_generated_at",
             "journal_model",
+            "avg_entry_price",
+            "unrealized_pnl",
+            "marks_updated_at",
         }
     )
 
@@ -292,6 +306,26 @@ class Trade(Base):
         nullable=True,
     )
     journal_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Slice ``portfolio-broker-position-marks`` (migration 0040): the broker's
+    # authoritative figures for an OPEN position, reconciled from
+    # ``BrokerPort.list_positions`` on boot + on-demand. ``avg_entry_price`` is
+    # IBKR's ``avgCost`` — used by the positions API as the real entry when the
+    # fill-derived average is null (fills unrecoverable past the reqExecutions
+    # window). ``unrealized_pnl`` is IBKR's mark-to-market P&L at
+    # ``marks_updated_at`` (point-in-time, refreshed each reconcile). All NULL
+    # on legacy rows + any trade IBKR no longer reports.
+    avg_entry_price: Mapped[Any | None] = mapped_column(
+        Numeric(18, 8),
+        nullable=True,
+    )
+    unrealized_pnl: Mapped[Any | None] = mapped_column(
+        Numeric(18, 8),
+        nullable=True,
+    )
+    marks_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

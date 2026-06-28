@@ -42,9 +42,16 @@ export type PositionOut = {
   symbol: string;
   side: string;
   quantity: string;
+  // REAL average entry: fill-weighted when fills exist, else the broker's
+  // reconciled avgCost. Null only when neither is available.
   avg_entry_price: string | null;
   last_price: string | null;
+  // Broker-reconciled mark-to-market when present, else computed from
+  // avg_entry_price vs last_price.
   unrealized_pnl: string | null;
+  // When the broker-reconciled marks (avg/uPnL) were last refreshed; null when
+  // the figures come purely from local fills + market data.
+  marks_updated_at: string | null;
   opened_at: string;
   // Plan-of-record from the originating proposal/strategy (already in the DB).
   // `entry_price_indicative` = INTENDED entry, distinct from the filled
