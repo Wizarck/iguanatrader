@@ -931,11 +931,19 @@ async def _run_daemon(
         # advisor BEFORE the owner; a high-conviction veto drops it so no
         # Telegram card is raised. Same model directive as WS-5 (risk judgement
         # on Opus, brief synthesis on Sonnet) + same brief/Hindsight context.
-        # OFF by default (IGUANATRADER_ENTRY_VETO_ENABLED); attached to the
-        # TradingService after construction (the gate's lookups need the brief
-        # + Hindsight built above). The gate fails OPEN, so a hiccup never
-        # blocks trading.
-        if _env_truthy("IGUANATRADER_ENTRY_VETO_ENABLED"):
+        # OFF by default. Two opt-in flags:
+        #  * IGUANATRADER_ENTRY_VETO_ENABLED  → ENFORCE: Opus may hard-block a
+        #    high-conviction veto before the owner sees the card.
+        #  * IGUANATRADER_ENTRY_GATE_ADVISORY → ADVISORY: run Opus only to
+        #    capture + persist its conviction on the proposal (for the position
+        #    scorecard) — NEVER blocks an entry. The safe way to populate "model
+        #    conviction" without giving the LLM a veto. ENFORCE wins if both set.
+        # Either mode costs one Opus call per fresh (post-dedup) proposal.
+        # Attached after construction (the gate's lookups need the brief +
+        # Hindsight built above). The gate fails OPEN, so a hiccup never blocks.
+        _entry_veto_on = _env_truthy("IGUANATRADER_ENTRY_VETO_ENABLED")
+        _entry_advisory_on = _env_truthy("IGUANATRADER_ENTRY_GATE_ADVISORY")
+        if _entry_veto_on or _entry_advisory_on:
             from iguanatrader.contexts.research.factory import (
                 build_brief_service as _build_brief_service_entry,
             )
@@ -991,13 +999,19 @@ async def _run_daemon(
                 except Exception:
                     return []
 
+            # ENFORCE wins when both flags are set; advisory only when it alone.
+            _gate_advisory = _entry_advisory_on and not _entry_veto_on
             entry_gate = EntryVetoGate(
                 EntryAdvisor(_build_llm_client_entry()),
                 brief_lookup=_entry_brief_lookup,
                 hindsight_lookup=_entry_hindsight_lookup,
+                advisory=_gate_advisory,
             )
             trading_service.attach_entry_gate(entry_gate)
-            log.info("trading.daemon.entry_veto_gate.attached")
+            log.info(
+                "trading.daemon.entry_veto_gate.attached",
+                mode="advisory" if _gate_advisory else "enforce",
+            )
 
         # Slice ``mcp-hitl-approvals`` §6 — push execution + close-out
         # updates to the operator's authorised senders (OrderFilled +
@@ -1225,6 +1239,50 @@ async def _run_daemon(
                 mode=mode,
                 tenant_id=str(tenant_id),
             )
+
+        # Slice ``market-data-boot-sync``: refresh the daily-bar cache once at
+        # boot, before the scheduler starts. The ``market_data_sync`` cron fires
+        # only at one weekday minute; a daemon that restarts often (the norm
+        # here) keeps missing that window, so bars go stale and the portfolio's
+        # last_price / unrealized-P&L / scorecard read against an old close.
+        # Syncing on every boot makes freshness robust to restart timing. Runs
+        # only when the broker is connected at boot (non-ephemeral, i.e. the
+        # paper daemon) and an ingestion service is wired; the ephemeral live
+        # gateway is down at boot, so it is skipped. Best-effort: a sync failure
+        # (broker hiccup, rate-limit) must never block the daemon boot. The cron
+        # path omits the commit (it leans on an incidental later commit); the
+        # boot path commits explicitly so a single restart durably refreshes.
+        if ingestion_service is not None and not ephemeral_live:
+            from iguanatrader.contexts.trading.market_data import (
+                MarketDataRateLimitedError,
+            )
+
+            try:
+                boot_sync = await ingestion_service.sync(
+                    symbols=watchlist_symbols,
+                    timeframe="1d",
+                    lookback_bars=200,
+                    invoked_by="daemon-cron",
+                )
+                await session.commit()
+                log.info(
+                    "trading.daemon.boot_market_data_sync.complete",
+                    successes=len(boot_sync.successes),
+                    failures=len(boot_sync.failures),
+                    bars_written=boot_sync.bars_written,
+                )
+            except MarketDataRateLimitedError as exc:
+                await session.rollback()
+                log.info(
+                    "trading.daemon.boot_market_data_sync.rate_limited",
+                    error=str(exc),
+                )
+            except Exception as exc:
+                await session.rollback()
+                log.warning(
+                    "trading.daemon.boot_market_data_sync.failed",
+                    error=str(exc),
+                )
 
         await scheduler.start()
         log.info("trading.daemon.scheduler_started")

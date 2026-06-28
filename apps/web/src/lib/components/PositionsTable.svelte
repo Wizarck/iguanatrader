@@ -110,7 +110,11 @@
         <th scope="col">Side</th>
         <th scope="col">Strategy</th>
         <th scope="col" class="num">Qty</th>
-        <th scope="col">Verdict</th>
+        <th
+          scope="col"
+          title="How this position is tracking toward its OWN stop and target — measured as an R-multiple (profit in units of the risk it took), with allowance for the strategy's expected holding time. Not based on the model's conviction."
+          >Verdict</th
+        >
         <th scope="col" class="num">Unrealized P&amp;L</th>
         <th scope="col">Opened</th>
       </tr>
@@ -165,7 +169,9 @@
             <time datetime={position.opened_at} title={position.opened_at}>
               {formatOpened(position.opened_at)}
             </time>
-            <span class="held">· {position.held_market_days ?? '—'} market days</span>
+            <span class="held" title="Trading (Mon–Fri) days the position has been open since it was bought."
+              >· {position.held_market_days ?? '—'} trading days held</span
+            >
           </td>
         </tr>
         {#if isOpen}
@@ -236,13 +242,17 @@
 
                 <div class="meta">
                   <p class="meta-line">
-                    <span class="meta-label">Horizon:</span>
-                    {position.horizon_label ?? 'unknown'} · ~{position.horizon_days ??
-                      '—'} market days
+                    <span class="meta-label">Expected hold:</span>
+                    {#if position.horizon_days != null}
+                      ~{position.horizon_days} trading days{#if position.horizon_label}
+                        ({position.horizon_label}-horizon){/if}
+                    {:else}
+                      unknown
+                    {/if}
                   </p>
                   <p class="meta-line">
-                    <span class="meta-label">Held:</span>
-                    {position.held_market_days ?? '—'} market days
+                    <span class="meta-label">Held so far:</span>
+                    {position.held_market_days ?? '—'} trading days
                   </p>
                   <p class="meta-line">
                     {#if position.confidence_score != null}

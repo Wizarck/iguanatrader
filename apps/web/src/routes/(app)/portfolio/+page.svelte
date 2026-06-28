@@ -10,6 +10,8 @@
 </script>
 
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
+
   import Badge from '$lib/components/Badge.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import EquitySparkline from '$lib/components/EquitySparkline.svelte';
@@ -20,6 +22,21 @@
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  // Manual refresh: re-runs the page load → re-reads the latest broker-reconciled
+  // marks + freshest market-data close from the server. It does NOT pull a new
+  // live tick from IBKR (that is the daemon's job: it refreshes prices on every
+  // boot and on the daily sync); this re-reads whatever the server now holds.
+  let refreshing = $state(false);
+  async function refresh(): Promise<void> {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      await invalidateAll();
+    } finally {
+      refreshing = false;
+    }
+  }
 
   const currency = $derived(data.summary?.equity.currency ?? 'USD');
   // Which account these numbers belong to — paper (simulated) vs live (real
@@ -63,7 +80,20 @@
 </svelte:head>
 
 <section aria-live="polite">
-  <h1>Portfolio</h1>
+  <div class="page-head">
+    <h1>Portfolio</h1>
+    <button
+      type="button"
+      class="refresh-btn"
+      onclick={refresh}
+      disabled={refreshing}
+      data-testid="portfolio-refresh"
+      title="Re-read the latest reconciled marks and prices from the server (not a live IBKR tick)."
+    >
+      <span class="refresh-icon" class:spinning={refreshing} aria-hidden="true">⟳</span>
+      {refreshing ? 'Refreshing…' : 'Refresh'}
+    </button>
+  </div>
 
   {#if data.loadError}
     <div class="error" role="alert" data-testid="portfolio-load-error">
@@ -118,10 +148,54 @@
   section {
     color: var(--ink);
   }
+  .page-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 16px;
+  }
   h1 {
     font-size: 22px;
     font-weight: 600;
-    margin: 0 0 16px;
+    margin: 0;
+  }
+  .refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .refresh-btn:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .refresh-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .refresh-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .refresh-icon {
+    display: inline-block;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .refresh-icon.spinning {
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   h2 {
     font-size: 16px;

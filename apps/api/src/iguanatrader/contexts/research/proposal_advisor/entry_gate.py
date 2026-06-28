@@ -57,12 +57,20 @@ class EntryVetoGate:
         hindsight_lookup: Callable[[str], Awaitable[list[str]]] | None = None,
         recent_trades_lookup: Callable[[str], Awaitable[str]] | None = None,
         confidence_threshold: Decimal = DEFAULT_VETO_THRESHOLD,
+        advisory: bool = False,
     ) -> None:
         self._advisor = advisor
         self._brief_lookup = brief_lookup
         self._hindsight_lookup = hindsight_lookup
         self._recent_trades_lookup = recent_trades_lookup
         self._threshold = confidence_threshold
+        # Advisory mode: still run the Opus assessment (so its conviction is
+        # captured + persisted on the proposal for the position scorecard), but
+        # NEVER block the entry — ``blocked`` is forced ``False`` regardless of
+        # the verdict. Lets the owner surface model conviction without handing
+        # the LLM a veto over real entries. Enforce mode (the default) keeps the
+        # hard pre-filter.
+        self._advisory = advisory
 
     async def evaluate(
         self,
@@ -112,7 +120,11 @@ class EntryVetoGate:
                 confidence=Decimal("0"),
             )
 
-        blocked = verdict.veto and verdict.confidence >= self._threshold
+        # Advisory mode never blocks — the conviction is captured, the veto is
+        # discarded. Enforce mode blocks only a high-conviction veto.
+        blocked = (
+            False if self._advisory else (verdict.veto and verdict.confidence >= self._threshold)
+        )
         logger.info(
             "research.entry_gate.evaluated",
             extra={
@@ -120,6 +132,7 @@ class EntryVetoGate:
                 "veto": verdict.veto,
                 "confidence": str(verdict.confidence),
                 "blocked": blocked,
+                "advisory": self._advisory,
             },
         )
         return EntryGateDecision(

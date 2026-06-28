@@ -213,8 +213,7 @@ def compute(
     ):
         return out(
             TOO_EARLY,
-            f"Young: {days_str} of a ~{horizon_days}-day ({horizon_label}) play — "
-            "too early to judge.",
+            f"Young: {days_str} of a ~{horizon_days}-day expected hold — " "too early to judge.",
         )
 
     # 2. Mature enough to read the rails.
