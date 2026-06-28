@@ -46,6 +46,13 @@ export type PositionOut = {
   last_price: string | null;
   unrealized_pnl: string | null;
   opened_at: string;
+  // Plan-of-record from the originating proposal/strategy (already in the DB).
+  // `entry_price_indicative` = INTENDED entry, distinct from the filled
+  // `avg_entry_price`. All null only if the proposal/config was purged.
+  strategy_kind: string | null;
+  entry_price_indicative: string | null;
+  stop_price: string | null;
+  target_price: string | null;
 };
 
 export type PositionListOut = {

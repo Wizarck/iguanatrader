@@ -254,11 +254,20 @@ class PositionOut(BaseModel):
     quantity: Decimal = Field(examples=[Decimal("10.0")])
     avg_entry_price: Decimal | None = Field(
         default=None,
+        description="REAL fill-weighted average entry; null until the broker reports fills.",
         examples=[Decimal("450.25")],
     )
     last_price: Decimal | None = None
     unrealized_pnl: Decimal | None = None
     opened_at: datetime
+    # Plan-of-record from the originating proposal/strategy — already in the DB,
+    # surfaced by the Trade→TradeProposal→StrategyConfig join. NOT the broker's
+    # live values; ``entry_price_indicative`` is the INTENDED entry, distinct
+    # from the filled ``avg_entry_price`` above.
+    strategy_kind: str | None = Field(default=None, examples=["donchian_atr"])
+    entry_price_indicative: Decimal | None = Field(default=None, examples=[Decimal("176.90")])
+    stop_price: Decimal | None = Field(default=None, examples=[Decimal("168.20")])
+    target_price: Decimal | None = Field(default=None, examples=[Decimal("198.00")])
 
 
 class PositionListOut(BaseModel):

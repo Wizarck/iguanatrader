@@ -70,6 +70,10 @@ const SAMPLE_POSITION: PositionOut = {
   last_price: null,
   unrealized_pnl: null,
   opened_at: '2026-05-01T10:00:00Z',
+  strategy_kind: 'donchian_atr',
+  entry_price_indicative: '179.90',
+  stop_price: '172.00',
+  target_price: '198.00',
 };
 
 const SAMPLE_POSITIONS: PositionListOut = {

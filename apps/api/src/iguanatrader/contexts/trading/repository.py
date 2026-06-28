@@ -34,6 +34,25 @@ from iguanatrader.shared.kernel import BaseRepository
 from iguanatrader.shared.time import now as utc_now
 
 
+@dataclass(frozen=True)
+class OpenPositionRow:
+    """An open :class:`Trade` joined with its originating proposal's PLANNED
+    levels + strategy name — the data behind an enriched position row.
+
+    ``entry_price_indicative`` is the strategy's INTENDED entry (always set on
+    the proposal), NOT the filled average — keep the two distinct in the UI
+    (the real avg comes from fills via ``_compute_avg_entry_price``). The
+    proposal/strategy fields are ``None`` only in the defensive outer-join case
+    where the originating proposal/config was purged.
+    """
+
+    trade: Trade
+    strategy_kind: str | None
+    entry_price_indicative: Decimal | None
+    stop_price: Decimal | None
+    target_price: Decimal | None
+
+
 class StrategyConfigRepository(BaseRepository):
     """Persistence operations for :class:`StrategyConfig` (FR1-FR5)."""
 
@@ -363,6 +382,47 @@ class TradeRepository(BaseRepository):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_open_with_strategy_for_tenant(self) -> list[OpenPositionRow]:
+        """Open trades joined with their proposal's planned levels + strategy.
+
+        Same rows as :meth:`list_open_for_tenant` (``state IN
+        ('open','closing')``, ``opened_at DESC``), enriched with the
+        originating proposal's ``entry_price_indicative`` / ``stop_price`` /
+        ``target_price`` and the strategy ``strategy_kind`` — all data already
+        in the DB (no broker call, no migration). LEFT OUTER joins so a trade
+        whose proposal/config was purged still lists (enrichment ``None``).
+        Tenant filter is automatic via the slice-3 ``tenant_listener``; the
+        proposal/config are same-tenant by construction.
+        """
+        stmt = (
+            select(
+                Trade,
+                StrategyConfig.strategy_kind,
+                TradeProposal.entry_price_indicative,
+                TradeProposal.stop_price,
+                TradeProposal.target_price,
+            )
+            .join(TradeProposal, Trade.proposal_id == TradeProposal.id, isouter=True)
+            .join(
+                StrategyConfig,
+                TradeProposal.strategy_config_id == StrategyConfig.id,
+                isouter=True,
+            )
+            .where(Trade.state.in_(("open", "closing")))
+            .order_by(Trade.opened_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            OpenPositionRow(
+                trade=row[0],
+                strategy_kind=row[1],
+                entry_price_indicative=row[2],
+                stop_price=row[3],
+                target_price=row[4],
+            )
+            for row in result.all()
+        ]
 
     async def has_open_position(self, *, symbol: str) -> bool:
         """Return True iff a live position exists for ``symbol``.
