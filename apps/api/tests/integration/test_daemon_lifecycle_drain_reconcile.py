@@ -375,6 +375,66 @@ async def test_reconcile_positions_in_sync_is_noop(
 
 
 @pytest.mark.asyncio
+async def test_reconcile_stamps_broker_marks_on_held_position(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A still-held broker position stamps ``avg_entry_price`` (avgCost) +
+    ``unrealized_pnl`` + ``marks_updated_at`` on the matching local open trade
+    (migration 0040).
+
+    This is the ONLY reliable source for a position whose entry fills predate
+    IBKR's reqExecutions window: the fills never reconcile, so the positions
+    API would otherwise show "pendiente de ejecución" forever. The trade has
+    zero fills here, mirroring the production INTC/MSFT/TSM/TXN rows.
+    """
+    tid = await _seed_tenant(session_maker)
+    pid = await _seed_pending_proposal(session_maker, tenant_id=tid)
+    trade_id = await _seed_open_trade(session_maker, tenant_id=tid, proposal_id=pid, symbol="AAPL")
+
+    broker = _FakeBroker(
+        tenant_id=tid,
+        positions=[
+            Position(
+                tenant_id=tid,
+                symbol="AAPL",
+                quantity=Decimal("10"),
+                average_price=Decimal("176.90"),
+                unrealized_pnl=Decimal("42.50"),
+                currency="USD",
+            )
+        ],
+    )
+
+    async with session_maker() as s, with_tenant_context(tid):
+        session_var.set(s)
+        service = DaemonLifecycleService(
+            mode="paper",
+            tenant_id=tid,
+            bus=MessageBus(),
+            trading_service=cast("TradingService", _FakeTradingService()),
+            trading_mode_repo=TradingModeRepository(),
+            broker=cast("BrokerPort", broker),
+            equity_repo=EquitySnapshotRepository(),
+            trade_repo=TradeRepository(),
+        )
+        await service._reconcile_positions(correlation_id=uuid4())
+        await s.commit()
+
+    async with session_maker() as s, with_tenant_context(tid):
+        from sqlalchemy import select
+
+        row = (await s.execute(select(Trade).where(Trade.id == trade_id))).scalar_one()
+    # Marks stamped from the broker book — the append-only whitelist permitted
+    # the UPDATE (regression guard for the L1/L2 lockstep).
+    assert Decimal(row.avg_entry_price) == Decimal("176.90")
+    assert Decimal(row.unrealized_pnl) == Decimal("42.50")
+    assert row.marks_updated_at is not None
+    # Still open — marks do not transition state.
+    assert row.state == "open"
+    assert row.exit_reason is None
+
+
+@pytest.mark.asyncio
 async def test_reconcile_closes_orphan_local_trade(
     session_maker: async_sessionmaker[AsyncSession],
 ) -> None:

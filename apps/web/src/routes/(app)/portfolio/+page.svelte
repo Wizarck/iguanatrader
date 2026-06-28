@@ -32,6 +32,27 @@
   const accountNote = $derived(
     `${isPaperAccount ? 'dinero simulado' : 'dinero real'} · ${resolvedCurrency}`
   );
+  // Most recent broker-reconcile timestamp across positions — drives the
+  // honesty caption that the real entry / unrealized P&L are point-in-time
+  // (stamped each daemon reconcile), NOT a live feed.
+  const marksSyncedAt = $derived(
+    data.positions
+      .map((p) => p.marks_updated_at)
+      .filter((v): v is string => v !== null)
+      .sort()
+      .at(-1) ?? null
+  );
+  function formatSyncTime(iso: string): string {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? iso
+      : d.toLocaleString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+  }
   const isAllEmpty = $derived(
     data.summary !== null &&
       data.summary.equity.snapshot_kind === 'empty' &&
@@ -149,6 +170,12 @@
         ] satisfies DataTableColumn<PositionOut>[]}
         rowKey={(p) => p.trade_id}
       />
+      {#if marksSyncedAt}
+        <p class="sync-note" data-testid="marks-sync-note">
+          Entrada real y P&L no realizado reconciliados con IBKR · última sinc.
+          {formatSyncTime(marksSyncedAt)} · no es tiempo real
+        </p>
+      {/if}
     {/if}
   {/if}
 </section>
@@ -197,6 +224,11 @@
     color: var(--mute);
     font-size: 14px;
     margin: 0;
+  }
+  .sync-note {
+    color: var(--mute);
+    font-size: 12px;
+    margin: 8px 0 0;
   }
   .error {
     margin-top: 16px;
