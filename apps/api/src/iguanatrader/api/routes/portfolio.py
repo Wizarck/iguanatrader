@@ -37,6 +37,7 @@ from iguanatrader.contexts.trading.models import EquitySnapshot, Trade
 from iguanatrader.contexts.trading.repository import (
     EquitySnapshotRepository,
     FillRepository,
+    OpenPositionRow,
     OrderRepository,
     TradeRepository,
 )
@@ -131,13 +132,19 @@ def _compute_unrealized_pnl(
     return delta * Decimal(trade.quantity)
 
 
-def _trade_to_position(
-    trade: Trade,
+def _position_from_row(
+    row: OpenPositionRow,
     avg_entry_price: Decimal | None,
     last_price: Decimal | None,
     unrealized_pnl: Decimal | None,
 ) -> PositionOut:
-    """Project a :class:`Trade` row + computed fields into a DTO row."""
+    """Project an :class:`OpenPositionRow` + computed fields into a DTO row.
+
+    ``avg_entry_price`` (fill-weighted, real) and ``unrealized_pnl`` are
+    computed from fills/market data; the strategy/planned-entry/stop/target come
+    straight off the joined proposal + config.
+    """
+    trade = row.trade
     return PositionOut(
         trade_id=trade.id,
         symbol=trade.symbol,
@@ -147,6 +154,12 @@ def _trade_to_position(
         last_price=last_price,
         unrealized_pnl=unrealized_pnl,
         opened_at=trade.opened_at,
+        strategy_kind=row.strategy_kind,
+        entry_price_indicative=(
+            Decimal(row.entry_price_indicative) if row.entry_price_indicative is not None else None
+        ),
+        stop_price=Decimal(row.stop_price) if row.stop_price is not None else None,
+        target_price=Decimal(row.target_price) if row.target_price is not None else None,
     )
 
 
@@ -232,19 +245,21 @@ async def list_positions(
     fill_repo = FillRepository()
     md_adapter = DBMarketDataAdapter()
 
-    open_trades = await trade_repo.list_open_for_tenant()
+    open_rows: list[OpenPositionRow] = await trade_repo.list_open_with_strategy_for_tenant()
 
     last_price_by_symbol: dict[str, Decimal | None] = {}
-    for trade in open_trades:
-        if trade.symbol not in last_price_by_symbol:
-            last_price_by_symbol[trade.symbol] = await _fetch_last_price(md_adapter, trade.symbol)
+    for row in open_rows:
+        symbol = row.trade.symbol
+        if symbol not in last_price_by_symbol:
+            last_price_by_symbol[symbol] = await _fetch_last_price(md_adapter, symbol)
 
     positions: list[PositionOut] = []
-    for trade in open_trades:
+    for row in open_rows:
+        trade = row.trade
         avg = await _compute_avg_entry_price(fill_repo, trade.id)
         last_price = last_price_by_symbol[trade.symbol]
         unrealized = _compute_unrealized_pnl(trade=trade, avg_entry=avg, last_price=last_price)
-        positions.append(_trade_to_position(trade, avg, last_price, unrealized))
+        positions.append(_position_from_row(row, avg, last_price, unrealized))
 
     log.info(
         "portfolio.positions.fetched",

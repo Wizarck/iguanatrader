@@ -15,6 +15,15 @@
 const CURRENCY_ALIASES: Record<string, string> = { BASE: 'USD' };
 
 /**
+ * Resolve a (possibly non-ISO) currency code to a real ISO 4217 code for
+ * DISPLAY — maps IBKR's `"BASE"` sentinel to `"USD"`. Use for labels/badges
+ * that show the currency code itself (formatMoney already resolves internally).
+ */
+export function resolveCurrencyCode(currency: string): string {
+  return CURRENCY_ALIASES[currency] ?? currency;
+}
+
+/**
  * Format a Decimal-as-string money value for display.
  *
  * @param value - Decimal-as-string (e.g. `"237.45"`); `null` returns `"—"`.

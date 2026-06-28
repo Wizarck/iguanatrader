@@ -17,7 +17,7 @@
   import EmptyState from '$lib/components/EmptyState.svelte';
   import EquitySparkline from '$lib/components/EquitySparkline.svelte';
   import PortfolioSummary from '$lib/components/PortfolioSummary.svelte';
-  import { formatMoney } from '$lib/portfolio/format';
+  import { formatMoney, resolveCurrencyCode } from '$lib/portfolio/format';
   import type { PositionOut } from '$lib/portfolio/types';
 
   import type { PageData } from './$types';
@@ -25,6 +25,13 @@
   let { data }: { data: PageData } = $props();
 
   const currency = $derived(data.summary?.equity.currency ?? 'USD');
+  // Which account these numbers belong to — paper (simulated) vs live (real
+  // money) — so $1M of paper cash is never mistaken for real funds.
+  const isPaperAccount = $derived((data.summary?.equity.mode ?? 'paper') !== 'live');
+  const resolvedCurrency = $derived(resolveCurrencyCode(currency));
+  const accountNote = $derived(
+    `${isPaperAccount ? 'dinero simulado' : 'dinero real'} · ${resolvedCurrency}`
+  );
   const isAllEmpty = $derived(
     data.summary !== null &&
       data.summary.equity.snapshot_kind === 'empty' &&
@@ -40,8 +47,28 @@
   />
 {/snippet}
 
+{#snippet strategyCell(row: PositionOut)}
+  {row.strategy_kind ?? '—'}
+{/snippet}
+
+{#snippet plannedEntryCell(row: PositionOut)}
+  {formatMoney(row.entry_price_indicative, currency)}
+{/snippet}
+
 {#snippet avgEntryCell(row: PositionOut)}
-  {formatMoney(row.avg_entry_price, currency)}
+  {#if row.avg_entry_price === null}
+    <Badge label="pendiente de ejecución" variant="mute" />
+  {:else}
+    {formatMoney(row.avg_entry_price, currency)}
+  {/if}
+{/snippet}
+
+{#snippet stopCell(row: PositionOut)}
+  {formatMoney(row.stop_price, currency)}
+{/snippet}
+
+{#snippet targetCell(row: PositionOut)}
+  {formatMoney(row.target_price, currency)}
 {/snippet}
 
 {#snippet lastPriceCell(row: PositionOut)}
@@ -70,6 +97,13 @@
       hint="Consulta docs/mvp-deploy.md para el detalle del flujo de despliegue."
     />
   {:else if data.summary}
+    <div class="account-badge" data-testid="account-badge">
+      <Badge
+        label={isPaperAccount ? 'PAPER' : 'REAL'}
+        variant={isPaperAccount ? 'warning' : 'destructive'}
+      />
+      <span class="account-note">{accountNote}</span>
+    </div>
     <div class="overview">
       <div class="overview-summary">
         <PortfolioSummary
@@ -95,8 +129,16 @@
         columns={[
           { key: 'symbol', header: 'Symbol' },
           { key: 'side', header: 'Side', cell: sideCell },
+          { key: 'strategy_kind', header: 'Estrategia', cell: strategyCell },
           { key: 'quantity', header: 'Qty' },
-          { key: 'avg_entry_price', header: 'Avg entry', cell: avgEntryCell },
+          {
+            key: 'entry_price_indicative',
+            header: 'Entrada prev.',
+            cell: plannedEntryCell
+          },
+          { key: 'avg_entry_price', header: 'Entrada real', cell: avgEntryCell },
+          { key: 'stop_price', header: 'Stop', cell: stopCell },
+          { key: 'target_price', header: 'Objetivo', cell: targetCell },
           { key: 'last_price', header: 'Last', cell: lastPriceCell },
           {
             key: 'unrealized_pnl',
@@ -125,6 +167,16 @@
     font-weight: 600;
     margin: 24px 0 12px;
     color: var(--ink);
+  }
+  .account-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px;
+  }
+  .account-note {
+    color: var(--mute);
+    font-size: 13px;
   }
   .overview {
     display: grid;
