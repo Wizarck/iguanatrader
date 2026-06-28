@@ -21,6 +21,7 @@ from iguanatrader.cli.doctor import (
     check_env_presence,
     check_ephemeral_live_consistency,
     check_kill_switch,
+    check_live_account_not_paper,
     check_paper_history,
     check_pending_backlog,
     check_watchlist_config_consistency,
@@ -112,6 +113,39 @@ def test_ephemeral_fully_consistent_ok() -> None:
         },
     )
     assert r.status is CheckStatus.OK
+
+
+# ----------------------------------------------------------------------
+# live account is not a paper (DU/DF) account
+# ----------------------------------------------------------------------
+
+
+def test_live_account_paper_code_fails() -> None:
+    # DUR071858 is the paper account the live daemon must never be armed against.
+    r = check_live_account_not_paper(
+        mode="live", env={"IGUANATRADER_IBKR_ACCOUNT_CODE": "DUR071858"}
+    )
+    assert r.status is CheckStatus.FAIL
+    assert "PAPER" in r.detail
+
+
+def test_live_account_live_code_ok() -> None:
+    r = check_live_account_not_paper(
+        mode="live", env={"IGUANATRADER_IBKR_ACCOUNT_CODE": "U1234567"}
+    )
+    assert r.status is CheckStatus.OK
+
+
+def test_live_account_paper_mode_skips() -> None:
+    r = check_live_account_not_paper(mode="paper", env={"IGUANATRADER_IBKR_ACCOUNT_CODE": "DU1"})
+    assert r.status is CheckStatus.SKIP
+
+
+def test_live_account_unset_defers_to_env_check() -> None:
+    # Unset code is FAILed by check_env_presence; this check SKIPs to avoid a
+    # duplicate failure line.
+    r = check_live_account_not_paper(mode="live", env={})
+    assert r.status is CheckStatus.SKIP
 
 
 # ----------------------------------------------------------------------
