@@ -5,14 +5,16 @@
    * ConnectionIndicator — slice W1.
    *
    * Reads `connectionStore.global` (worst-case aggregate across all SSE
-   * streams). Variants per j1.md §3 step 1:
+   * streams). This is the DATA-stream connection — NOT the live-trading mode
+   * (that is `DaemonModeChip`); labels deliberately avoid the word "Live".
+   * Variants:
    *
-   * - `open` → green dot + "Live" label.
-   * - `reconnecting` → amber dot + "Reconnecting" label.
-   * - `closed` → red dot + "Disconnected" label + tooltip with stream
-   *   names. A persistent banner under the indicator surfaces if the
-   *   drop exceeds 5s (slice 5 contract — the banner shows the streams
-   *   that are closed).
+   * - `idle` (no stream registered yet) → grey dot + "Sin conexión de datos".
+   * - `open` → green dot + "Datos en vivo".
+   * - `reconnecting` → amber dot + "Reconectando".
+   * - `closed` → red dot + "Sin datos" + tooltip with stream names. A
+   *   persistent banner under the indicator surfaces if the drop exceeds 5s
+   *   (slice 5 contract — the banner shows the streams that are closed).
    *
    * Per-stream detail surfaces via `title` attribute (HTML tooltip);
    * accessible via screen-reader through `aria-describedby` linkage.
@@ -22,17 +24,25 @@
   const streamDetail = $derived(() => {
     const streams = connectionStore.streams;
     const entries = Object.entries(streams);
-    if (entries.length === 0) return 'No streams active';
+    if (entries.length === 0) return 'Sin streams de datos activos';
     return entries.map(([name, state]) => `${name}: ${state}`).join(', ');
   });
 
-  const variant = $derived(connectionStore.global);
+  // When no SSE stream is registered yet, `connectionStore.global` optimistically
+  // reports 'open' — which rendered a MISLEADING green "Live" while nothing was
+  // actually connected (and clashed with the LIVE trading chip). Treat the empty
+  // case as a distinct, neutral 'idle'. Labels are about the DATA connection, not
+  // trading — deliberately NOT the word "Live" (that is the live-trading chip).
+  const hasStreams = $derived(Object.keys(connectionStore.streams).length > 0);
+  const variant = $derived(hasStreams ? connectionStore.global : 'idle');
   const label = $derived(
-    variant === 'open'
-      ? 'Live'
-      : variant === 'reconnecting'
-        ? 'Reconnecting'
-        : 'Disconnected'
+    variant === 'idle'
+      ? 'Sin conexión de datos'
+      : variant === 'open'
+        ? 'Datos en vivo'
+        : variant === 'reconnecting'
+          ? 'Reconectando'
+          : 'Sin datos'
   );
 </script>
 
@@ -41,7 +51,7 @@
   data-variant={variant}
   role="status"
   aria-live="polite"
-  aria-label="SSE connection: {label}"
+  aria-label="Conexión de datos: {label}"
   title={streamDetail()}
 >
   <span class="indicator__dot" aria-hidden="true"></span>

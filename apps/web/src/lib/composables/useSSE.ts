@@ -51,9 +51,17 @@ export type SSEOptions = {
 
 /**
  * Resolve the SSE URL for a given stream name.
+ *
+ * Same-origin in the browser (empty base) so `EventSource` connects through the
+ * SvelteKit `/api/v1/[...path]` proxy — which forwards the session cookie and
+ * streams `text/event-stream` straight back. `useSSE` only runs in the browser
+ * (EventSource is browser-only), but the guard mirrors `useFetch` for symmetry.
+ * Resolving against `API_BASE_URL` here pointed EventSource at the bundle
+ * default (`http://127.0.0.1:8000`) and never connected.
  */
 function streamUrl(name: string): string {
-  return `${API_BASE_URL}/api/v1/stream/${encodeURIComponent(name)}`;
+  const base = typeof window === 'undefined' ? API_BASE_URL : '';
+  return `${base}/api/v1/stream/${encodeURIComponent(name)}`;
 }
 
 export function useSSE(name: string, opts: SSEOptions = {}): SSEHandle {

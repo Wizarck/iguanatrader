@@ -28,6 +28,11 @@
 
   const row = $derived(daemonStatusStore.status?.daemons.find((d) => d.mode === mode) ?? null);
   const active = $derived(!!row && row.enabled && row.ib_connected);
+  // No row → either the first poll is still in flight ("…") or it settled with
+  // no reachable status ("N/D", e.g. /api/v1/status failed). Either way the chip
+  // must stay NEUTRAL GREY — never the red/yellow tone (red = real money armed,
+  // not "unknown"), so a failed status read can't look like an armed live mode.
+  const unknown = $derived(row === null && daemonStatusStore.loaded);
   const recentlyFilled = $derived(() => {
     if (!row?.last_fill_at) return false;
     const fillMs = new Date(row.last_fill_at).getTime();
@@ -35,20 +40,22 @@
   });
 
   const tone: 'paper' | 'live' = mode;
-  const stateLabel = $derived(
-    row === null ? '…' : active ? 'ON' : row.enabled ? 'OFF' : 'OFF',
-  );
+  const stateLabel = $derived(row !== null ? (active ? 'ON' : 'OFF') : unknown ? 'N/D' : '…');
   const tooltip = $derived.by(() => {
-    if (row === null) return `${mode.toUpperCase()} daemon status loading…`;
-    if (!row.enabled) return `${mode.toUpperCase()} daemon is toggled OFF.`;
+    const M = mode.toUpperCase();
+    // The LIVE chip is red on purpose — make clear it is a warning, not a fault.
+    const realMoney = mode === 'live' ? ' Rojo = hay dinero real en riesgo, no es un error.' : '';
+    if (row === null) {
+      return unknown
+        ? `No se pudo leer el estado del daemon ${M}.${realMoney}`
+        : `Cargando estado del daemon ${M}…`;
+    }
+    if (!row.enabled) return `Daemon ${M} apagado (OFF).${realMoney}`;
     if (!row.ib_connected) {
-      return `${mode.toUpperCase()} daemon is enabled but the IB Gateway connection is down.`;
+      return `Daemon ${M} encendido, pero sin conexión con el IB Gateway.${realMoney}`;
     }
     const pending = row.pending_proposals_count;
-    return (
-      `${mode.toUpperCase()} daemon is active. ` +
-      `${pending} pending proposal${pending === 1 ? '' : 's'}.`
-    );
+    return `Daemon ${M} activo. ${pending} propuesta${pending === 1 ? '' : 's'} pendiente${pending === 1 ? '' : 's'}.${realMoney}`;
   });
 
   function onclick(): void {
@@ -60,7 +67,8 @@
   type="button"
   class="chip chip--{tone}"
   class:chip--active={active}
-  class:chip--dim={!active}
+  class:chip--dim={!active && row !== null}
+  class:chip--unknown={row === null}
   class:chip--pulse={recentlyFilled}
   title={tooltip}
   aria-label={tooltip}
@@ -116,6 +124,15 @@
     color: oklch(75% 0.12 95);
     border-color: oklch(82% 0.16 95 / 0.25);
     filter: saturate(0.7);
+  }
+
+  /* No status yet (loading) or unreachable status (N/D) → neutral grey, never
+     the red/yellow tone. "Unknown" must not be mistaken for an armed live chip. */
+  .chip--unknown {
+    background: var(--surface-2);
+    color: var(--mute);
+    border-color: var(--border);
+    filter: none;
   }
 
   /* LIVE — always red (destructive). Red ≠ "down" — red conveys

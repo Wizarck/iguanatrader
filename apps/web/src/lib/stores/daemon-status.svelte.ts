@@ -24,6 +24,13 @@ const POLL_INTERVAL_MS = 5_000;
 class DaemonStatusStore {
   status = $state<StatusResponse | null>(null);
   error = $state<Problem | string | null>(null);
+  /**
+   * `true` once the first fetch has settled (success OR failure). Lets the
+   * chips tell "still loading" (`status` null, never fetched → "…") apart from
+   * "fetched but unreachable" (`status` null AND loaded → terminal "N/D"),
+   * instead of spinning "…" forever when `/api/v1/status` fails.
+   */
+  loaded = $state(false);
 
   #intervalId: ReturnType<typeof setInterval> | null = null;
   #visibilityHandler: (() => void) | null = null;
@@ -76,6 +83,8 @@ class DaemonStatusStore {
       this.error = null;
     } catch (exc) {
       this.error = exc instanceof Error ? exc.message : String(exc);
+    } finally {
+      this.loaded = true;
     }
   }
 }

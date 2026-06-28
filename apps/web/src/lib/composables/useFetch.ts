@@ -47,13 +47,22 @@ export function isProblem(value: unknown): value is Problem {
 }
 
 /**
- * Resolve a relative URL against `API_BASE_URL`. Absolute URLs pass
- * through.
+ * Resolve a relative URL. Absolute URLs pass through.
+ *
+ * In the BROWSER we deliberately resolve to a SAME-ORIGIN path (empty base)
+ * so the request goes through the SvelteKit `/api/v1/[...path]` proxy, which
+ * forwards the session cookie to the API (see that route's docstring). Only on
+ * the SERVER (SSR `load` / form actions, where `window` is undefined) do we hit
+ * `API_BASE_URL` directly. Resolving against `API_BASE_URL` in the browser sent
+ * the request to the bundle-inlined default (`http://127.0.0.1:8000`, the
+ * user's own loopback), bypassing the proxy → 401 → the daemon-status poll and
+ * SSE never connected (the "…" pills).
  */
 function resolveUrl(url: string): string {
   if (/^https?:\/\//.test(url)) return url;
-  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
-  return `${API_BASE_URL}/${url}`;
+  const base = typeof window === 'undefined' ? API_BASE_URL : '';
+  if (url.startsWith('/')) return `${base}${url}`;
+  return `${base}/${url}`;
 }
 
 export async function useFetch<TResponse>(
