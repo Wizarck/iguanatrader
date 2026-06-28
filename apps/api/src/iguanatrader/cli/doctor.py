@@ -100,6 +100,48 @@ def check_env_presence(*, mode: str, env: dict[str, str]) -> CheckResult:
     return CheckResult(name="env", status=CheckStatus.OK, detail="required env present")
 
 
+#: IBKR paper-trading account codes are prefixed ``DU`` (paper individual) /
+#: ``DF`` (paper advisor); live accounts are ``U…`` / ``F…``. A live daemon
+#: pointed at a ``DU…`` account is the silent paper-creds-on-live hazard — the
+#: compose live-gateway env historically fell back to the PAPER credentials when
+#: the ``*_LIVE`` vars were unset, so a live cutover could quietly run on paper.
+_PAPER_ACCOUNT_PREFIXES = ("DU", "DF")
+
+
+def check_live_account_not_paper(*, mode: str, env: dict[str, str]) -> CheckResult:
+    """Fail-closed: a LIVE daemon must NOT be pointed at a paper account code.
+
+    Makes the paper-creds-on-live mismatch a hard FAIL before arming live,
+    rather than relying on a login to (maybe) reject the wrong account. Unset
+    account code is left to :func:`check_env_presence` (which already FAILs) so
+    we do not emit a duplicate failure line.
+    """
+    if mode != "live":
+        return CheckResult(name="live-account", status=CheckStatus.SKIP, detail="paper mode (skip)")
+    code = (env.get("IGUANATRADER_IBKR_ACCOUNT_CODE") or "").strip().upper()
+    if not code:
+        return CheckResult(
+            name="live-account",
+            status=CheckStatus.SKIP,
+            detail="account code unset (reported by the env check)",
+        )
+    if code.startswith(_PAPER_ACCOUNT_PREFIXES):
+        return CheckResult(
+            name="live-account",
+            status=CheckStatus.FAIL,
+            detail=(
+                f"live mode pointed at PAPER account {code} (DU/DF prefix) — set "
+                "IGUANATRADER_IBKR_ACCOUNT_CODE + TWS_USERID_LIVE/TWS_PASSWORD_LIVE to the "
+                "real live account; refusing to arm live on paper credentials"
+            ),
+        )
+    return CheckResult(
+        name="live-account",
+        status=CheckStatus.OK,
+        detail=f"live account code {code} is not a paper (DU/DF) account",
+    )
+
+
 def check_ephemeral_live_consistency(*, mode: str, env: dict[str, str]) -> CheckResult:
     """Mirror the daemon's ephemeral-live HARD boot guards, BEFORE boot.
 
@@ -292,6 +334,7 @@ __all__ = [
     "check_env_presence",
     "check_ephemeral_live_consistency",
     "check_kill_switch",
+    "check_live_account_not_paper",
     "check_paper_history",
     "check_pending_backlog",
     "check_watchlist_config_consistency",

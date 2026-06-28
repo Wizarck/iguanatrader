@@ -65,6 +65,14 @@ _PRICE_TABLE_USD_PER_MILLION: dict[tuple[str, str], tuple[Decimal, Decimal]] = {
     ("anthropic", "claude-3-5-sonnet"): (Decimal("3.00"), Decimal("15.00")),
     ("anthropic", "claude-3-5-haiku"): (Decimal("0.80"), Decimal("4.00")),
     ("anthropic", "claude-3-opus"): (Decimal("15.00"), Decimal("75.00")),
+    # Current-generation models the LLM gates actually invoke: entry/exit
+    # advisors -> opus-4-8, brief + risk synthesis -> sonnet-4-6, journal ->
+    # haiku-4-5. Absent from the table before, these hit the KeyError soft-fail
+    # and recorded cost_usd=0 — silently undercounting the most expensive
+    # (Opus) gates. Prices are public list pricing per the Anthropic catalogue.
+    ("anthropic", "claude-opus-4-8"): (Decimal("5.00"), Decimal("25.00")),
+    ("anthropic", "claude-sonnet-4-6"): (Decimal("3.00"), Decimal("15.00")),
+    ("anthropic", "claude-haiku-4-5"): (Decimal("1.00"), Decimal("5.00")),
     # OpenAI fallback tier.
     ("openai", "gpt-4o-mini"): (Decimal("0.15"), Decimal("0.60")),
     ("openai", "gpt-4o"): (Decimal("2.50"), Decimal("10.00")),

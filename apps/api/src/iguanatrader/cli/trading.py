@@ -262,6 +262,7 @@ async def _run_doctor(*, mode: str, tenant: str | None, connect: bool) -> int:
         check_env_presence,
         check_ephemeral_live_consistency,
         check_kill_switch,
+        check_live_account_not_paper,
         check_paper_history,
         check_pending_backlog,
         check_watchlist_config_consistency,
@@ -281,6 +282,7 @@ async def _run_doctor(*, mode: str, tenant: str | None, connect: bool) -> int:
 
     results: list[CheckResult] = [
         check_env_presence(mode=mode, env=env),
+        check_live_account_not_paper(mode=mode, env=env),
         check_ephemeral_live_consistency(mode=mode, env=env),
     ]
 

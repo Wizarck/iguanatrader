@@ -77,8 +77,17 @@ services:
   ib-gateway-live:
     <<: *ib-gateway-base
     environment:
-      - TWS_USERID=${TWS_USERID_LIVE:-${IBKR_USERNAME_LIVE:-${TWS_USERID:-${IBKR_USERNAME:-}}}}
-      - TWS_PASSWORD=${TWS_PASSWORD_LIVE:-${IBKR_PASSWORD_LIVE:-${TWS_PASSWORD:-${IBKR_PASSWORD:-}}}}
+      # FAIL-CLOSED: live creds resolve ONLY from live-specific vars (TWS_*_LIVE,
+      # then the IBKR_*_LIVE alias). The paper fallback (…:-${TWS_USERID:-…}) was
+      # REMOVED — an unset live var must NOT silently boot the LIVE gateway on
+      # PAPER credentials. If both live vars are unset the gateway logs in with the
+      # sentinel below and fails LOUDLY at login (never silently on paper).
+      # `trading doctor --mode live` additionally hard-FAILs a DU/DF paper account
+      # code before arming live. (A `${VAR:?…}` hard error is avoided on purpose:
+      # Compose interpolates this whole file eagerly, so it would also break
+      # paper-only `up` and the ephemeral `create ib-gateway-live`.)
+      - TWS_USERID=${TWS_USERID_LIVE:-${IBKR_USERNAME_LIVE:-MISSING_LIVE_USERID_set_TWS_USERID_LIVE}}
+      - TWS_PASSWORD=${TWS_PASSWORD_LIVE:-${IBKR_PASSWORD_LIVE:-MISSING_LIVE_PASSWORD_set_TWS_PASSWORD_LIVE}}
       - TRADING_MODE=live
       - EXISTING_SESSION_DETECTED_ACTION=${EXISTING_SESSION_DETECTED_ACTION:-primary}
       - READ_ONLY_API=${READ_ONLY_API_LIVE:-no}
