@@ -26,12 +26,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import structlog
+
+from iguanatrader.contexts.observability.budget import BudgetStatus, check_budget
 from iguanatrader.contexts.observability.cost_meter import cost_meter
+from iguanatrader.contexts.observability.errors import BudgetExceededError
 from iguanatrader.contexts.observability.langfuse_client import start_generation
 from iguanatrader.contexts.research.synthesis.llm_client import LLMCompletion
+from iguanatrader.shared.contextvars import session_var, tenant_id_var
 
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
+
+log = structlog.get_logger("iguanatrader.contexts.research.synthesis.anthropic_client")
 
 
 class AnthropicLLMClient:
@@ -52,9 +59,14 @@ class AnthropicLLMClient:
         api_key: str,
         *,
         client: AsyncAnthropic | None = None,
+        enforce_budget: bool = False,
     ) -> None:
         self._api_key = api_key
         self._client: AsyncAnthropic | None = client
+        # Hard per-tenant monthly LLM budget cutoff. OFF by default; the
+        # composition factory flips it from IGUANATRADER_LLM_BUDGET_ENFORCE_ENABLED.
+        # The adapter itself never reads os.environ (design.md §3).
+        self._enforce_budget = enforce_budget
 
     def _ensure_client(self) -> AsyncAnthropic:
         if self._client is None:
@@ -87,7 +99,14 @@ class AnthropicLLMClient:
         after the SDK call returns or raises — exception path uses
         ``level=ERROR`` so the ELIGIA TracesTodayCard ``error`` count
         increments correctly.
+
+        When budget enforcement is on (flag-gated), a hard cutoff is
+        checked BEFORE the metered SDK call: a tenant over its monthly cap
+        raises :class:`BudgetExceededError` here, so no spend is recorded
+        for the blocked call. See :meth:`_enforce_budget_or_raise`.
         """
+        if self._enforce_budget:
+            await self._enforce_budget_or_raise(model)
 
         async def _call() -> LLMCompletion:
             gen = start_generation(
@@ -140,6 +159,54 @@ class AnthropicLLMClient:
         decorated = cost_meter(provider="anthropic", model=model)(_call)
         return await decorated()
 
+    async def _enforce_budget_or_raise(self, model: str) -> None:
+        """Hard per-tenant monthly LLM budget cutoff (the "corte duro").
+
+        FAIL-OPEN by construction — the cap caps *spend*, never *trading*:
+
+        - No tenant context or no bound DB session → we cannot price the
+          cap, so let the call through (don't block on an infra gap).
+        - A budget-check error → log + let the call through (same reason).
+        - Only a definitive :class:`BudgetStatus.BLOCK_100` raises.
+
+        Raising here (before the metered SDK call) means the blocked call
+        records no cost. Because the entry/exit/journal gates already
+        handle exceptions fail-open, a raise turns into "skip the LLM, let
+        the deterministic stop/target + human-approval path proceed";
+        user-initiated endpoints (brief/explain) surface RFC 7807 402.
+        """
+        tenant_id = tenant_id_var.get()
+        if tenant_id is None or session_var.get() is None:
+            return
+        try:
+            state = await check_budget(tenant_id)
+        except Exception as exc:
+            # Fail-open: a budget-check failure must never block an LLM call.
+            log.warning(
+                "observability.budget.check_failed_fail_open",
+                tenant_id=str(tenant_id),
+                model=model,
+                error=str(exc),
+            )
+            return
+        if state.status is BudgetStatus.BLOCK_100:
+            log.warning(
+                "observability.budget.llm_blocked",
+                tenant_id=str(tenant_id),
+                model=model,
+                percent_used=state.percent_used,
+                spent_usd=str(state.spent_usd),
+                cap_usd=str(state.cap_usd),
+            )
+            raise BudgetExceededError(
+                detail=(
+                    f"Tenant {tenant_id} exceeded the monthly LLM budget cap "
+                    f"of {state.cap_usd} USD ({state.percent_used}% used). "
+                    "Raise the cap via `iguanatrader admin set-budget` or wait "
+                    "for next-month rollover."
+                ),
+            )
+
     @staticmethod
     def _extract_text(message: object) -> str:
         """Extract the first text block from an Anthropic ``Message`` response.
@@ -166,10 +233,22 @@ def build_anthropic_llm_client_from_env() -> AnthropicLLMClient:
     Used by the FastAPI lifespan / CLI bootstrap when the operator opts
     into production wiring. Tests construct :class:`AnthropicLLMClient`
     directly with an injected mock client; tests NEVER call this helper.
+
+    This is the single composition point for every production LLM client
+    (API routes, brief synthesis, and the daemon's Opus entry/exit
+    advisors all funnel through here via ``build_llm_client``), so reading
+    the budget-enforce flag here applies the cap uniformly across all gates.
     """
+    import os
+
     from iguanatrader.config.secrets import SecretEnv
 
-    return AnthropicLLMClient(api_key=SecretEnv().anthropic_api_key)
+    flag = os.environ.get("IGUANATRADER_LLM_BUDGET_ENFORCE_ENABLED", "")
+    enforce_budget = flag.strip().lower() in ("1", "true", "yes", "on")
+    return AnthropicLLMClient(
+        api_key=SecretEnv().anthropic_api_key,
+        enforce_budget=enforce_budget,
+    )
 
 
 __all__ = ["AnthropicLLMClient", "build_anthropic_llm_client_from_env"]
