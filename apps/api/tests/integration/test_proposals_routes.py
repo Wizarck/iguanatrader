@@ -266,3 +266,79 @@ async def test_list_proposals_isolated_across_tenants(
     assert resp.status_code == 200, resp.text
     body: dict[str, Any] = resp.json()
     assert body == {"items": [], "total": 0, "next_cursor": None}
+
+
+# ---------------------------------------------------------------------------
+# Break-glass manual-approve guards (item 5b — explicit + pause-respecting)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_break_glass_approve_requires_explicit_confirm(
+    client: AsyncClient,
+    seed: dict[str, UUID],
+) -> None:
+    """Without ``?confirm=break-glass`` the override is refused (400) — it
+    cannot be tripped by a generic client. The check fires before any
+    proposal lookup, so a throwaway id is fine."""
+    cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.post(f"/api/v1/proposals/{uuid4()}/approve")
+    assert resp.status_code == 400, resp.text
+    assert "break-glass" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_break_glass_approve_refused_when_paused(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+) -> None:
+    """With ``/lock`` active (``approvals_paused``) the override is refused
+    (409) — it must not silently push a trade past the operator's pause."""
+    proposal_id = await _seed_proposal(
+        sf, tenant_id=seed["tenant_id"], symbol="SPY", created_at=datetime.now(UTC)
+    )
+    async with sf() as s:
+        tenant = await s.get(Tenant, seed["tenant_id"])
+        assert tenant is not None
+        tenant.feature_flags = {"approvals_paused": True}
+        await s.commit()
+
+    cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.post(f"/api/v1/proposals/{proposal_id}/approve?confirm=break-glass")
+    assert resp.status_code == 409, resp.text
+    assert "paused" in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_break_glass_approve_accepts_when_confirmed_and_not_paused(
+    client: AsyncClient,
+    sf: async_sessionmaker[AsyncSession],
+    seed: dict[str, UUID],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit confirm + not paused → 202, and the ProposalApproved event
+    is published exactly once with the right payload."""
+    proposal_id = await _seed_proposal(
+        sf, tenant_id=seed["tenant_id"], symbol="SPY", created_at=datetime.now(UTC)
+    )
+
+    published: list[Any] = []
+
+    class _FakeBus:
+        async def publish(self, event: Any) -> None:
+            published.append(event)
+
+    import iguanatrader.contexts.approval.bootstrap as bootstrap
+
+    monkeypatch.setattr(bootstrap, "get_message_bus", lambda: _FakeBus())
+
+    cookie = _login_cookie(seed["user_id"], seed["tenant_id"])
+    client.cookies.set(COOKIE_NAME, cookie)
+    resp = await client.post(f"/api/v1/proposals/{proposal_id}/approve?confirm=break-glass")
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["via"] == "break-glass"
+    assert body["proposal_id"] == str(proposal_id)
+    assert len(published) == 1
+    assert published[0].proposal_id == proposal_id

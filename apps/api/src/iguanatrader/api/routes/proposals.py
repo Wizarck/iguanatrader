@@ -7,10 +7,11 @@ Endpoints:
   ``created_at DESC``.
 * ``GET /proposals/{proposal_id}`` (T4 body fill) — returns the
   :class:`ProposalOut` projection.
-* ``POST /proposals/{proposal_id}/approve`` (T4 NEW) — operator-override
-  approve path. Bypasses P1's channel flow; publishes
-  :class:`ProposalApproved` directly. slowapi-limited to 5/min per
-  the slice-T4 §4.5 rate-limit budget.
+* ``POST /proposals/{proposal_id}/approve`` (T4) — EXPLICIT break-glass
+  operator override. Publishes :class:`ProposalApproved` directly, so it
+  is guarded: requires ``?confirm=break-glass``, REFUSES while approvals
+  are paused (``/lock``), and logs every use. The web dashboard uses the
+  normal ``/approvals/{id}/approve`` path instead. slowapi-limited 5/min.
 
 After slice ``proposals-list-endpoint`` shipped there are zero
 remaining 501 stubs in the trading route surface.
@@ -54,7 +55,12 @@ from iguanatrader.contexts.trading.repository import (
 )
 from iguanatrader.persistence import User
 from iguanatrader.shared.contextvars import session_var
-from iguanatrader.shared.errors import IguanaError, NotFoundError
+from iguanatrader.shared.errors import (
+    ConflictError,
+    IguanaError,
+    NotFoundError,
+    ValidationError,
+)
 
 log = structlog.get_logger("iguanatrader.api.routes.proposals")
 
@@ -103,29 +109,70 @@ async def get_proposal(
 async def manual_approve(
     request: Request,
     proposal_id: UUID,
+    confirm: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
-    """Operator-override approve path (slice T4 §4.5).
+    """Break-glass operator-override approve (slice T4 §4.5; hardened).
 
-    Bypasses the P1 channel flow + emits :class:`ProposalApproved` directly
-    on the in-process bus. The :class:`TradingService.execute_on_approval_handler`
-    re-checks idempotency via :class:`OrderRepository.get_by_proposal_id`,
-    so a redundant manual approve is a no-op.
+    An EXPLICIT emergency override that bypasses the P1 channel flow and
+    publishes :class:`ProposalApproved` directly. The web dashboard does
+    NOT use it — it approves via ``/approvals/{id}/approve``, which runs
+    the full pause + expiry + audit gates. Because the direct publish skips
+    those gates, this path is guarded so it cannot become a silent bypass:
 
-    Rate-limited 5/min per (ip, user) compound key.
+    * It must be invoked EXPLICITLY — ``?confirm=break-glass`` is required,
+      so a generic client cannot trip an order through by accident.
+    * It REFUSES while approvals are paused (``/lock`` active): a
+      break-glass approve must not silently push a trade past the
+      operator's pause. ``/unlock`` first, then retry. (The hard
+      kill-switch is also re-checked downstream in
+      ``execute_on_approval_handler``.)
+    * Every use is logged at ``warning`` as ``api.proposals.break_glass_approve``
+      for the operations audit trail.
+
+    ``TradingService.execute_on_approval_handler`` re-checks idempotency
+    via :class:`OrderRepository.get_by_proposal_id`, so a redundant call is
+    a no-op. Rate-limited 5/min per (ip, user) compound key.
     """
-    log.info(
-        "api.proposals.manual_approve",
-        proposal_id=str(proposal_id),
-        user_id=str(user.id),
-    )
     session_var.set(db)
+
+    if confirm != "break-glass":
+        raise ValidationError(
+            detail=(
+                "This endpoint is a break-glass operator override. Pass "
+                "`?confirm=break-glass` to proceed, or use the normal approval "
+                "path POST /api/v1/approvals/{request_id}/approve."
+            )
+        )
 
     repo = TradeProposalRepository()
     proposal = await repo.get_by_id(proposal_id)
     if proposal is None:
         raise NotFoundError(detail=f"Proposal {proposal_id} not found.")
+
+    # Respect the operator pause (/lock). get_feature_flag is fail-safe
+    # (returns the default, never raises) so a read failure does NOT wedge
+    # the path — but a definitively paused tenant is refused.
+    from iguanatrader.contexts.observability import tenant_admin
+
+    paused = await tenant_admin.get_feature_flag(
+        "approvals_paused", False, tenant_id=proposal.tenant_id
+    )
+    if paused:
+        raise ConflictError(
+            detail=(
+                "Approvals are paused (/lock active); a break-glass approve "
+                "will not bypass the pause. Run /unlock first, then retry."
+            )
+        )
+
+    log.warning(
+        "api.proposals.break_glass_approve",
+        proposal_id=str(proposal_id),
+        tenant_id=str(proposal.tenant_id),
+        approved_by=str(user.id),
+    )
 
     from iguanatrader.contexts.approval.bootstrap import get_message_bus
 
@@ -137,17 +184,13 @@ async def manual_approve(
             approved_by_user_id=user.id,
         )
     )
-    log.info(
-        "api.proposals.manual_approve.published",
-        proposal_id=str(proposal_id),
-        approved_by=str(user.id),
-    )
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content={
             "proposal_id": str(proposal_id),
             "approved_by_user_id": str(user.id),
             "status": "queued",
+            "via": "break-glass",
         },
     )
 
