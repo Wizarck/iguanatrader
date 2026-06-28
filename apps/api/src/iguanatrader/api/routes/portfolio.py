@@ -31,6 +31,7 @@ from iguanatrader.api.dtos.trades import (
     PositionOut,
     TradeOut,
 )
+from iguanatrader.contexts.trading import scorecard
 from iguanatrader.contexts.trading.market_data import MarketDataNotAvailableError
 from iguanatrader.contexts.trading.market_data.db import DBMarketDataAdapter
 from iguanatrader.contexts.trading.models import EquitySnapshot, Trade
@@ -113,6 +114,21 @@ async def _fetch_last_price(
     return Decimal(bars.bars[-1].close)
 
 
+async def _fetch_held_market_days(
+    adapter: DBMarketDataAdapter,
+    symbol: str,
+    opened_at: datetime,
+) -> int | None:
+    """Market (trading) sessions held since ``opened_at`` for ``symbol``.
+
+    Floors ``opened_at`` to its UTC date so the open day counts as session 1,
+    then counts daily bars at/after it. ``None`` when the symbol has no daily
+    bars (frontend renders "—"); a real 0 is possible (opened today pre-bar).
+    """
+    since = opened_at.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    return await adapter.count_sessions_since(symbol=symbol, since=since)
+
+
 def _compute_unrealized_pnl(
     *,
     trade: Trade,
@@ -136,6 +152,7 @@ def _position_from_row(
     row: OpenPositionRow,
     fill_avg_entry: Decimal | None,
     last_price: Decimal | None,
+    held_market_days: int | None,
 ) -> PositionOut:
     """Project an :class:`OpenPositionRow` + computed fields into a DTO row.
 
@@ -166,6 +183,20 @@ def _position_from_row(
         trade=trade, avg_entry=avg_entry_price, last_price=last_price
     )
     unrealized_pnl = computed_unrealized if computed_unrealized is not None else broker_unrealized
+
+    stop = Decimal(row.stop_price) if row.stop_price is not None else None
+    target = Decimal(row.target_price) if row.target_price is not None else None
+    # Advisory recommendation scorecard — anchored on rail geometry (R-multiple)
+    # + the strategy's owner-authored horizon, never on the LLM confidence.
+    card = scorecard.compute(
+        side=trade.side,
+        avg_entry=avg_entry_price,
+        stop_price=stop,
+        target_price=target,
+        last_price=last_price,
+        held_market_days=held_market_days,
+        strategy_kind=row.strategy_kind,
+    )
     return PositionOut(
         trade_id=trade.id,
         symbol=trade.symbol,
@@ -180,8 +211,20 @@ def _position_from_row(
         entry_price_indicative=(
             Decimal(row.entry_price_indicative) if row.entry_price_indicative is not None else None
         ),
-        stop_price=Decimal(row.stop_price) if row.stop_price is not None else None,
-        target_price=Decimal(row.target_price) if row.target_price is not None else None,
+        stop_price=stop,
+        target_price=target,
+        confidence_score=(
+            Decimal(row.confidence_score) if row.confidence_score is not None else None
+        ),
+        reasoning=row.reasoning,
+        held_market_days=held_market_days,
+        horizon_days=card.horizon_days,
+        horizon_label=card.horizon_label,
+        r_multiple=card.r_multiple,
+        rail_progress=card.rail_progress,
+        reward_risk=card.reward_risk,
+        verdict=card.verdict,
+        verdict_reason=card.verdict_reason,
     )
 
 
@@ -285,7 +328,8 @@ async def list_positions(
         trade = row.trade
         fill_avg = await _compute_avg_entry_price(fill_repo, trade.id)
         last_price = last_price_by_symbol[trade.symbol]
-        positions.append(_position_from_row(row, fill_avg, last_price))
+        held = await _fetch_held_market_days(md_adapter, trade.symbol, trade.opened_at)
+        positions.append(_position_from_row(row, fill_avg, last_price, held))
 
     log.info(
         "portfolio.positions.fetched",

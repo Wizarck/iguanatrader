@@ -283,6 +283,30 @@ class PositionOut(BaseModel):
     entry_price_indicative: Decimal | None = Field(default=None, examples=[Decimal("176.90")])
     stop_price: Decimal | None = Field(default=None, examples=[Decimal("168.20")])
     target_price: Decimal | None = Field(default=None, examples=[Decimal("198.00")])
+    # --- Recommendation scorecard (advisory; computed read-time) ------------
+    # The LLM's conviction at entry (0-1): the Opus entry-veto verdict when
+    # that gate ran, else null. NOT a calibrated win-probability; the UI labels
+    # it "model conviction, not probability".
+    confidence_score: Decimal | None = Field(default=None, examples=[Decimal("0.78")])
+    # Structured "why the strategy fired" from the proposal (expandable panel).
+    reasoning: dict[str, Any] | None = Field(default=None)
+    # Owner-authored expected holding period for the strategy, in market days,
+    # + its short/long label. Null when the strategy is unmapped.
+    horizon_days: int | None = Field(default=None, examples=[25])
+    horizon_label: str | None = Field(default=None, examples=["long"])
+    # Market (trading) sessions the position has been open — counted from daily
+    # bars, shown alongside ``opened_at``. Null when no bars exist for the symbol.
+    held_market_days: int | None = Field(default=None, examples=[3])
+    # P&L in units of initial risk = signed move toward target / |entry-stop|.
+    r_multiple: Decimal | None = Field(default=None, examples=[Decimal("0.42")])
+    # Where price sits between the stop (0.0) and target (1.0) rails.
+    rail_progress: Decimal | None = Field(default=None, examples=[Decimal("0.55")])
+    # Planned reward:risk = |target-entry| / |entry-stop|.
+    reward_risk: Decimal | None = Field(default=None, examples=[Decimal("1.5")])
+    # Advisory verdict: on_track | off_track | too_early | no_data — anchored on
+    # rail geometry + horizon, never on confidence. One-line reason alongside.
+    verdict: str | None = Field(default=None, examples=["too_early"])
+    verdict_reason: str | None = Field(default=None)
 
 
 class PositionListOut(BaseModel):
