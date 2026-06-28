@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from iguanatrader.contexts.trading.market_data import MarketDataNotAvailableError
 from iguanatrader.contexts.trading.market_data.models import MarketDataBar
@@ -22,51 +22,6 @@ from iguanatrader.shared.contextvars import session_var
 
 class DBMarketDataAdapter:
     """SELECT from ``market_data_bars`` populated by the IBKR ingestor."""
-
-    async def count_sessions_since(
-        self,
-        *,
-        symbol: str,
-        since: datetime,
-    ) -> int | None:
-        """Count market (trading) sessions held since ``since`` for ``symbol``.
-
-        Each ``1d`` bar in ``market_data_bars`` exists only for a real trading
-        session, so the count of daily bars with ``ts >= since`` is the number
-        of market days the position has been open — inheriting the exchange
-        calendar (weekends + holidays) for free, with no calendar library.
-
-        ``since`` should be the position's ``opened_at`` floored to its UTC
-        date so the open day counts as day 1 (the comparison is a plain ``ts``
-        bound — NOT ``date(ts)`` — to avoid the SQLite/Postgres timezone
-        divergence on date extraction).
-
-        Returns ``None`` when no daily bars exist for the symbol at all (the
-        caller renders "—" rather than a misleading 0); a real 0 sessions (e.g.
-        opened today before the session's bar lands) returns 0.
-        """
-        session = session_var.get()
-        if session is None:
-            raise LookupError(
-                "session_var not set; cannot read market_data_bars. "
-                "Caller must run inside a session-scoped context."
-            )
-        any_bar = await session.scalar(
-            select(MarketDataBar.id)
-            .where(MarketDataBar.symbol == symbol)
-            .where(MarketDataBar.timeframe == "1d")
-            .limit(1)
-        )
-        if any_bar is None:
-            return None
-        count = await session.scalar(
-            select(func.count())
-            .select_from(MarketDataBar)
-            .where(MarketDataBar.symbol == symbol)
-            .where(MarketDataBar.timeframe == "1d")
-            .where(MarketDataBar.ts >= since)
-        )
-        return int(count or 0)
 
     async def get_bars(
         self,

@@ -114,19 +114,28 @@ async def _fetch_last_price(
     return Decimal(bars.bars[-1].close)
 
 
-async def _fetch_held_market_days(
-    adapter: DBMarketDataAdapter,
-    symbol: str,
-    opened_at: datetime,
-) -> int | None:
-    """Market (trading) sessions held since ``opened_at`` for ``symbol``.
+def _held_business_days(opened_at: datetime) -> int:
+    """Business (Mon-Fri) days the position has been open — the open day counts
+    as day 1.
 
-    Floors ``opened_at`` to its UTC date so the open day counts as session 1,
-    then counts daily bars at/after it. ``None`` when the symbol has no daily
-    bars (frontend renders "—"); a real 0 is possible (opened today pre-bar).
+    Used as "market days held". Deliberately computed from the calendar, NOT by
+    counting daily bars: market-data ingestion can lag (observed several days
+    behind), which would report 0 sessions for a position that has genuinely
+    been held for days. Excludes weekends; it does NOT exclude exchange holidays
+    (rare; no trading-calendar library in the repo). Always available.
     """
-    since = opened_at.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    return await adapter.count_sessions_since(symbol=symbol, since=since)
+    start = opened_at.astimezone(UTC).date()
+    today = datetime.now(UTC).date()
+    if today < start:
+        return 0
+    total_days = (today - start).days + 1  # inclusive of the open day
+    full_weeks, extra = divmod(total_days, 7)
+    weekdays = full_weeks * 5
+    start_wd = start.weekday()  # Mon=0 .. Sun=6
+    for offset in range(extra):
+        if (start_wd + offset) % 7 < 5:
+            weekdays += 1
+    return weekdays
 
 
 def _compute_unrealized_pnl(
@@ -328,7 +337,7 @@ async def list_positions(
         trade = row.trade
         fill_avg = await _compute_avg_entry_price(fill_repo, trade.id)
         last_price = last_price_by_symbol[trade.symbol]
-        held = await _fetch_held_market_days(md_adapter, trade.symbol, trade.opened_at)
+        held = _held_business_days(trade.opened_at)
         positions.append(_position_from_row(row, fill_avg, last_price, held))
 
     log.info(
