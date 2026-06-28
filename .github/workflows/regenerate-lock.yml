@@ -8,8 +8,11 @@ name: Regenerate poetry.lock
 # Matrix: each consumer pyproject.toml has its own working-dir + Python
 # version. Add new entries when a new app subpath ships its own
 # pyproject.toml (e.g. apps/<name>/pyproject.toml). The Python version per
-# entry MUST match the project's `[tool.poetry.dependencies] python` pin
-# (apps/api uses 3.13, apps/openbb-sidecar pins <3.13 due to openbb-equity).
+# entry MUST match the interpreter the lock is actually consumed on, so the
+# resolved lock can't drift from runtime/CI. The root resolves on 3.11 —
+# matching pyproject `requires-python = ">=3.11"`, the runtime Dockerfile
+# (ARG PYTHON_VERSION=3.11), mypy (python_version = "3.11"), and every ci.yml
+# job (python-version: '3.11'). openbb-sidecar pins <3.13 due to openbb-equity.
 
 on:
   workflow_dispatch:
@@ -35,7 +38,7 @@ jobs:
       matrix:
         include:
           - working-directory: "."
-            python-version: "3.13"
+            python-version: "3.11"
             label: "root"
           - working-directory: "apps/openbb-sidecar"
             python-version: "3.12"

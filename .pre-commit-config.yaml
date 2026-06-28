@@ -51,6 +51,16 @@ repos:
         language: system
         files: ^openspec/changes/.*/(review|verify)\.md$
 
+      - id: check-shared-boundary
+        name: Verify shared/ kernel has no domain dependencies
+        # The script scans the whole shared/ tree itself (pass_filenames:
+        # false); the files: filter just gates *when* it runs to changes
+        # under shared/. Pure stdlib — no extra deps in CI.
+        entry: python apps/api/scripts/check_shared_boundary.py
+        language: system
+        pass_filenames: false
+        files: ^apps/api/src/iguanatrader/shared/.*\.py$
+
       # OPTIONAL — enable only if this project archives OpenSpec changes into
       # openspec/specs/ via the archive workflow. Projects using a custom
       # workflow that does NOT promote specs post-archive (e.g. consumer-a's
