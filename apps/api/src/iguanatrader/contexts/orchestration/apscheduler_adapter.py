@@ -13,11 +13,29 @@ methods* of in-memory daemon services (via
 anyway — the daemon re-runs ``bootstrap_routines`` on every boot, so
 the full cron schedule is rebuilt from code each start; a deploy-missed
 daily run is re-armed by its cron trigger on the next process start.
+
+Hang containment (2026-06-29 incident — every cron silently froze for
+~33h): APScheduler runs each due job as an asyncio Task and tracks a
+per-job running-instance counter, decremented only when the Task's
+done-callback fires. With ``max_instances=1`` a single tick that hangs
+on an UNCAPPED ``await`` (a wedged IBKR socket or a stalled DB
+statement) never completes, so the slot stays pinned and EVERY later
+tick is refused with ``EVENT_JOB_MAX_INSTANCES`` — a signal the adapter
+did not listen for, so all future runs of that job vanished with no
+error, no missed event. Fix: :func:`_with_timeout` bounds every job
+body so a hang becomes a ``TimeoutError`` (→ ``EVENT_JOB_ERROR``, slot
+released, next tick runs), and we now surface ``MAX_INSTANCES`` +
+``EXECUTED`` so the chain can never stall unobserved again. The real
+triggers are capped at source too (asyncpg ``command_timeout`` +
+``pool_pre_ping`` in ``persistence.session``; ``asyncio.timeout`` on the
+IBKR reads in ``ib_async_client``).
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -33,10 +51,46 @@ log = structlog.get_logger("iguanatrader.contexts.orchestration.apscheduler_adap
 
 _DEFAULT_TIMEZONE = ZoneInfo("America/New_York")
 _DEFAULT_MISFIRE_GRACE_SECONDS = 300
-#: How often the wakeup watchdog re-pokes the scheduler (see ``start``). Must be
-#: well under the tightest cron interval (the minute sweeps) so a due job never
-#: waits more than this for ``_process_jobs`` to run.
+#: Hard ceiling on any single cron-job body. A tick exceeding this is treated as
+#: hung: it raises ``TimeoutError`` so the executor's done-callback fires, the
+#: ``max_instances`` slot is released, and the next tick can run — instead of one
+#: hang silently freezing the job forever. Must exceed the slowest legitimate job
+#: (``market_data_sync`` ingests ~44 symbols, ~50s) yet stay under
+#: ``misfire_grace_time`` (300s).
+_DEFAULT_JOB_TIMEOUT_SECONDS = 180
+#: Belt-and-suspenders heartbeat: re-poke the scheduler every N seconds so even a
+#: pathological internal-timer stall can't keep due jobs from being processed.
 _WAKEUP_WATCHDOG_SECONDS = 20
+
+
+def _with_timeout(
+    fn: Callable[..., Awaitable[Any]],
+    *,
+    timeout: float,
+    job_id: str,
+) -> Callable[..., Awaitable[Any]]:
+    """Wrap a coroutine cron body with a hard timeout.
+
+    A hang becomes a ``TimeoutError`` — re-raised so APScheduler's executor
+    done-callback fires, the ``max_instances`` slot is released, and a
+    ``EVENT_JOB_ERROR`` is emitted. Without this, one uncapped ``await`` freezes
+    the job permanently and silently (see module docstring).
+    """
+
+    @functools.wraps(fn)
+    async def _runner(*args: Any, **kwargs: Any) -> Any:
+        try:
+            async with asyncio.timeout(timeout):
+                return await fn(*args, **kwargs)
+        except TimeoutError:
+            log.error(
+                "orchestration.scheduler.job_timeout",
+                job_id=job_id,
+                timeout_s=timeout,
+            )
+            raise
+
+    return _runner
 
 
 class APSchedulerAdapter:
@@ -57,7 +111,12 @@ class APSchedulerAdapter:
 
     def _ensure(self) -> AsyncIOScheduler:
         if self._scheduler is None:
-            from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
+            from apscheduler.events import (
+                EVENT_JOB_ERROR,
+                EVENT_JOB_EXECUTED,
+                EVENT_JOB_MAX_INSTANCES,
+                EVENT_JOB_MISSED,
+            )
             from apscheduler.jobstores.memory import MemoryJobStore
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -73,21 +132,22 @@ class APSchedulerAdapter:
                 timezone=self._timezone,
                 job_defaults={
                     "misfire_grace_time": _DEFAULT_MISFIRE_GRACE_SECONDS,
-                    # #21: keep ``max_instances=1`` — the daemon shares a
-                    # single AsyncSession (#29), so two overlapping runs of
-                    # the same job would corrupt each other's pending state.
-                    # ``coalesce`` collapses a backlog of missed ticks into
-                    # one catch-up run instead of a thundering herd.
+                    # #21: keep ``max_instances=1`` — overlapping runs of the
+                    # same sweep would race. Safe now that ``_with_timeout``
+                    # guarantees a tick can never hold the slot beyond the
+                    # timeout (the 2026-06-29 silent-freeze fix).
                     "max_instances": 1,
                     "coalesce": True,
                 },
             )
-            # #21: a run skipped because the previous one was still going
-            # (or one that raised) used to vanish silently. Surface both so
-            # an operator sees a sweep that is consistently overrunning its
-            # interval.
+            # Surface EVERY terminal signal. ``MAX_INSTANCES`` was the silent one
+            # in the 2026-06-29 incident (a hung tick pinned the slot, refusing
+            # all later ticks with no error/missed). ``EXECUTED`` gives positive
+            # confirmation each sweep actually completed.
             self._scheduler.add_listener(self._on_job_missed, EVENT_JOB_MISSED)
             self._scheduler.add_listener(self._on_job_error, EVENT_JOB_ERROR)
+            self._scheduler.add_listener(self._on_job_max_instances, EVENT_JOB_MAX_INSTANCES)
+            self._scheduler.add_listener(self._on_job_executed, EVENT_JOB_EXECUTED)
         return self._scheduler
 
     @staticmethod
@@ -106,10 +166,31 @@ class APSchedulerAdapter:
             exception=str(getattr(event, "exception", None)),
         )
 
+    @staticmethod
+    def _on_job_max_instances(event: Any) -> None:
+        # The signal that was silent in the freeze: a prior tick is still
+        # running, so this one was refused. With ``_with_timeout`` this is now
+        # self-healing, but surface it so a chronically-overrunning sweep shows.
+        log.error(
+            "orchestration.scheduler.job_max_instances",
+            job_id=getattr(event, "job_id", None),
+            scheduled_run_time=str(getattr(event, "scheduled_run_time", None)),
+        )
+
+    @staticmethod
+    def _on_job_executed(event: Any) -> None:
+        log.info(
+            "orchestration.scheduler.job_executed",
+            job_id=getattr(event, "job_id", None),
+        )
+
     def add_job(self, spec: JobSpec) -> None:
         scheduler = self._ensure()
+        # Bound every job body with a hard timeout so a hung tick can never
+        # silently freeze the job (the 2026-06-29 incident root cause).
+        fn = _with_timeout(spec.fn, timeout=_DEFAULT_JOB_TIMEOUT_SECONDS, job_id=spec.name)
         scheduler.add_job(
-            spec.fn,
+            fn,
             trigger="cron",
             id=spec.name,
             name=spec.name,
@@ -121,26 +202,20 @@ class APSchedulerAdapter:
     async def start(self) -> None:
         scheduler = self._ensure()
         loop = asyncio.get_running_loop()
-        # APScheduler 3.x only adopts the running loop in ``start()`` when its
-        # ``_eventloop`` is unset or closed; a stale-but-open loop pinned from an
-        # earlier context would silently swallow every ``call_later`` wakeup.
-        # Re-point it at the LIVE loop before starting so the wakeup chain is
-        # delivered where it is actually processed.
+        # AsyncIOScheduler submits each job via ``_eventloop.create_task`` against
+        # the loop captured at start(); if that ever differed from the running
+        # loop, every job would strand on a dormant loop with no error. Pin it to
+        # the live loop so that failure mode is structurally impossible.
         if getattr(scheduler, "_eventloop", None) is not loop:
             scheduler._eventloop = loop
         if not scheduler.running:
             scheduler.start()
-        # WHY the watchdog: APScheduler 3.x drives itself off a SINGLE
-        # self-rescheduling ``call_later`` wakeup — each wakeup runs
-        # ``_process_jobs`` then arms the next timer. If any one link fails to
-        # re-arm (observed in prod 2026-06-29: the chain fired ONCE then stalled
-        # for ~33h with NO job-error/missed event, because the break is in the
-        # timer plumbing, not a job), every future run vanishes silently and all
-        # cron jobs freeze. Re-poke ``wakeup()`` from a task on the live loop so
-        # ``_process_jobs`` runs (and re-arms the timer) every
-        # ``_WAKEUP_WATCHDOG_SECONDS`` regardless of the internal timer's health.
-        # Idempotent: ``_process_jobs`` only fires jobs whose ``next_run_time``
-        # is due, so an extra poke never double-runs a job.
+        # Belt-and-suspenders heartbeat: APScheduler 3.x self-reschedules a single
+        # ``call_later`` wakeup; re-poking ``wakeup()`` from the live loop ensures
+        # due jobs are always processed even if that internal timer ever stalls.
+        # (The real freeze cause was hung job bodies, not this timer — see module
+        # docstring — but the poke is cheap and idempotent: ``_process_jobs`` only
+        # fires DUE jobs.)
         if self._watchdog_task is None or self._watchdog_task.done():
             self._watchdog_task = loop.create_task(self._wakeup_watchdog())
         log.info(
@@ -150,9 +225,7 @@ class APSchedulerAdapter:
         )
 
     async def _wakeup_watchdog(self) -> None:
-        """Drive job processing directly so a dead internal wakeup-timer chain
-        can never silently freeze every cron job (see :meth:`start`)."""
-        pokes = 0
+        """Periodically re-poke the scheduler's wakeup as a liveness backstop."""
         while True:
             try:
                 await asyncio.sleep(_WAKEUP_WATCHDOG_SECONDS)
@@ -162,21 +235,10 @@ class APSchedulerAdapter:
             if scheduler is None or not scheduler.running:
                 return
             try:
-                # Drive ``_process_jobs`` DIRECTLY on this (the live) loop rather
-                # than via ``scheduler.wakeup()`` — whose ``call_soon_threadsafe``
-                # hop onto ``_eventloop`` is the exact link that dies silently in
-                # prod (jobs froze with no error). Running it here, on the loop
-                # thread, fires every DUE job's submission immediately. We ignore
-                # the returned next-wait and simply re-poll every interval, so the
-                # watchdog itself becomes the scheduler's heartbeat.
-                scheduler._process_jobs()
-                pokes += 1
-                if pokes <= 5:
-                    log.info(
-                        "orchestration.scheduler.watchdog_poke",
-                        poke=pokes,
-                        jobs=len(scheduler.get_jobs()),
-                    )
+                # ``wakeup()`` marshals onto the scheduler's own loop via
+                # ``call_soon_threadsafe`` (the maintainer-intended path), so the
+                # executor submits jobs onto the loop that is actually running.
+                scheduler.wakeup()
             except Exception as exc:  # a watchdog hiccup must never kill the task
                 log.warning(
                     "orchestration.scheduler.watchdog_wakeup_failed",
