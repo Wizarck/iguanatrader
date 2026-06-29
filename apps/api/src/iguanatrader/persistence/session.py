@@ -54,8 +54,19 @@ def engine_factory(url: str, *, echo: bool = False) -> AsyncEngine:
 
     Registers the SQLite PRAGMA listener only when the URL identifies SQLite
     (so passing a Postgres URL in v1.5 won't trigger a no-op listener).
+
+    ``pool_pre_ping`` is always on: a half-open connection handed back from the
+    pool is detected + recycled before first use, instead of the next
+    ``await session.execute(...)`` hanging on a dead socket. For Postgres
+    (asyncpg) we additionally set ``command_timeout`` so a single statement
+    parked on a server-side lock or stalled connection raises rather than
+    blocking forever — the daemon cron sweeps share this engine, and one such
+    hang silently froze every sweep on 2026-06-29 (see ``apscheduler_adapter``).
     """
-    engine = create_async_engine(url, echo=echo)
+    kwargs: dict[str, Any] = {"echo": echo, "pool_pre_ping": True}
+    if url.startswith("postgresql"):
+        kwargs["connect_args"] = {"command_timeout": 30}
+    engine = create_async_engine(url, **kwargs)
     if url.startswith("sqlite"):
         event.listen(engine.sync_engine, "connect", _sqlite_pragmas)
     return engine

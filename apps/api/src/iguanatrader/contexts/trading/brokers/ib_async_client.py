@@ -50,6 +50,12 @@ _PRICE_TICK: Decimal = Decimal("0.01")
 _PERMID_POLL_SECONDS: float = 0.1
 _PERMID_WAIT_TIMEOUT_SECONDS: float = 10.0
 
+#: Hard ceiling on any IBKR request round-trip. A connected-but-wedged gateway
+#: (frozen socket, not a clean disconnect) otherwise hangs the awaiting call
+#: forever — and inside a daemon cron sweep that one hang silently froze every
+#: sweep (2026-06-29). The heartbeat already caps its call; these reads now match.
+_IB_CALL_TIMEOUT_SECONDS: float = 30.0
+
 
 def _round_to_tick(price: Decimal) -> float:
     """Snap an order price to the US-equity minimum price variation ($0.01).
@@ -498,12 +504,14 @@ class IbAsyncIBClient:
 
     async def positions(self) -> Iterable[PositionRecord]:
         ib = self._ensure()
-        rows = await ib.reqPositionsAsync()
+        async with asyncio.timeout(_IB_CALL_TIMEOUT_SECONDS):
+            rows = await ib.reqPositionsAsync()
         return [_from_position(p) for p in rows]
 
     async def account_summary(self) -> Iterable[AccountSummaryRow]:
         ib = self._ensure()
-        rows = await ib.accountSummaryAsync()
+        async with asyncio.timeout(_IB_CALL_TIMEOUT_SECONDS):
+            rows = await ib.accountSummaryAsync()
         return [_from_account_summary_row(r) for r in rows]
 
     async def req_executions(self, since: datetime) -> Iterable[Execution]:
@@ -512,12 +520,14 @@ class IbAsyncIBClient:
 
         filt = ExecutionFilter()
         filt.time = since.strftime("%Y%m%d-%H:%M:%S")
-        fills = await ib.reqExecutionsAsync(filt)
+        async with asyncio.timeout(_IB_CALL_TIMEOUT_SECONDS):
+            fills = await ib.reqExecutionsAsync(filt)
         return [_from_execution(f) for f in fills]
 
     async def req_all_open_orders(self) -> Iterable[OpenOrder]:
         ib = self._ensure()
-        await ib.reqAllOpenOrdersAsync()
+        async with asyncio.timeout(_IB_CALL_TIMEOUT_SECONDS):
+            await ib.reqAllOpenOrdersAsync()
         return [_from_open_order(t) for t in ib.openTrades()]
 
     async def req_historical_bars(
@@ -552,16 +562,17 @@ class IbAsyncIBClient:
             contract = Stock(symbol, params.exchange, conId=params.con_id)
         else:
             contract = Stock(symbol, params.exchange, params.currency)
-        await ib.qualifyContractsAsync(contract)
-        bars = await ib.reqHistoricalDataAsync(
-            contract,
-            endDateTime="",
-            durationStr=duration_str,
-            barSizeSetting=bar_size,
-            whatToShow=what_to_show,
-            useRTH=use_rth,
-            formatDate=2,  # epoch seconds; tz-naive UTC
-        )
+        async with asyncio.timeout(_IB_CALL_TIMEOUT_SECONDS):
+            await ib.qualifyContractsAsync(contract)
+            bars = await ib.reqHistoricalDataAsync(
+                contract,
+                endDateTime="",
+                durationStr=duration_str,
+                barSizeSetting=bar_size,
+                whatToShow=what_to_show,
+                useRTH=use_rth,
+                formatDate=2,  # epoch seconds; tz-naive UTC
+            )
         return list(bars or [])
 
 
