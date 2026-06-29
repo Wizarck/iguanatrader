@@ -143,10 +143,16 @@ class APSchedulerAdapter:
         # is due, so an extra poke never double-runs a job.
         if self._watchdog_task is None or self._watchdog_task.done():
             self._watchdog_task = loop.create_task(self._wakeup_watchdog())
+        log.info(
+            "orchestration.scheduler.started",
+            jobs=len(scheduler.get_jobs()),
+            eventloop_is_running_loop=getattr(scheduler, "_eventloop", None) is loop,
+        )
 
     async def _wakeup_watchdog(self) -> None:
-        """Periodically re-poke the scheduler so a dead internal wakeup-timer
-        chain can never silently freeze every cron job (see :meth:`start`)."""
+        """Drive job processing directly so a dead internal wakeup-timer chain
+        can never silently freeze every cron job (see :meth:`start`)."""
+        pokes = 0
         while True:
             try:
                 await asyncio.sleep(_WAKEUP_WATCHDOG_SECONDS)
@@ -156,7 +162,21 @@ class APSchedulerAdapter:
             if scheduler is None or not scheduler.running:
                 return
             try:
-                scheduler.wakeup()
+                # Drive ``_process_jobs`` DIRECTLY on this (the live) loop rather
+                # than via ``scheduler.wakeup()`` — whose ``call_soon_threadsafe``
+                # hop onto ``_eventloop`` is the exact link that dies silently in
+                # prod (jobs froze with no error). Running it here, on the loop
+                # thread, fires every DUE job's submission immediately. We ignore
+                # the returned next-wait and simply re-poll every interval, so the
+                # watchdog itself becomes the scheduler's heartbeat.
+                scheduler._process_jobs()
+                pokes += 1
+                if pokes <= 5:
+                    log.info(
+                        "orchestration.scheduler.watchdog_poke",
+                        poke=pokes,
+                        jobs=len(scheduler.get_jobs()),
+                    )
             except Exception as exc:  # a watchdog hiccup must never kill the task
                 log.warning(
                     "orchestration.scheduler.watchdog_wakeup_failed",
