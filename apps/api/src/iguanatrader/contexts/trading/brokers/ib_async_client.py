@@ -447,10 +447,22 @@ class IbAsyncIBClient:
         oca_group = f"oca-{parent_ord.orderId}"
         stop_ord = _to_order(stop_loss)
         stop_ord.parentId = parent_ord.orderId
+        # Protective legs must survive past the entry session. ``_to_order``
+        # stamps DAY (so the Gateway preset has nothing to rewrite on the HELD
+        # parent — Error 10349, see its comment); but a DAY stop/target is
+        # cancelled at the session close, leaving the position unprotected every
+        # overnight with nothing to re-arm it (the cron stop-sweep is OFF in
+        # broker_bracket mode). Override the CHILD legs to GTC so the resting
+        # stop/target persist multi-day. The parent stays DAY: it is the held
+        # leg the preset rewrite would cancel, and a market entry fills same
+        # session anyway, so DAY-vs-GTC is moot for it. Setting GTC explicitly
+        # (not empty) likewise leaves the preset nothing to rewrite.
+        stop_ord.tif = "GTC"
         children = []
         if take_profit is not None:
             tp_ord = _to_order(take_profit)
             tp_ord.parentId = parent_ord.orderId
+            tp_ord.tif = "GTC"
             tp_ord.ocaGroup = oca_group
             tp_ord.ocaType = 1
             tp_ord.transmit = False
