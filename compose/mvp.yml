@@ -172,6 +172,9 @@ services:
       # the same behaviour as before, so paper is unchanged unless set.
       - IGUANATRADER_CHANNEL_DISPATCHER=${IGUANATRADER_CHANNEL_DISPATCHER:-email}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # Single Telegram poller for the shared bot token: paper polls by default,
+      # live does NOT (see live block) — two pollers on one token => 409 loop.
+      - IGUANATRADER_TELEGRAM_POLLER_ENABLED=${IGUANATRADER_TELEGRAM_POLLER_PAPER_ENABLED:-true}
       - IGUANATRADER_PROPOSE_NOW=${IGUANATRADER_PROPOSE_NOW:-false}
       - IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS=${IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS:-}
       - IGUANATRADER_RISK_PER_TRADE_PCT=${IGUANATRADER_RISK_PER_TRADE_PCT:-0.02}
@@ -250,6 +253,10 @@ services:
       # default OFF/empty → the live daemon is byte-identical until set.
       - IGUANATRADER_CHANNEL_DISPATCHER=${IGUANATRADER_CHANNEL_DISPATCHER:-email}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # Live daemon does NOT poll the shared bot token by default (paper is the
+      # sole poller) to avoid the getUpdates 409 conflict. Flip to true ONLY if
+      # live becomes the designated poller AND paper's is turned off.
+      - IGUANATRADER_TELEGRAM_POLLER_ENABLED=${IGUANATRADER_TELEGRAM_POLLER_LIVE_ENABLED:-false}
       - IGUANATRADER_PROPOSE_NOW=${IGUANATRADER_PROPOSE_NOW:-false}
       - IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS=${IGUANATRADER_DEFAULT_WATCHLIST_SYMBOLS:-}
       - IGUANATRADER_RISK_PER_TRADE_PCT=${IGUANATRADER_RISK_PER_TRADE_PCT:-0.02}

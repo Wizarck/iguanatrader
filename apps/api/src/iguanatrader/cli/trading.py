@@ -84,6 +84,18 @@ def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_flag_default_true(name: str) -> bool:
+    """Like :func:`_env_truthy` but defaults to True when the var is unset/blank.
+
+    Used for opt-OUT flags where the historical behaviour was "on" and only an
+    explicit falsy value should disable it.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return True
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 async def _enforce_live_paper_history_gate(
     *, audit_repo: Any, mode: str, i_understand_the_risks: bool, log: Any
 ) -> None:
@@ -1298,6 +1310,14 @@ async def _run_daemon(
         # token is configured; owner-gated (fail-closed) and routed through
         # the same command dispatcher as typed /approve, so a tap records a
         # granted decision → ProposalApproved → bracketed execution.
+        #
+        # Single-poller gate: Telegram allows only ONE getUpdates long-poll per
+        # bot token at a time. With both the paper AND live daemons sharing the
+        # one token, both poll and BOTH get HTTP 409 Conflict in a loop, so
+        # owner taps register nondeterministically (or not at all). Gate the
+        # poller on IGUANATRADER_TELEGRAM_POLLER_ENABLED (default TRUE to
+        # preserve prior behaviour); compose sets it false on the daemon that
+        # must NOT poll, leaving exactly one poller for the shared token.
         from iguanatrader.contexts.approval.channels.telegram_poller import (
             TelegramCallbackPoller,
         )
@@ -1305,7 +1325,10 @@ async def _run_daemon(
         telegram_poller: TelegramCallbackPoller | None = None
         telegram_poller_task: asyncio.Task[None] | None = None
         _tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-        if _tg_token:
+        _tg_poller_enabled = _env_flag_default_true("IGUANATRADER_TELEGRAM_POLLER_ENABLED")
+        if _tg_token and not _tg_poller_enabled:
+            log.info("trading.daemon.telegram_poller_disabled_by_flag", mode=mode)
+        if _tg_token and _tg_poller_enabled:
             telegram_poller = TelegramCallbackPoller(
                 bot_token=_tg_token,
                 tenant_id=tenant_id,
