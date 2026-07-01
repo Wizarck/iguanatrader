@@ -225,10 +225,22 @@ class TradingService:
         propose_dedup_window_secs: int = 1800,
         entry_gate: EntryGateLike | None = None,
         live_gateway: LiveGatewayLike | None = None,
+        daemon_mode: str | None = None,
     ) -> None:
         self._bus = bus
         self._broker = broker
         self._strategy_resolver = strategy_resolver
+        # Execution routing safety gate: this daemon's own mode ("paper" /
+        # "live"), as started via ``--mode``. ``execute_on_approval_handler``
+        # refuses to submit a proposal whose ``mode`` differs — a Telegram tap
+        # only ever reaches THIS daemon's broker (the poller is per-daemon;
+        # in-process bus has no cross-container routing), so without this gate
+        # a stale/misrouted paper-mode proposal approved while THIS daemon is
+        # "live" would silently execute on the real broker (mode was otherwise
+        # only consulted to decide whether to lease the ephemeral gateway, not
+        # to pick the broker). ``None`` (default / tests) preserves the exact
+        # pre-gate behaviour — no routing check.
+        self._daemon_mode = daemon_mode
         # Slice WS-4 (ephemeral live gateway): optional coordinator that leases
         # the on-demand live IBKR gateway up before a LIVE order. When wired,
         # ``execute_on_approval_handler`` calls ``ensure_up`` for live-mode
@@ -651,6 +663,28 @@ class TradingService:
             log.warning(
                 "trading.execute.proposal_missing",
                 proposal_id=str(event.proposal_id),
+            )
+            return
+
+        # Execution routing safety gate: refuse to submit a proposal whose
+        # ``mode`` differs from this daemon's own mode. Without this, the
+        # daemon that happens to own the Telegram poller executes EVERY
+        # approved proposal on ITS OWN broker regardless of ``proposal.mode``
+        # — a real-money risk if a paper-mode card is approved while this
+        # daemon is "live" (see ``self._daemon_mode`` docstring in __init__).
+        if self._daemon_mode is not None and proposal_row.mode != self._daemon_mode:
+            await self._bus.publish(
+                OrderRejected(
+                    tenant_id=event.tenant_id,
+                    proposal_id=event.proposal_id,
+                    reason="mode_mismatch",
+                )
+            )
+            log.warning(
+                "trading.execute.mode_mismatch",
+                proposal_id=str(event.proposal_id),
+                proposal_mode=proposal_row.mode,
+                daemon_mode=self._daemon_mode,
             )
             return
 
