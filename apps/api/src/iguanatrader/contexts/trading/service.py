@@ -192,6 +192,8 @@ class LiveGatewayLike(Protocol):
 
     async def ensure_up(self, *, reason: str) -> bool: ...
 
+    def schedule_release(self, *, reason: str, delay_seconds: float) -> None: ...
+
 
 class TradingService:
     """Orchestrate the propose→fills sequence via :class:`MessageBus`.
@@ -226,6 +228,9 @@ class TradingService:
         entry_gate: EntryGateLike | None = None,
         live_gateway: LiveGatewayLike | None = None,
         daemon_mode: str | None = None,
+        live_gateway_wait_secs: float = 120.0,
+        live_gateway_poll_secs: float = 5.0,
+        live_gateway_release_delay_secs: float = 30.0,
     ) -> None:
         self._bus = bus
         self._broker = broker
@@ -248,6 +253,22 @@ class TradingService:
         # not ready. ``None`` (default / paper / tests) leaves the path
         # unchanged. Paper orders never consult it.
         self._live_gateway = live_gateway
+        # How long to keep polling ``ensure_up`` before failing closed, and how
+        # often. The sidecar's own lease call is deliberately non-blocking —
+        # cold start is ~90s but its HTTP handler answers in ~8s reporting
+        # "warming" — and a real login also needs a human to tap the IBKR 2FA
+        # push, which can take longer than one poll. A single ``ensure_up``
+        # call false-rejects a login that is genuinely still in progress
+        # (observed: gave up in ~8s while the operator's 2FA dialog was still
+        # open; the login completed ~15s later). Bounded so a genuinely stuck
+        # gateway still fails closed in reasonable time.
+        self._live_gateway_wait_secs = live_gateway_wait_secs
+        self._live_gateway_poll_secs = live_gateway_poll_secs
+        # Quiet-window after the LAST live order before the gateway actively
+        # releases (rather than riding out the lease TTL, whose 60s floor
+        # would otherwise lock the owner out of his own IBKR mobile app for
+        # at least that long after every order).
+        self._live_gateway_release_delay_secs = live_gateway_release_delay_secs
         # Slice ``entry-veto-gate`` (WS-2): optional Opus-backed HARD pre-filter.
         # When wired, ``propose`` calls it after the dedup guards and BEFORE
         # persisting the proposal; a ``blocked`` decision drops the entry so no
@@ -589,6 +610,24 @@ class TradingService:
                 tenant_id=str(event.tenant_id),
             )
 
+    async def _ensure_live_gateway_ready(self, *, reason: str) -> bool:
+        """Poll ``ensure_up`` for a cold-start-plus-2FA-shaped wait.
+
+        See ``self._live_gateway_wait_secs`` in ``__init__`` for why a single
+        ``ensure_up`` call is not enough. Each poll iteration still goes
+        through the coordinator's own cached-window fast path, so a warm
+        gateway (mid-batch, or already logged in) returns on the FIRST
+        iteration — this only adds patience for a cold start.
+        """
+        assert self._live_gateway is not None
+        deadline = utc_now() + timedelta(seconds=self._live_gateway_wait_secs)
+        while True:
+            if await self._live_gateway.ensure_up(reason=reason):
+                return True
+            if utc_now() >= deadline:
+                return False
+            await asyncio.sleep(self._live_gateway_poll_secs)
+
     # ------------------------------------------------------------------
     # Step 5 — execute_on_approval_handler (skeleton; T4 fills logic)
     # ------------------------------------------------------------------
@@ -724,7 +763,9 @@ class TradingService:
         # before any Trade/Order is created (nothing to orphan on the not-ready
         # path). Paper orders + the unwired case skip this entirely.
         if proposal_row.mode == "live" and self._live_gateway is not None:
-            gateway_ready = await self._live_gateway.ensure_up(reason=f"order:{event.proposal_id}")
+            gateway_ready = await self._ensure_live_gateway_ready(
+                reason=f"order:{event.proposal_id}"
+            )
             if not gateway_ready:
                 await self._bus.publish(
                     OrderRejected(
@@ -996,6 +1037,16 @@ class TradingService:
             proposal_id=str(event.proposal_id),
             tenant_id=str(event.tenant_id),
         )
+
+        if proposal_row.mode == "live" and self._live_gateway is not None:
+            # Debounce an early teardown so the owner's IBKR mobile app isn't
+            # locked out for the full lease TTL after every order — see
+            # ``schedule_release``'s docstring. Best-effort: scheduling is
+            # fire-and-forget and never raises into an already-successful order.
+            self._live_gateway.schedule_release(
+                reason=f"order:{event.proposal_id}",
+                delay_seconds=self._live_gateway_release_delay_secs,
+            )
 
     # ------------------------------------------------------------------
     # Restart reconciliation (slice order-timeout-restart-reconcile)

@@ -719,6 +719,26 @@ async def _run_daemon(
                 live_gateway.attach_on_ready(_on_gateway_ready)
                 log.info("trading.daemon.ephemeral_live.on_ready_attached")
 
+        # WS-4 followup: how patiently to wait for a cold-starting ephemeral
+        # gateway (cold start + a human tapping the IBKR 2FA push can take
+        # longer than one lease call), and how soon to release it again once
+        # a batch of live orders goes quiet. Operator-tunable; defaults cover
+        # the observed cold-start-plus-2FA timing without code changes.
+        def _env_float(name: str, default: float) -> float:
+            raw = os.environ.get(name, "").strip()
+            if not raw:
+                return default
+            try:
+                return float(raw)
+            except ValueError as exc:
+                raise RuntimeError(f"{name} must be a float, got {raw!r}") from exc
+
+        live_gateway_wait_secs = _env_float("IGUANATRADER_EPHEMERAL_GATEWAY_WAIT_SECONDS", 120.0)
+        live_gateway_poll_secs = _env_float("IGUANATRADER_EPHEMERAL_GATEWAY_POLL_SECONDS", 5.0)
+        live_gateway_release_delay_secs = _env_float(
+            "IGUANATRADER_EPHEMERAL_GATEWAY_RELEASE_DELAY_SECONDS", 30.0
+        )
+
         trading_service = TradingService(
             bus=bus,
             broker=broker,
@@ -728,6 +748,9 @@ async def _run_daemon(
             propose_dedup_window_secs=propose_dedup_window_secs,
             live_gateway=live_gateway,
             daemon_mode=mode,
+            live_gateway_wait_secs=live_gateway_wait_secs,
+            live_gateway_poll_secs=live_gateway_poll_secs,
+            live_gateway_release_delay_secs=live_gateway_release_delay_secs,
         )
         trading_service.register_subscriptions()
 
