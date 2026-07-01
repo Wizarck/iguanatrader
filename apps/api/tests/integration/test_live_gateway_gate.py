@@ -82,10 +82,14 @@ class _FakeGateway:
     def __init__(self, *, ready: bool) -> None:
         self._ready = ready
         self.calls: list[str] = []
+        self.release_calls: list[tuple[str, float]] = []
 
     async def ensure_up(self, *, reason: str) -> bool:
         self.calls.append(reason)
         return self._ready
+
+    def schedule_release(self, *, reason: str, delay_seconds: float) -> None:
+        self.release_calls.append((reason, delay_seconds))
 
 
 async def _seed_live_proposal(
@@ -142,6 +146,11 @@ def _service(broker: _FakeBroker, bus: MessageBus, gateway: Any) -> TradingServi
         broker=broker,  # type: ignore[arg-type]
         strategy_resolver=_resolve_none,
         live_gateway=gateway,
+        # Fast retry timings so the not-ready test doesn't ride out the
+        # production default (120s wait / 5s poll) — a few near-instant
+        # iterations still exercise the same retry-loop code path.
+        live_gateway_wait_secs=0.05,
+        live_gateway_poll_secs=0.01,
     )
 
 
@@ -204,6 +213,7 @@ async def test_live_order_proceeds_when_gateway_ready(
         assert len(broker.calls) == 1  # order placed
         assert not [e for e in bus.published if isinstance(e, OrderRejected)]
         assert [e for e in bus.published if isinstance(e, OrderPlaced)]
+        assert len(gateway.release_calls) == 1  # early-teardown debounce scheduled
 
 
 @pytest.mark.asyncio
@@ -225,4 +235,5 @@ async def test_paper_order_never_consults_gateway(
         )
         # Paper path ignores the gateway entirely and proceeds.
         assert gateway.calls == []
+        assert gateway.release_calls == []
         assert len(broker.calls) == 1

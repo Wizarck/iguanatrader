@@ -22,6 +22,11 @@ Wire contract (the eligia-core sidecar implements the other half):
     body    {"action": "lease", "reason": "<str>", "ttl_seconds": <int>}
     → 200   {"ready": true|false, "detail": "<str>"}
 
+    POST {webhook_url}
+    header  X-Signature: sha256=<hex HMAC-SHA256 of the exact body, shared secret>
+    body    {"action": "release", "reason": "<str>"}
+    → 200   {"stopped": true|false, "detail": "<str>"}
+
 Built only when ``ELIGIA_GATEWAY_WEBHOOK_URL`` + ``ELIGIA_GATEWAY_HMAC_SECRET``
 are set AND ``IGUANATRADER_EPHEMERAL_GATEWAY_ENABLED`` is truthy; otherwise the
 factory returns ``None`` and the live execute path is unchanged.
@@ -29,6 +34,7 @@ factory returns ``None`` and the live execute path is unchanged.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -57,6 +63,11 @@ DEFAULT_LEASE_TTL_SECONDS = 300
 #: rides a lease into its teardown window.
 _LEASE_REFRESH_MARGIN_SECONDS = 60
 
+#: Default quiet-window after the last live order before actively releasing
+#: the gateway (rather than waiting out the full lease TTL) — see
+#: :meth:`EphemeralGatewayCoordinator.schedule_release`.
+DEFAULT_RELEASE_DELAY_SECONDS = 30.0
+
 
 @dataclass(frozen=True, slots=True)
 class LeaseResult:
@@ -66,10 +77,20 @@ class LeaseResult:
     detail: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class ReleaseResult:
+    """Outcome of a release request."""
+
+    stopped: bool
+    detail: str = ""
+
+
 class EphemeralGatewayPort(Protocol):
     """The sidecar lease call (concrete: :class:`EligiaSidecarGatewayClient`)."""
 
     async def request_lease(self, *, reason: str, ttl_seconds: int) -> LeaseResult: ...
+
+    async def request_release(self, *, reason: str) -> ReleaseResult: ...
 
 
 class EligiaSidecarGatewayClient:
@@ -116,6 +137,29 @@ class EligiaSidecarGatewayClient:
         detail = str(data.get("detail", "")) if isinstance(data, dict) else ""
         return LeaseResult(ready=ready, detail=detail)
 
+    async def request_release(self, *, reason: str) -> ReleaseResult:
+        payload = {"action": "release", "reason": reason}
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        signature = hmac_sha256_hex(self._secret, body)
+        headers = {
+            "Content-Type": "application/json",
+            "X-Signature": f"sha256={signature}",
+        }
+        try:
+            client = self._client or self._new_client()
+            resp = await client.post(self._url, content=body, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.warning(
+                "trading.ephemeral_gateway.release_request_failed",
+                extra={"error": str(exc), "type": type(exc).__name__},
+            )
+            return ReleaseResult(stopped=False, detail=f"{type(exc).__name__}: {exc}")
+        stopped = bool(data.get("stopped", False)) if isinstance(data, dict) else False
+        detail = str(data.get("detail", "")) if isinstance(data, dict) else ""
+        return ReleaseResult(stopped=stopped, detail=detail)
+
     def _new_client(self) -> Any:
         import httpx
 
@@ -139,6 +183,7 @@ class EphemeralGatewayCoordinator:
         ttl_seconds: int = DEFAULT_LEASE_TTL_SECONDS,
         clock: Any = utc_now,
         on_ready: OnReadyHook | None = None,
+        sleep: Any = asyncio.sleep,
     ) -> None:
         self._client = client
         self._ttl = ttl_seconds
@@ -150,6 +195,10 @@ class EphemeralGatewayCoordinator:
         # while the broker is built separately. ``None`` → the gateway lease is
         # the only readiness gate (back-compat: paper/tests/unwired).
         self._on_ready = on_ready
+        # Injectable async sleep (tests substitute a no-op) for the release
+        # debounce timer below.
+        self._sleep = sleep
+        self._release_task: asyncio.Task[None] | None = None
 
     def attach_on_ready(self, on_ready: OnReadyHook) -> None:
         """Wire the broker-connect hook after construction (daemon wiring)."""
@@ -200,6 +249,42 @@ class EphemeralGatewayCoordinator:
             return False
         return True
 
+    def schedule_release(
+        self, *, reason: str, delay_seconds: float = DEFAULT_RELEASE_DELAY_SECONDS
+    ) -> None:
+        """Debounce an early gateway teardown ``delay_seconds`` after the LAST call.
+
+        The lease TTL floor is 60s server-side, which would otherwise keep the
+        owner locked out of his own IBKR mobile app (IBKR allows one live
+        session) for at least that long after every order. Call this once a
+        live order has been placed; a fresh call — from a follow-up order
+        approved moments later — cancels the pending release and restarts the
+        countdown, so a batch of quick approvals only tears down once it goes
+        quiet. Fire-and-forget: never awaited by the caller, and any sidecar
+        failure is logged, not raised — the TTL timer is still the backstop.
+        """
+        if self._release_task is not None and not self._release_task.done():
+            self._release_task.cancel()
+        self._release_task = asyncio.create_task(self._delayed_release(reason, delay_seconds))
+
+    async def _delayed_release(self, reason: str, delay_seconds: float) -> None:
+        await self._sleep(delay_seconds)
+        # A superseding schedule_release() would have cancelled this task
+        # before this point ran, so reaching here means the batch went quiet.
+        self._ready_until = None
+        try:
+            result = await self._client.request_release(reason=reason)
+        except Exception as exc:
+            logger.warning(
+                "trading.ephemeral_gateway.release_failed",
+                extra={"reason": reason, "error": str(exc), "type": type(exc).__name__},
+            )
+            return
+        logger.info(
+            "trading.ephemeral_gateway.released",
+            extra={"reason": reason, "stopped": result.stopped, "detail": result.detail},
+        )
+
 
 def build_ephemeral_gateway_coordinator_from_env() -> EphemeralGatewayCoordinator | None:
     """Construct the coordinator from env, or ``None`` when not enabled.
@@ -227,10 +312,12 @@ def build_ephemeral_gateway_coordinator_from_env() -> EphemeralGatewayCoordinato
 
 __all__ = [
     "DEFAULT_LEASE_TTL_SECONDS",
+    "DEFAULT_RELEASE_DELAY_SECONDS",
     "EligiaSidecarGatewayClient",
     "EphemeralGatewayCoordinator",
     "EphemeralGatewayPort",
     "LeaseResult",
     "OnReadyHook",
+    "ReleaseResult",
     "build_ephemeral_gateway_coordinator_from_env",
 ]

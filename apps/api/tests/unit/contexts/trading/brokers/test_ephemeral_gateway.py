@@ -17,19 +17,37 @@ from iguanatrader.contexts.trading.brokers.ephemeral_gateway import (
     EligiaSidecarGatewayClient,
     EphemeralGatewayCoordinator,
     LeaseResult,
+    ReleaseResult,
     build_ephemeral_gateway_coordinator_from_env,
 )
 from iguanatrader.shared.channel_dispatch.sign import hmac_sha256_hex
 
 
 class _StubClient:
-    def __init__(self, results: list[LeaseResult]) -> None:
+    def __init__(
+        self,
+        results: list[LeaseResult],
+        release_results: list[ReleaseResult] | None = None,
+    ) -> None:
         self._results = list(results)
         self.calls: list[dict[str, Any]] = []
+        self._release_results = list(release_results or [])
+        self.release_calls: list[dict[str, Any]] = []
 
     async def request_lease(self, *, reason: str, ttl_seconds: int) -> LeaseResult:
         self.calls.append({"reason": reason, "ttl_seconds": ttl_seconds})
         return self._results.pop(0) if self._results else LeaseResult(ready=True)
+
+    async def request_release(self, *, reason: str) -> ReleaseResult:
+        self.release_calls.append({"reason": reason})
+        return (
+            self._release_results.pop(0) if self._release_results else ReleaseResult(stopped=True)
+        )
+
+
+async def _immediate_sleep(_seconds: float) -> None:
+    """Test double for the coordinator's injectable ``sleep`` — no real wait."""
+    return None
 
 
 class _Clock:
@@ -91,6 +109,69 @@ async def test_not_ready_does_not_cache() -> None:
     # Next call re-attempts (no cached ready window from the failure).
     assert await coord.ensure_up(reason="order:1") is True
     assert len(client.calls) == 2
+
+
+# ----------------------------------------------------------------------
+# schedule_release — post-order early-teardown debounce
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_schedule_release_calls_client_after_delay() -> None:
+    client = _StubClient([LeaseResult(ready=True)])
+    coord = EphemeralGatewayCoordinator(client, sleep=_immediate_sleep)
+
+    coord.schedule_release(reason="order:1", delay_seconds=30)
+    assert coord._release_task is not None
+    await coord._release_task
+
+    assert client.release_calls == [{"reason": "order:1"}]
+
+
+@pytest.mark.asyncio
+async def test_schedule_release_debounce_supersedes_pending() -> None:
+    client = _StubClient([LeaseResult(ready=True)])
+    coord = EphemeralGatewayCoordinator(client, sleep=_immediate_sleep)
+
+    coord.schedule_release(reason="order:1", delay_seconds=30)
+    first_task = coord._release_task
+    coord.schedule_release(reason="order:2", delay_seconds=30)  # supersedes before it ran
+    await coord._release_task
+
+    assert first_task.cancelled()
+    # Only the LAST (superseding) call actually released.
+    assert client.release_calls == [{"reason": "order:2"}]
+
+
+@pytest.mark.asyncio
+async def test_schedule_release_clears_cached_ready_window() -> None:
+    clock = _Clock(datetime(2026, 6, 27, 12, 0, tzinfo=UTC))
+    client = _StubClient([LeaseResult(ready=True), LeaseResult(ready=True)])
+    coord = EphemeralGatewayCoordinator(
+        client, ttl_seconds=300, clock=clock, sleep=_immediate_sleep
+    )
+
+    assert await coord.ensure_up(reason="order:1") is True
+    coord.schedule_release(reason="order:1", delay_seconds=30)
+    await coord._release_task
+
+    clock.advance(1)  # still well inside the (unreleased) 300-60=240s window
+    assert await coord.ensure_up(reason="order:2") is True
+    # The release cleared the cache → this was a fresh lease, not a cache hit.
+    assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_schedule_release_failure_is_swallowed() -> None:
+    class _FailingClient(_StubClient):
+        async def request_release(self, *, reason: str) -> ReleaseResult:
+            raise RuntimeError("sidecar unreachable")
+
+    client = _FailingClient([LeaseResult(ready=True)])
+    coord = EphemeralGatewayCoordinator(client, sleep=_immediate_sleep)
+
+    coord.schedule_release(reason="order:1", delay_seconds=30)
+    await coord._release_task  # must not raise
 
 
 # ----------------------------------------------------------------------
