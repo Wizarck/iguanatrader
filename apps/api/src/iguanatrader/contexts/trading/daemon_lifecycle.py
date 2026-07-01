@@ -402,8 +402,25 @@ class DaemonLifecycleService:
             trade.marks_updated_at = now
             marked += 1
 
-        # 2. Orphan close — symbols the broker no longer holds.
-        orphans = [t for t in local_mine if t.symbol not in broker_symbols]
+        # 2. Orphan close — symbols the broker no longer holds. GUARD: only
+        # close a trade whose entry actually FILLED (>=1 fill). A just-approved
+        # trade whose entry order is still unfilled (e.g. a pre-market / after-
+        # hours MKT held until the RTH open) legitimately has NO broker position
+        # yet — it is a pending entry, NOT an externally-closed orphan. Closing
+        # it here phantom-closes a live position-to-be and orphans the eventual
+        # broker fill (observed: OXY approved pre-market was closed by this
+        # reconcile ~13 min before its 09:30 open fill). The order/fill lifecycle
+        # owns unfilled entries; the position diff must ignore them.
+        from iguanatrader.contexts.trading.repository import FillRepository
+
+        fill_repo = FillRepository()
+        orphans = []
+        for trade in local_mine:
+            if trade.symbol in broker_symbols:
+                continue
+            if not await fill_repo.list_for_trade(trade.id):
+                continue  # entry not filled yet — pending, not an orphan
+            orphans.append(trade)
         for trade in orphans:
             trade.state = "closed"
             trade.exit_reason = "ibkr_reconcile"
