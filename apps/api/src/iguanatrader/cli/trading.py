@@ -727,6 +727,7 @@ async def _run_daemon(
             kill_switch_reader=_kill_switch_reader,
             propose_dedup_window_secs=propose_dedup_window_secs,
             live_gateway=live_gateway,
+            daemon_mode=mode,
         )
         trading_service.register_subscriptions()
 

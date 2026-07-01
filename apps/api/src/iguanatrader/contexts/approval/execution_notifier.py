@@ -45,6 +45,7 @@ _REJECTION_REASONS: dict[str, str] = {
     "broker_other": "broker error (e.g. gateway not connected)",
     "gateway_unavailable": "live gateway unavailable",
     "timeout": "broker submit timed out",
+    "mode_mismatch": "routing safety gate — this daemon does not execute this proposal's mode",
 }
 
 
