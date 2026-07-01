@@ -430,6 +430,18 @@ class TradingService:
                     rationale=decision.rationale,
                 )
                 return None
+            # Non-blocking pass (advisory mode always; enforce mode when not a
+            # high-conviction veto): surface the gate's reasoning so the operator
+            # can audit the LLM's take on every proposal that reaches HITL. The
+            # conviction is also captured onto the proposal via entry_confidence.
+            log.info(
+                "trading.propose.entry_gate_passed",
+                symbol=proposal.symbol,
+                side=proposal.side,
+                strategy_config_id=str(strategy_config_id),
+                confidence=str(decision.confidence),
+                rationale=decision.rationale,
+            )
             if decision.confidence > 0:
                 entry_confidence = decision.confidence
 
